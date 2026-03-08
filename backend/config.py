@@ -1,5 +1,6 @@
 import yaml
 import os
+import secrets
 from pathlib import Path
 
 CONFIG_PATH = Path(os.environ.get("DM_CONFIG", "/etc/download-manager/config.yml"))
@@ -23,12 +24,17 @@ DEFAULT_CONFIG = {
     },
     "auth": {
         "enabled": False,
-        "username": "admin",
-        "password_hash": ""
+        "jwt_secret": "",
     },
     "aria2": {
         "rpc_port": 6800,
         "rpc_secret": "download-manager-secret"
+    },
+    "webhooks": {
+        "enabled": False,
+        "url": "",
+        "format": "generic",
+        "events": ["download_complete", "download_failed", "package_complete"]
     }
 }
 
@@ -48,7 +54,12 @@ def get_config() -> dict:
         return DEFAULT_CONFIG.copy()
     with open(CONFIG_PATH, "r") as f:
         loaded = yaml.safe_load(f) or {}
-    return _deep_merge(DEFAULT_CONFIG.copy(), loaded)
+    cfg = _deep_merge(DEFAULT_CONFIG.copy(), loaded)
+    # Auto-generate JWT secret if missing
+    if not cfg["auth"].get("jwt_secret"):
+        cfg["auth"]["jwt_secret"] = secrets.token_hex(32)
+        save_config(cfg)
+    return cfg
 
 
 def save_config(config: dict):

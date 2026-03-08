@@ -15,7 +15,7 @@ error()   { echo -e "${RED}[ERR]${NC}   $*"; }
 die()     { error "$*"; exit 1; }
 
 # ---- Root check ----
-[[ $EUID -eq 0 ]] || die "Ce script doit être exécuté en tant que root. Utilisez : sudo bash install.sh"
+[[ $EUID -eq 0 ]] || die "Ce script doit etre execute en tant que root. Utilisez : sudo bash install.sh"
 
 # ---- Banner ----
 echo ""
@@ -30,11 +30,11 @@ read -rp "Sur quel port exposer l'interface web ? [${DEFAULT_PORT}] : " INPUT_PO
 PORT="${INPUT_PORT:-$DEFAULT_PORT}"
 
 if ! [[ "$PORT" =~ ^[0-9]+$ ]] || [ "$PORT" -lt 1 ] || [ "$PORT" -gt 65535 ]; then
-    warn "Port invalide, utilisation du port par défaut : ${DEFAULT_PORT}"
+    warn "Port invalide, utilisation du port par defaut : ${DEFAULT_PORT}"
     PORT=$DEFAULT_PORT
 fi
 
-info "Port sélectionné : ${PORT}"
+info "Port selectionne : ${PORT}"
 echo ""
 
 # ---- Directories ----
@@ -44,10 +44,10 @@ LOG_DIR="/var/log/download-manager"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 # ---- System dependencies ----
-info "Mise à jour des paquets..."
+info "Mise a jour des paquets..."
 apt-get update -qq
 
-info "Installation des dépendances système..."
+info "Installation des dependances systeme..."
 apt-get install -y -qq \
     python3 \
     python3-pip \
@@ -64,14 +64,14 @@ PYTHON_MAJOR=$(echo "$PYTHON_VERSION" | cut -d. -f1)
 PYTHON_MINOR=$(echo "$PYTHON_VERSION" | cut -d. -f2)
 
 if [ "$PYTHON_MAJOR" -lt 3 ] || ([ "$PYTHON_MAJOR" -eq 3 ] && [ "$PYTHON_MINOR" -lt 8 ]); then
-    die "Python 3.8+ requis. Version trouvée : ${PYTHON_VERSION}"
+    die "Python 3.8+ requis. Version trouvee : ${PYTHON_VERSION}"
 fi
 
-success "Python ${PYTHON_VERSION} détecté"
-success "aria2c $(aria2c --version | head -1 | awk '{print $3}') installé"
+success "Python ${PYTHON_VERSION} detecte"
+success "aria2c $(aria2c --version | head -1 | awk '{print $3}') installe"
 
 # ---- Create directories ----
-info "Création de la structure de répertoires..."
+info "Creation de la structure de repertoires..."
 mkdir -p "${INSTALL_DIR}"/{backend,frontend,downloads,config}
 mkdir -p "${INSTALL_DIR}/backend"/{routers,services}
 mkdir -p "${INSTALL_DIR}/frontend/static"/{css,js}
@@ -85,17 +85,33 @@ cp -r "${SCRIPT_DIR}/frontend/"* "${INSTALL_DIR}/frontend/"
 cp "${SCRIPT_DIR}/requirements.txt" "${INSTALL_DIR}/"
 cp "${SCRIPT_DIR}/start.sh" "${INSTALL_DIR}/start.sh"
 chmod +x "${INSTALL_DIR}/start.sh"
-success "Fichiers copiés"
+success "Fichiers copies"
 
 # ---- Generate aria2 secret ----
 ARIA2_SECRET=$(tr -dc 'a-zA-Z0-9' < /dev/urandom | fold -w 32 | head -n 1)
 
 # ---- Config file ----
 if [ -f "${CONFIG_DIR}/config.yml" ]; then
-    info "Configuration existante détectée, mise à jour du port uniquement."
+    info "Configuration existante detectee, mise a jour du port uniquement."
     sed -i "s/^\(\s*port:\s*\).*/\1${PORT}/" "${CONFIG_DIR}/config.yml"
+
+    # Add webhooks section if missing
+    if ! grep -q "webhooks:" "${CONFIG_DIR}/config.yml" 2>/dev/null; then
+        cat >> "${CONFIG_DIR}/config.yml" <<EOF
+
+webhooks:
+  enabled: false
+  url: ""
+  format: "generic"
+  events:
+    - "download_complete"
+    - "download_failed"
+    - "package_complete"
+EOF
+        info "Section webhooks ajoutee a la configuration"
+    fi
 else
-    info "Création du fichier de configuration..."
+    info "Creation du fichier de configuration..."
     cat > "${CONFIG_DIR}/config.yml" <<EOF
 server:
   host: "0.0.0.0"
@@ -114,29 +130,37 @@ downloads:
 
 auth:
   enabled: false
-  username: "admin"
-  password_hash: ""
+  jwt_secret: ""
 
 aria2:
   rpc_port: 6800
   rpc_secret: "${ARIA2_SECRET}"
+
+webhooks:
+  enabled: false
+  url: ""
+  format: "generic"
+  events:
+    - "download_complete"
+    - "download_failed"
+    - "package_complete"
 EOF
-    success "Configuration créée : ${CONFIG_DIR}/config.yml"
+    success "Configuration creee : ${CONFIG_DIR}/config.yml"
 fi
 
 # ---- Python virtual environment ----
 if [ -d "${INSTALL_DIR}/venv" ]; then
-    info "Virtualenv existant, mise à jour..."
+    info "Virtualenv existant, mise a jour..."
 else
-    info "Création du virtualenv Python..."
+    info "Creation du virtualenv Python..."
     python3 -m venv "${INSTALL_DIR}/venv" > /dev/null 2>&1
-    success "Virtualenv créé"
+    success "Virtualenv cree"
 fi
 
-info "Installation des dépendances Python..."
+info "Installation des dependances Python..."
 "${INSTALL_DIR}/venv/bin/pip" install --quiet --upgrade pip
 "${INSTALL_DIR}/venv/bin/pip" install --quiet -r "${INSTALL_DIR}/requirements.txt"
-success "Dépendances Python installées"
+success "Dependances Python installees"
 
 # ---- systemd service ----
 info "Configuration du service systemd..."
@@ -172,17 +196,17 @@ EOF
 
 systemctl daemon-reload
 systemctl enable download-manager > /dev/null 2>&1
-success "Service systemd configuré et activé"
+success "Service systemd configure et active"
 
 # ---- Start ----
-info "Démarrage du service..."
+info "Demarrage du service..."
 systemctl restart download-manager
 
 sleep 3
 if systemctl is-active --quiet download-manager; then
-    success "Service démarré avec succès"
+    success "Service demarre avec succes"
 else
-    warn "Le service n'a pas démarré. Vérifiez : journalctl -u download-manager -n 30"
+    warn "Le service n'a pas demarre. Verifiez : journalctl -u download-manager -n 30"
 fi
 
 # ---- Summary ----
@@ -190,16 +214,21 @@ SERVER_IP=$(hostname -I | awk '{print $1}')
 
 echo ""
 echo -e "${BOLD}╔═══════════════════════════════════════════════════╗${NC}"
-echo -e "${BOLD}║         Installation terminée avec succès !       ║${NC}"
+echo -e "${BOLD}║         Installation terminee avec succes !       ║${NC}"
 echo -e "${BOLD}╚═══════════════════════════════════════════════════╝${NC}"
 echo ""
 echo -e "  Interface web :  ${BOLD}${GREEN}http://${SERVER_IP}:${PORT}${NC}"
 echo ""
 echo -e "  Commandes utiles :"
 echo -e "    ${YELLOW}systemctl status download-manager${NC}   — statut"
-echo -e "    ${YELLOW}systemctl restart download-manager${NC}  — redémarrer"
+echo -e "    ${YELLOW}systemctl restart download-manager${NC}  — redemarrer"
 echo -e "    ${YELLOW}journalctl -u download-manager -f${NC}   — logs"
 echo -e "    ${YELLOW}nano ${CONFIG_DIR}/config.yml${NC}       — configuration"
 echo ""
-echo -e "  Activez AllDebrid depuis la page ${BOLD}Paramètres${NC} de l'interface."
+echo -e "  Fonctionnalites :"
+echo -e "    - AllDebrid : configurez votre cle dans ${BOLD}Parametres${NC}"
+echo -e "    - Paquets   : groupez vos liens en paquets"
+echo -e "    - Webhooks  : Discord, Slack, Telegram, Gotify, ntfy"
+echo -e "    - 2FA       : activez depuis la page Parametres"
+echo -e "    - Retry     : 5 tentatives automatiques par defaut"
 echo ""

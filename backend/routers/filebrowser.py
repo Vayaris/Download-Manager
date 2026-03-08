@@ -1,7 +1,9 @@
-from fastapi import APIRouter, Depends, Query
+import re
+from fastapi import APIRouter, Depends, Query, HTTPException
 from pathlib import Path
 
 from auth import get_current_user
+from models import MkdirRequest
 
 router = APIRouter()
 
@@ -46,3 +48,35 @@ async def browse(path: str = Query(default="/"), _=Depends(get_current_user)):
         }
     except Exception as e:
         return {"path": path, "directories": [], "breadcrumbs": [], "parent": None, "error": str(e)}
+
+
+@router.post("/mkdir")
+async def mkdir(body: MkdirRequest, _=Depends(get_current_user)):
+    # Validate folder name
+    name = body.name.strip()
+    if not name:
+        raise HTTPException(status_code=400, detail="Le nom du dossier ne peut pas etre vide")
+
+    # Block dangerous characters
+    if re.search(r'[/\\<>:"|?*\x00-\x1f]', name):
+        raise HTTPException(status_code=400, detail="Le nom contient des caracteres invalides")
+
+    if name in (".", ".."):
+        raise HTTPException(status_code=400, detail="Nom de dossier invalide")
+
+    parent = Path(body.path).resolve()
+    if not parent.exists() or not parent.is_dir():
+        raise HTTPException(status_code=400, detail="Le dossier parent n'existe pas")
+
+    new_dir = parent / name
+    if new_dir.exists():
+        raise HTTPException(status_code=400, detail="Ce dossier existe deja")
+
+    try:
+        new_dir.mkdir(parents=False, exist_ok=False)
+    except PermissionError:
+        raise HTTPException(status_code=403, detail="Permission refusee")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+    return {"status": "created", "path": str(new_dir)}

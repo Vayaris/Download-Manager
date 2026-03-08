@@ -12,7 +12,6 @@ const WS = (() => {
     socket.onopen = () => {
       reconnectDelay = 2000;
       console.debug("[WS] connected");
-      // Send a ping every 25s to keep the connection alive
       socket._pingInterval = setInterval(() => {
         if (socket.readyState === WebSocket.OPEN) socket.send("ping");
       }, 25000);
@@ -21,7 +20,7 @@ const WS = (() => {
     socket.onmessage = (event) => {
       try {
         const msg = JSON.parse(event.data);
-        if (handlers[msg.type]) handlers[msg.type](msg.data);
+        if (handlers[msg.type]) handlers[msg.type](msg.data, msg);
       } catch (e) {
         // ignore non-JSON messages
       }

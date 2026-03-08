@@ -23,7 +23,57 @@ async def init_db():
                 updated_at  TEXT,
                 error_msg   TEXT,
                 position    INTEGER DEFAULT 0,
-                aria2_gid   TEXT
+                aria2_gid   TEXT,
+                retry_count INTEGER DEFAULT 0,
+                max_retries INTEGER DEFAULT 5,
+                package_id  TEXT
             )
         """)
+
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS packages (
+                id          TEXT PRIMARY KEY,
+                name        TEXT NOT NULL,
+                destination TEXT NOT NULL,
+                status      TEXT DEFAULT 'active',
+                created_at  TEXT,
+                updated_at  TEXT
+            )
+        """)
+
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS history (
+                id           TEXT PRIMARY KEY,
+                name         TEXT,
+                url          TEXT,
+                destination  TEXT,
+                size         INTEGER DEFAULT 0,
+                status       TEXT,
+                error_msg    TEXT,
+                package_name TEXT,
+                created_at   TEXT,
+                completed_at TEXT
+            )
+        """)
+
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS users (
+                id            TEXT PRIMARY KEY,
+                username      TEXT UNIQUE NOT NULL,
+                password_hash TEXT NOT NULL,
+                otp_secret    TEXT,
+                otp_enabled   INTEGER DEFAULT 0,
+                created_at    TEXT
+            )
+        """)
+
+        # Migrations for existing databases
+        columns = [row[1] for row in await (await db.execute("PRAGMA table_info(downloads)")).fetchall()]
+        if "retry_count" not in columns:
+            await db.execute("ALTER TABLE downloads ADD COLUMN retry_count INTEGER DEFAULT 0")
+        if "max_retries" not in columns:
+            await db.execute("ALTER TABLE downloads ADD COLUMN max_retries INTEGER DEFAULT 5")
+        if "package_id" not in columns:
+            await db.execute("ALTER TABLE downloads ADD COLUMN package_id TEXT")
+
         await db.commit()
