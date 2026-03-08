@@ -546,8 +546,8 @@ function showLogin() {
   const modal = document.getElementById("login-modal");
   modal.classList.remove("hidden");
   document.getElementById("login-form").classList.remove("hidden");
+  document.getElementById("otp-form").classList.add("hidden");
   document.getElementById("setup-form").classList.add("hidden");
-  document.getElementById("otp-field").classList.add("hidden");
 }
 
 function showSetupForm() {
@@ -557,21 +557,19 @@ function showSetupForm() {
   document.getElementById("setup-form").classList.remove("hidden");
 }
 
+// Store credentials temporarily for OTP step
+let _pendingLogin = {};
+
 async function doLogin() {
   const username = document.getElementById("login-username").value;
   const password = document.getElementById("login-password").value;
-  const otpInput = document.getElementById("login-otp");
-  const otpCode  = otpInput ? otpInput.value.trim() : "";
   const errEl    = document.getElementById("login-error");
 
   try {
-    const body = { username, password };
-    if (otpCode) body.otp_code = otpCode;
-
     const resp = await fetch("/api/auth/login", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
+      body: JSON.stringify({ username, password }),
     });
 
     if (!resp.ok) {
@@ -583,12 +581,14 @@ async function doLogin() {
 
     const data = await resp.json();
 
-    if (data.otp_required && !otpCode) {
-      document.getElementById("otp-field").classList.remove("hidden");
+    if (data.otp_required) {
+      // Save credentials and show OTP step
+      _pendingLogin = { username, password };
+      document.getElementById("login-form").classList.add("hidden");
+      document.getElementById("otp-form").classList.remove("hidden");
+      document.getElementById("login-otp").value = "";
       document.getElementById("login-otp").focus();
-      errEl.classList.add("hidden");
-      localStorage.setItem("dm_token", data.token);
-      API.token = data.token;
+      document.getElementById("otp-error").classList.add("hidden");
       return;
     }
 
@@ -601,6 +601,55 @@ async function doLogin() {
     errEl.textContent = "Erreur de connexion au serveur";
     errEl.classList.remove("hidden");
   }
+}
+
+async function doOtpVerify() {
+  const otpCode = document.getElementById("login-otp").value.trim();
+  const errEl   = document.getElementById("otp-error");
+
+  if (otpCode.length !== 6) {
+    errEl.textContent = "Entrez un code à 6 chiffres";
+    errEl.classList.remove("hidden");
+    return;
+  }
+
+  try {
+    const resp = await fetch("/api/auth/login", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        username: _pendingLogin.username,
+        password: _pendingLogin.password,
+        otp_code: otpCode,
+      }),
+    });
+
+    if (!resp.ok) {
+      const data = await resp.json();
+      errEl.textContent = data.detail || "Code OTP invalide";
+      errEl.classList.remove("hidden");
+      document.getElementById("login-otp").value = "";
+      document.getElementById("login-otp").focus();
+      return;
+    }
+
+    const data = await resp.json();
+    _pendingLogin = {};
+    localStorage.setItem("dm_token", data.token);
+    API.token = data.token;
+    document.getElementById("login-modal").classList.add("hidden");
+    loadInitial();
+  } catch {
+    errEl.textContent = "Erreur de connexion au serveur";
+    errEl.classList.remove("hidden");
+  }
+}
+
+function backToLogin() {
+  _pendingLogin = {};
+  document.getElementById("otp-form").classList.add("hidden");
+  document.getElementById("login-form").classList.remove("hidden");
+  document.getElementById("login-password").value = "";
 }
 
 async function doSetupAdmin() {
@@ -641,6 +690,8 @@ document.addEventListener("keydown", (e) => {
   if (e.key === "Enter" && !document.getElementById("login-modal").classList.contains("hidden")) {
     if (!document.getElementById("setup-form").classList.contains("hidden")) {
       doSetupAdmin();
+    } else if (!document.getElementById("otp-form").classList.contains("hidden")) {
+      doOtpVerify();
     } else {
       doLogin();
     }
