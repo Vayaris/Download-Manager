@@ -106,10 +106,10 @@ const STATUS_LABELS = {
   pending:     "En attente",
   downloading: "En cours",
   paused:      "En pause",
-  complete:    "Termine",
+  complete:    "Terminé",
   error:       "Erreur",
-  failed:      "Echoue",
-  debrid:      "Debridage",
+  failed:      "Échoué",
+  debrid:      "Débridage",
 };
 
 function statusBadge(status) {
@@ -128,7 +128,7 @@ async function copyToClipboard(text, btnEl) {
       btnEl.innerHTML = ICONS.check;
       setTimeout(() => { btnEl.classList.remove("copied"); btnEl.innerHTML = orig; }, 1800);
     }
-    showToast("Chemin copie !", "ok");
+    showToast("Chemin copié !", "ok");
   } catch {
     showToast("Impossible de copier", "error");
   }
@@ -143,9 +143,9 @@ async function pasteFromClipboard() {
     const current = textarea.value.trim();
     textarea.value = current ? current + "\n" + text.trim() : text.trim();
     textarea.focus();
-    showToast(text.trim() ? "Lien(s) colle(s) !" : "Presse-papiers vide", text.trim() ? "ok" : "error");
+    showToast(text.trim() ? "Lien(s) collé(s) !" : "Presse-papiers vide", text.trim() ? "ok" : "error");
   } catch {
-    showToast("Impossible d'acceder au presse-papiers", "error");
+    showToast("Impossible d'accéder au presse-papiers", "error");
   }
 }
 
@@ -164,7 +164,7 @@ function renderDownloads(downloads) {
           <div class="empty-icon">
             <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
           </div>
-          <div class="empty-title">Aucun telechargement en cours</div>
+          <div class="empty-title">Aucun téléchargement en cours</div>
           <div class="empty-sub">Collez des liens dans le champ ci-dessus pour commencer</div>
         </td>
       </tr>`;
@@ -264,7 +264,7 @@ function renderPackages(packages) {
       : pkg.status === "partial" ? "error"
       : "downloading";
 
-    const pkgStatusLabel = pkg.status === "complete" ? "Termine"
+    const pkgStatusLabel = pkg.status === "complete" ? "Terminé"
       : pkg.status === "partial" ? "Partiel"
       : "En cours";
 
@@ -307,7 +307,6 @@ function togglePackage(id) {
   } else {
     expandedPackages.add(id);
   }
-  // Re-render with latest data
   loadPackages();
 }
 
@@ -322,7 +321,7 @@ async function removePackage(id) {
   try {
     await API.del(`/api/downloads/packages/${id}`);
     expandedPackages.delete(id);
-    showToast("Paquet supprime", "ok");
+    showToast("Paquet supprimé", "ok");
   } catch (e) { showToast("Erreur : " + e.message, "error"); }
 }
 
@@ -332,7 +331,6 @@ let _pkgFileBrowserMode = false;
 
 function openPackageModal() {
   document.getElementById("package-modal").classList.remove("hidden");
-  // Pre-fill destination from main selector
   const mainDest = document.getElementById("dest-path").value;
   if (mainDest) {
     document.getElementById("pkg-dest-path").value = mainDest;
@@ -376,7 +374,7 @@ async function addPackage() {
 
   try {
     const result = await API.post("/api/downloads/packages", { name, urls, destination });
-    showToast(`Paquet "${name}" cree avec ${result.added} lien(s)`, "ok");
+    showToast(`Paquet « ${name} » créé avec ${result.added} lien(s)`, "ok");
     document.getElementById("pkg-name").value = "";
     document.getElementById("pkg-links").value = "";
     closePackageModal();
@@ -401,8 +399,8 @@ function updateStats(downloads) {
   el.innerHTML = `
     <div class="stat-chip total"><span class="dot"></span>${total} fichier${total > 1 ? "s" : ""}</div>
     ${active > 0 ? `<div class="stat-chip active"><span class="dot"></span>${active} actif${active > 1 ? "s" : ""}</div>` : ""}
-    ${done   > 0 ? `<div class="stat-chip done"><span class="dot"></span>${done} termine${done > 1 ? "s" : ""}</div>` : ""}
-    ${failed > 0 ? `<div class="stat-chip failed"><span class="dot"></span>${failed} echoue${failed > 1 ? "s" : ""}</div>` : ""}
+    ${done   > 0 ? `<div class="stat-chip done"><span class="dot"></span>${done} terminé${done > 1 ? "s" : ""}</div>` : ""}
+    ${failed > 0 ? `<div class="stat-chip failed"><span class="dot"></span>${failed} échoué${failed > 1 ? "s" : ""}</div>` : ""}
   `;
 }
 
@@ -442,12 +440,11 @@ async function loadHistory() {
       </tr>
     `).join("");
 
-    // Pagination
     const totalPages = Math.ceil(data.total / HISTORY_PER_PAGE);
     if (totalPages > 1) {
       let paginationHtml = "";
       if (historyPage > 0) {
-        paginationHtml += `<button class="btn btn-sm" onclick="historyPage--;loadHistory()">Precedent</button>`;
+        paginationHtml += `<button class="btn btn-sm" onclick="historyPage--;loadHistory()">Précédent</button>`;
       }
       paginationHtml += `<span class="pagination-info">${historyPage + 1} / ${totalPages}</span>`;
       if (historyPage < totalPages - 1) {
@@ -465,7 +462,7 @@ async function clearHistory() {
     await API.del("/api/downloads/history");
     historyPage = 0;
     loadHistory();
-    showToast("Historique vide", "ok");
+    showToast("Historique vidé", "ok");
   } catch (e) { showToast("Erreur : " + e.message, "error"); }
 }
 
@@ -493,7 +490,7 @@ async function addLinks() {
   try {
     const result = await API.post("/api/downloads/", { urls, destination });
     textarea.value = "";
-    showToast(`${result.added} lien${result.added > 1 ? "s" : ""} ajoute${result.added > 1 ? "s" : ""} a la file.`, "ok");
+    showToast(`${result.added} lien${result.added > 1 ? "s" : ""} ajouté${result.added > 1 ? "s" : ""} à la file.`, "ok");
   } catch (e) {
     showToast("Erreur lors de l'ajout : " + e.message, "error");
   }
@@ -587,11 +584,9 @@ async function doLogin() {
     const data = await resp.json();
 
     if (data.otp_required && !otpCode) {
-      // Show OTP field
       document.getElementById("otp-field").classList.remove("hidden");
       document.getElementById("login-otp").focus();
       errEl.classList.add("hidden");
-      // Save partial token for OTP step
       localStorage.setItem("dm_token", data.token);
       API.token = data.token;
       return;
@@ -615,7 +610,7 @@ async function doSetupAdmin() {
   const errEl    = document.getElementById("setup-error");
 
   if (!username) { errEl.textContent = "Nom d'utilisateur requis"; errEl.classList.remove("hidden"); return; }
-  if (password.length < 6) { errEl.textContent = "Mot de passe : 6 caracteres minimum"; errEl.classList.remove("hidden"); return; }
+  if (password.length < 6) { errEl.textContent = "Mot de passe : 6 caractères minimum"; errEl.classList.remove("hidden"); return; }
   if (password !== confirm) { errEl.textContent = "Les mots de passe ne correspondent pas"; errEl.classList.remove("hidden"); return; }
 
   try {
@@ -634,7 +629,7 @@ async function doSetupAdmin() {
     localStorage.setItem("dm_token", data.token);
     API.token = data.token;
     document.getElementById("login-modal").classList.add("hidden");
-    showToast("Compte admin cree avec succes !", "ok");
+    showToast("Compte admin créé avec succès !", "ok");
     loadInitial();
   } catch {
     errEl.textContent = "Erreur de connexion";
@@ -723,7 +718,6 @@ async function loadInitial() {
     if (msg && msg.packages) {
       renderPackages(msg.packages);
     }
-    // Refresh history periodically when downloads complete
     loadHistory();
   });
   WS.init();

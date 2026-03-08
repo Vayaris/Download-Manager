@@ -114,7 +114,7 @@ async function createFolder() {
 
   try {
     const resp = await API.post("/api/files/mkdir", { path: currentPath, name: name });
-    showToast(`Dossier "${name}" cree`, "ok");
+    showToast(`Dossier « ${name} » créé`, "ok");
     hideMkdirInput();
     // Refresh and navigate to new folder
     FileBrowser._browse(resp.path);
