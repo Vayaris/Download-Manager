@@ -49,7 +49,8 @@ aria2c \
   --split=5 \
   --min-split-size=10M \
   --continue=true \
-  --auto-file-renaming=true \
+  --auto-file-renaming=false \
+  --allow-overwrite=true \
   --daemon=true \
   --log="${LOG_DIR}/aria2.log" \
   --log-level=warn

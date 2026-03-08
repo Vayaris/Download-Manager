@@ -344,12 +344,14 @@ function closePackageModal() {
 
 function openFileBrowserForPackage() {
   _pkgFileBrowserMode = true;
+  FileBrowser.elevate(); // Bring file browser above package modal
+  const startPath = document.getElementById("pkg-dest-path").value.trim() || undefined;
   FileBrowser.open((path) => {
     document.getElementById("pkg-dest-path").value = path;
     document.getElementById("pkg-dest-label").textContent = path;
     document.getElementById("pkg-dest-selector").classList.add("selected");
     _pkgFileBrowserMode = false;
-  });
+  }, startPath);
 }
 
 async function addPackage() {
@@ -718,24 +720,6 @@ function showToast(msg, type = "ok") {
   _toastTimer = setTimeout(() => el.classList.add("hidden"), 3500);
 }
 
-// ---- Server health ----
-
-async function checkAria2() {
-  const dot   = document.getElementById("aria2-status");
-  const text  = document.getElementById("server-status-text");
-  const badge = document.getElementById("server-badge");
-  try {
-    await fetch("/api/settings/");
-    dot.className   = "status-dot online";
-    text.textContent = "En ligne";
-    badge.classList.add("online");
-  } catch {
-    dot.className   = "status-dot offline";
-    text.textContent = "Hors ligne";
-    badge.classList.remove("online");
-  }
-}
-
 // ---- Initial load ----
 
 async function loadInitial() {
@@ -773,6 +757,6 @@ async function loadInitial() {
   });
   WS.init();
 
-  checkAria2();
-  setInterval(checkAria2, 15000);
+  // Show account button if auth is enabled
+  if (typeof initAccountButton === "function") initAccountButton();
 })();
