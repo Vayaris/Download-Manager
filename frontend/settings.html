@@ -6,7 +6,7 @@
   <title>Paramètres — Download Manager</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link rel="stylesheet" href="/static/css/style.css?v=9">
+  <link rel="stylesheet" href="/static/css/style.css?v=11">
   <script>
     (function() {
       var t = localStorage.getItem('dm_theme');
@@ -17,6 +17,36 @@
   </script>
 </head>
 <body>
+
+<!-- Login modal for settings page -->
+<div id="login-modal" class="modal-overlay hidden">
+  <div class="modal-box login-box">
+    <div class="login-logo">
+      <svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+    </div>
+    <h2>Download Manager</h2>
+    <div id="login-form">
+      <p class="login-sub">Connectez-vous pour accéder aux paramètres</p>
+      <div class="form-group">
+        <input type="text" id="login-username" class="form-input" placeholder="Nom d'utilisateur" autocomplete="username">
+      </div>
+      <div class="form-group">
+        <input type="password" id="login-password" class="form-input" placeholder="Mot de passe" autocomplete="current-password">
+      </div>
+      <div id="login-error" class="error-msg hidden"></div>
+      <button class="btn btn-primary full-width" onclick="doSettingsLogin()">Se connecter</button>
+    </div>
+    <div id="otp-form" class="hidden">
+      <p class="login-sub">Entrez le code de vérification affiché dans votre application d'authentification</p>
+      <div class="form-group">
+        <input type="text" id="login-otp" class="form-input" placeholder="Code à 6 chiffres" autocomplete="one-time-code" maxlength="6" inputmode="numeric" pattern="[0-9]{6}" style="text-align:center;font-size:20px;letter-spacing:8px;font-family:var(--font-mono)">
+      </div>
+      <div id="otp-error" class="error-msg hidden"></div>
+      <button class="btn btn-primary full-width" onclick="doSettingsOtpVerify()">Vérifier</button>
+      <button class="btn full-width" style="margin-top:8px" onclick="backToSettingsLogin()">Retour</button>
+    </div>
+  </div>
+</div>
 
 <div class="app">
 
