@@ -48,6 +48,9 @@ async function testAllDebrid() {
     if (res.valid) {
       setAllDebridBadge("ok", "Connecté");
       showToast("Clé AllDebrid valide", "ok");
+      // Auto-enable when key is valid
+      document.getElementById("alldebrid-enabled").checked = true;
+      await API.put("/api/settings/", { alldebrid_enabled: true });
     } else {
       setAllDebridBadge("error", "Clé invalide");
       showToast("Clé AllDebrid invalide", "error");
@@ -364,9 +367,123 @@ function showToast(msg, type = "ok") {
   _toastTimer = setTimeout(() => el.classList.add("hidden"), 3500);
 }
 
+// ---- Auth check for settings page ----
+
+let _settingsPendingLogin = {};
+
+async function checkSettingsAuth() {
+  try {
+    const status = await fetch("/api/auth/status").then(r => r.json());
+    if (!status.auth_enabled) return true;
+
+    const token = localStorage.getItem("dm_token");
+    if (!token) { showSettingsLogin(); return false; }
+    API.token = token;
+    try {
+      await API.get("/api/settings/");
+      return true;
+    } catch {
+      showSettingsLogin();
+      return false;
+    }
+  } catch {
+    return true; // server unreachable, let it try
+  }
+}
+
+function showSettingsLogin() {
+  document.getElementById("login-modal").classList.remove("hidden");
+  document.getElementById("login-form").classList.remove("hidden");
+  document.getElementById("otp-form").classList.add("hidden");
+}
+
+async function doSettingsLogin() {
+  const username = document.getElementById("login-username").value;
+  const password = document.getElementById("login-password").value;
+  const errEl = document.getElementById("login-error");
+
+  try {
+    const resp = await fetch("/api/auth/login", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ username, password }),
+    });
+    if (!resp.ok) {
+      const data = await resp.json();
+      errEl.textContent = data.detail || "Identifiants invalides";
+      errEl.classList.remove("hidden");
+      return;
+    }
+    const data = await resp.json();
+    if (data.otp_required) {
+      _settingsPendingLogin = { username, password };
+      document.getElementById("login-form").classList.add("hidden");
+      document.getElementById("otp-form").classList.remove("hidden");
+      document.getElementById("login-otp").value = "";
+      document.getElementById("login-otp").focus();
+      return;
+    }
+    localStorage.setItem("dm_token", data.token);
+    API.token = data.token;
+    document.getElementById("login-modal").classList.add("hidden");
+    bootSettings();
+  } catch {
+    errEl.textContent = "Erreur de connexion au serveur";
+    errEl.classList.remove("hidden");
+  }
+}
+
+async function doSettingsOtpVerify() {
+  const otpCode = document.getElementById("login-otp").value.trim();
+  const errEl = document.getElementById("otp-error");
+  if (otpCode.length !== 6) { errEl.textContent = "Entrez un code à 6 chiffres"; errEl.classList.remove("hidden"); return; }
+  try {
+    const resp = await fetch("/api/auth/login", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ username: _settingsPendingLogin.username, password: _settingsPendingLogin.password, otp_code: otpCode }),
+    });
+    if (!resp.ok) {
+      const data = await resp.json();
+      errEl.textContent = data.detail || "Code OTP invalide";
+      errEl.classList.remove("hidden");
+      document.getElementById("login-otp").value = "";
+      document.getElementById("login-otp").focus();
+      return;
+    }
+    const data = await resp.json();
+    _settingsPendingLogin = {};
+    localStorage.setItem("dm_token", data.token);
+    API.token = data.token;
+    document.getElementById("login-modal").classList.add("hidden");
+    bootSettings();
+  } catch {
+    errEl.textContent = "Erreur de connexion au serveur";
+    errEl.classList.remove("hidden");
+  }
+}
+
+function backToSettingsLogin() {
+  _settingsPendingLogin = {};
+  document.getElementById("otp-form").classList.add("hidden");
+  document.getElementById("login-form").classList.remove("hidden");
+  document.getElementById("login-password").value = "";
+}
+
+// Enter key support for login
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Enter" && !document.getElementById("login-modal").classList.contains("hidden")) {
+    if (!document.getElementById("otp-form").classList.contains("hidden")) {
+      doSettingsOtpVerify();
+    } else {
+      doSettingsLogin();
+    }
+  }
+});
+
 // ---- Boot ----
 
-(async () => {
+async function bootSettings() {
   try {
     const cfg = await API.get("/api/settings/");
 
@@ -392,11 +509,14 @@ function showToast(msg, type = "ok") {
       loadUserInfo();
     }
 
-    // Check if admin account exists
     await checkAdminExists();
-
     await checkAllDebridStatus();
   } catch {
     showToast("Impossible de charger les paramètres", "error");
   }
+}
+
+(async () => {
+  const authed = await checkSettingsAuth();
+  if (authed) bootSettings();
 })();

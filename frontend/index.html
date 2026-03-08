@@ -6,7 +6,7 @@
   <title>Download Manager</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link rel="stylesheet" href="/static/css/style.css?v=9">
+  <link rel="stylesheet" href="/static/css/style.css?v=11">
   <script>
     (function() {
       var t = localStorage.getItem('dm_theme');
@@ -26,7 +26,7 @@
     </div>
     <h2>Download Manager</h2>
 
-    <!-- Login form -->
+    <!-- Step 1: Login form (username + password) -->
     <div id="login-form">
       <p class="login-sub">Connectez-vous pour accéder à l'interface</p>
       <div class="form-group">
@@ -35,11 +35,19 @@
       <div class="form-group">
         <input type="password" id="login-password" class="form-input" placeholder="Mot de passe" autocomplete="current-password">
       </div>
-      <div id="otp-field" class="form-group hidden">
-        <input type="text" id="login-otp" class="form-input" placeholder="Code OTP (6 chiffres)" autocomplete="one-time-code" maxlength="6" inputmode="numeric" pattern="[0-9]{6}">
-      </div>
       <div id="login-error" class="error-msg hidden"></div>
       <button class="btn btn-primary full-width" onclick="doLogin()">Se connecter</button>
+    </div>
+
+    <!-- Step 2: OTP verification (separate screen) -->
+    <div id="otp-form" class="hidden">
+      <p class="login-sub">Entrez le code de vérification affiché dans votre application d'authentification</p>
+      <div class="form-group">
+        <input type="text" id="login-otp" class="form-input" placeholder="Code à 6 chiffres" autocomplete="one-time-code" maxlength="6" inputmode="numeric" pattern="[0-9]{6}" style="text-align:center;font-size:20px;letter-spacing:8px;font-family:var(--font-mono)">
+      </div>
+      <div id="otp-error" class="error-msg hidden"></div>
+      <button class="btn btn-primary full-width" onclick="doOtpVerify()">Vérifier</button>
+      <button class="btn full-width" style="margin-top:8px" onclick="backToLogin()">Retour</button>
     </div>
 
     <!-- Setup admin form (first time) -->
@@ -312,9 +320,9 @@
 
 <div id="toast" class="toast hidden"></div>
 
-<script src="/static/js/theme.js?v=9"></script>
-<script src="/static/js/websocket.js?v=9"></script>
-<script src="/static/js/filebrowser.js?v=9"></script>
-<script src="/static/js/app.js?v=9"></script>
+<script src="/static/js/theme.js?v=11"></script>
+<script src="/static/js/websocket.js?v=11"></script>
+<script src="/static/js/filebrowser.js?v=11"></script>
+<script src="/static/js/app.js?v=11"></script>
 </body>
 </html>
