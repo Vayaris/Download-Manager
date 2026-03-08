@@ -6,12 +6,15 @@ from jose import JWTError, jwt
 from passlib.context import CryptContext
 from config import get_config
 
-SECRET_KEY = "dm-jwt-secret-please-change-in-production-via-env"
 ALGORITHM = "HS256"
 TOKEN_EXPIRE_HOURS = 24 * 7
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 security = HTTPBearer(auto_error=False)
+
+
+def _get_secret() -> str:
+    return get_config()["auth"]["jwt_secret"]
 
 
 def verify_password(plain: str, hashed: str) -> bool:
@@ -25,7 +28,7 @@ def get_password_hash(password: str) -> str:
 def create_access_token(data: dict) -> str:
     payload = data.copy()
     payload["exp"] = datetime.utcnow() + timedelta(hours=TOKEN_EXPIRE_HOURS)
-    return jwt.encode(payload, SECRET_KEY, algorithm=ALGORITHM)
+    return jwt.encode(payload, _get_secret(), algorithm=ALGORITHM)
 
 
 async def get_current_user(
@@ -43,10 +46,13 @@ async def get_current_user(
         )
 
     try:
-        payload = jwt.decode(credentials.credentials, SECRET_KEY, algorithms=[ALGORITHM])
+        payload = jwt.decode(credentials.credentials, _get_secret(), algorithms=[ALGORITHM])
         username = payload.get("sub")
         if not username:
             raise HTTPException(status_code=401, detail="Invalid token")
+        # Check otp_verified claim if user has 2FA
+        if payload.get("otp_required") and not payload.get("otp_verified"):
+            raise HTTPException(status_code=401, detail="OTP verification required")
         return {"username": username}
     except JWTError:
         raise HTTPException(status_code=401, detail="Invalid token")

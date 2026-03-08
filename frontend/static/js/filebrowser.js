@@ -1,4 +1,4 @@
-// File browser modal
+// File browser modal with mkdir support
 const FileBrowser = (() => {
   let currentPath = "/";
   let selectedPath = "";
@@ -8,7 +8,6 @@ const FileBrowser = (() => {
     currentPath = path;
     const list = document.getElementById("fb-list");
     const crumbs = document.getElementById("fb-breadcrumbs");
-    const pathDisplay = document.getElementById("fb-current-path");
 
     list.innerHTML = '<div class="fb-loading">Chargement...</div>';
 
@@ -21,16 +20,17 @@ const FileBrowser = (() => {
           const isLast = i === resp.breadcrumbs.length - 1;
           const sep = i > 0 ? '<span class="breadcrumb-sep"> / </span>' : "";
           return `${sep}<span class="breadcrumb-item${isLast ? " active" : ""}"
-            onclick="FileBrowser._browse('${escHtml(b.path)}')">${escHtml(b.name)}</span>`;
+            onclick="FileBrowser._browse('${_esc(b.path)}')">${_esc(b.name)}</span>`;
         })
         .join("");
 
       selectedPath = resp.path;
-      pathDisplay.textContent = resp.path;
+      const pathText = document.getElementById("fb-path-text");
+      if (pathText) pathText.textContent = resp.path;
 
       // Directory list
       if (resp.error) {
-        list.innerHTML = `<div class="fb-empty">${escHtml(resp.error)}</div>`;
+        list.innerHTML = `<div class="fb-empty">${_esc(resp.error)}</div>`;
         return;
       }
 
@@ -42,19 +42,19 @@ const FileBrowser = (() => {
       list.innerHTML = resp.directories
         .map(
           (d) => `
-          <div class="fb-item" onclick="FileBrowser._select('${escHtml(d.path)}')">
-            <span class="fb-icon">📁</span>
-            <span class="fb-name" title="${escHtml(d.path)}">${escHtml(d.name)}</span>
+          <div class="fb-item" onclick="FileBrowser._browse('${_esc(d.path)}')">
+            <span class="fb-icon">${ICONS ? ICONS.folder : '📁'}</span>
+            <span class="fb-name" title="${_esc(d.path)}">${_esc(d.name)}</span>
             ${d.has_children ? '<span class="fb-arrow">›</span>' : ""}
           </div>`
         )
         .join("");
     } catch (e) {
-      list.innerHTML = `<div class="fb-empty">Erreur : ${escHtml(String(e))}</div>`;
+      list.innerHTML = `<div class="fb-empty">Erreur : ${_esc(String(e))}</div>`;
     }
   }
 
-  function escHtml(str) {
+  function _esc(str) {
     return String(str)
       .replace(/&/g, "&amp;")
       .replace(/</g, "&lt;")
@@ -67,6 +67,7 @@ const FileBrowser = (() => {
     open(callback) {
       onSelectCallback = callback;
       document.getElementById("filebrowser-modal").classList.remove("hidden");
+      hideMkdirInput();
       browse("/");
     },
     close() {
@@ -77,28 +78,49 @@ const FileBrowser = (() => {
       this.close();
     },
     _browse: browse,
-    _select(path) {
-      // Single click: highlight + update selected path
-      selectedPath = path;
-      document.getElementById("fb-current-path").textContent = path;
-      document.querySelectorAll(".fb-item").forEach((el) => el.classList.remove("selected"));
-      event.currentTarget.classList.add("selected");
-    },
+    getCurrentPath() { return currentPath; },
   };
 })();
 
-// Click on a directory navigates into it; click again to select or use button
-// Override _select to navigate on single click
-FileBrowser._select = function (path) {
-  FileBrowser._browse(path);
-};
-
-function openFileBrowser() { FileBrowser.open((path) => {
-  document.getElementById("dest-path").value = path;
-  const label = document.getElementById("dest-label");
-  label.textContent = path;
-  document.querySelector(".btn-dest").classList.add("selected");
-}); }
+function openFileBrowser() {
+  FileBrowser.open((path) => {
+    document.getElementById("dest-path").value = path;
+    const label = document.getElementById("dest-label");
+    label.textContent = path;
+    document.getElementById("dest-selector").classList.add("selected");
+  });
+}
 
 function closeFilerBrowser() { FileBrowser.close(); }
 function selectCurrentPath() { FileBrowser.confirm(); }
+
+// ---- Mkdir ----
+
+function showMkdirInput() {
+  document.getElementById("mkdir-input-wrap").classList.remove("hidden");
+  document.getElementById("mkdir-name").value = "";
+  document.getElementById("mkdir-name").focus();
+}
+
+function hideMkdirInput() {
+  document.getElementById("mkdir-input-wrap").classList.add("hidden");
+}
+
+async function createFolder() {
+  const name = document.getElementById("mkdir-name").value.trim();
+  if (!name) { showToast("Nom du dossier requis", "error"); return; }
+
+  const currentPath = FileBrowser.getCurrentPath();
+
+  try {
+    const resp = await API.post("/api/files/mkdir", { path: currentPath, name: name });
+    showToast(`Dossier "${name}" cree`, "ok");
+    hideMkdirInput();
+    // Refresh and navigate to new folder
+    FileBrowser._browse(resp.path);
+  } catch (e) {
+    let msg = "Erreur";
+    try { msg = JSON.parse(e.message).detail; } catch { msg = e.message; }
+    showToast(msg, "error");
+  }
+}
