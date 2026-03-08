@@ -99,15 +99,6 @@ function toggleKeyVisibility() {
   input.type = input.type === "password" ? "text" : "password";
 }
 
-function toggleAuthFields() {
-  const enabled = document.getElementById("auth-enabled").checked;
-  if (enabled) {
-    loadUserInfo();
-  } else {
-    document.getElementById("auth-user-info").classList.add("hidden");
-  }
-}
-
 function toggleWebhookFields() {
   const enabled = document.getElementById("webhook-enabled").checked;
   document.getElementById("webhook-fields").classList.toggle("hidden", !enabled);
@@ -192,7 +183,8 @@ async function createAdminFromSettings() {
     // Update page state
     document.getElementById("auth-create-admin").classList.add("hidden");
     document.getElementById("auth-enabled").checked = true;
-    loadUserInfo();
+    // Show account button now that admin exists
+    if (typeof initAccountButton === "function") initAccountButton();
   } catch (e) {
     let msg = "Erreur lors de la création du compte";
     try { msg = JSON.parse(e.message).detail; } catch {}
@@ -216,102 +208,6 @@ async function checkAdminExists() {
   } catch {
     const createSection = document.getElementById("auth-create-admin");
     if (createSection) createSection.classList.add("hidden");
-  }
-}
-
-// ---- Auth / User management ----
-
-async function loadUserInfo() {
-  try {
-    const info = await API.get("/api/auth/user-info");
-    const section = document.getElementById("auth-user-info");
-
-    if (info.username === "anonymous") {
-      section.classList.add("hidden");
-      return;
-    }
-
-    section.classList.remove("hidden");
-    document.getElementById("auth-current-user").textContent = info.username;
-
-    // OTP status
-    const badge = document.getElementById("otp-badge");
-    const badgeText = document.getElementById("otp-badge-text");
-    const setupSection = document.getElementById("otp-setup-section");
-    const disableSection = document.getElementById("otp-disable-section");
-    const qrSection = document.getElementById("otp-qr-section");
-
-    qrSection.classList.add("hidden");
-
-    if (info.otp_enabled) {
-      badge.className = "conn-badge ok";
-      badgeText.textContent = "Activée";
-      setupSection.classList.add("hidden");
-      disableSection.classList.remove("hidden");
-    } else {
-      badge.className = "conn-badge unknown";
-      badgeText.textContent = "Désactivée";
-      setupSection.classList.remove("hidden");
-      disableSection.classList.add("hidden");
-    }
-  } catch {
-    document.getElementById("auth-user-info").classList.add("hidden");
-  }
-}
-
-async function changePassword() {
-  const pw = document.getElementById("auth-new-password").value;
-  if (pw.length < 6) { showToast("Mot de passe : 6 caractères minimum", "error"); return; }
-  try {
-    await API.post("/api/auth/change-password", { username: "", password: pw });
-    showToast("Mot de passe mis à jour", "ok");
-    document.getElementById("auth-new-password").value = "";
-  } catch (e) {
-    showToast("Erreur : " + e.message, "error");
-  }
-}
-
-async function setupOTP() {
-  try {
-    const res = await API.post("/api/auth/setup-otp", {});
-    // Show QR code
-    document.getElementById("otp-qr-container").innerHTML =
-      `<img src="data:image/png;base64,${res.qr_code}" alt="QR Code" style="max-width:200px;border-radius:8px;border:2px solid var(--border)">`;
-    document.getElementById("otp-secret-display").textContent = res.secret;
-    document.getElementById("otp-qr-section").classList.remove("hidden");
-    document.getElementById("otp-setup-section").classList.add("hidden");
-  } catch (e) {
-    showToast("Erreur : " + e.message, "error");
-  }
-}
-
-async function verifyOTP() {
-  const code = document.getElementById("otp-verify-code").value.trim();
-  if (code.length !== 6) { showToast("Entrez un code à 6 chiffres", "error"); return; }
-  try {
-    await API.post("/api/auth/verify-otp", { code });
-    showToast("2FA activée avec succès !", "ok");
-    document.getElementById("otp-qr-section").classList.add("hidden");
-    loadUserInfo();
-  } catch (e) {
-    let msg = "Code invalide";
-    try { msg = JSON.parse(e.message).detail; } catch {}
-    showToast(msg, "error");
-  }
-}
-
-async function disableOTP() {
-  const code = document.getElementById("otp-disable-code").value.trim();
-  if (code.length !== 6) { showToast("Entrez un code à 6 chiffres", "error"); return; }
-  try {
-    await API.post("/api/auth/disable-otp", { code });
-    showToast("2FA désactivée", "ok");
-    document.getElementById("otp-disable-code").value = "";
-    loadUserInfo();
-  } catch (e) {
-    let msg = "Code invalide";
-    try { msg = JSON.parse(e.message).detail; } catch {}
-    showToast(msg, "error");
   }
 }
 
@@ -505,12 +401,11 @@ async function bootSettings() {
 
     setSimultaneous(cfg.simultaneous_downloads || 3);
 
-    if (cfg.auth_enabled) {
-      loadUserInfo();
-    }
-
     await checkAdminExists();
     await checkAllDebridStatus();
+
+    // Show account button if auth is enabled
+    if (typeof initAccountButton === "function") initAccountButton();
   } catch {
     showToast("Impossible de charger les paramètres", "error");
   }

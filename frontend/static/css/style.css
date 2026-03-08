@@ -1054,6 +1054,70 @@ tr:hover .btn-copy-path { opacity: 1; }
 }
 
 /* ================================================================
+   ACCOUNT BUTTON & MODAL
+================================================================ */
+
+.btn-account {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: var(--radius-full);
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text-2);
+  cursor: pointer;
+  transition: all var(--transition);
+}
+.btn-account:hover {
+  background: var(--surface-2);
+  color: var(--text);
+  border-color: var(--accent);
+}
+
+.acct-section {
+  margin-bottom: 20px;
+}
+.acct-section:last-child { margin-bottom: 0; }
+
+.acct-user-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.acct-avatar {
+  width: 40px;
+  height: 40px;
+  border-radius: var(--radius-full);
+  background: var(--accent-dim);
+  color: var(--accent);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+.acct-username {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text);
+}
+.acct-role {
+  font-size: 12px;
+  color: var(--text-3);
+}
+
+.acct-section-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-2);
+  margin-bottom: 10px;
+}
+
+/* ================================================================
    RESPONSIVE
 ================================================================ */
 

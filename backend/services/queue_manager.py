@@ -315,6 +315,7 @@ class QueueManager:
     async def add_downloads(self, urls: list, destination: str, package_id: str = None) -> list:
         now = datetime.utcnow().isoformat()
         ids = []
+        seen = set()
         async with aiosqlite.connect(str(DB_PATH)) as db:
             db.row_factory = aiosqlite.Row
             cursor = await db.execute("SELECT COALESCE(MAX(position), 0) FROM downloads")
@@ -323,8 +324,18 @@ class QueueManager:
 
             for url in urls:
                 url = url.strip()
-                if not url:
+                if not url or url in seen:
                     continue
+                seen.add(url)
+
+                # Skip if this URL is already pending or downloading
+                cursor = await db.execute(
+                    "SELECT id FROM downloads WHERE url = ? AND status IN ('pending', 'downloading', 'debrid', 'paused')",
+                    (url,),
+                )
+                if await cursor.fetchone():
+                    continue
+
                 dl_id = str(uuid.uuid4())
                 await db.execute(
                     """INSERT INTO downloads
