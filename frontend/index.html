@@ -6,7 +6,7 @@
   <title>Download Manager</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link rel="stylesheet" href="/static/css/style.css?v=8">
+  <link rel="stylesheet" href="/static/css/style.css?v=9">
   <script>
     (function() {
       var t = localStorage.getItem('dm_theme');
@@ -28,7 +28,7 @@
 
     <!-- Login form -->
     <div id="login-form">
-      <p class="login-sub">Connectez-vous pour acceder a l'interface</p>
+      <p class="login-sub">Connectez-vous pour accéder à l'interface</p>
       <div class="form-group">
         <input type="text" id="login-username" class="form-input" placeholder="Nom d'utilisateur" autocomplete="username">
       </div>
@@ -44,18 +44,18 @@
 
     <!-- Setup admin form (first time) -->
     <div id="setup-form" class="hidden">
-      <p class="login-sub">Creez votre compte administrateur</p>
+      <p class="login-sub">Créez votre compte administrateur</p>
       <div class="form-group">
         <input type="text" id="setup-username" class="form-input" placeholder="Nom d'utilisateur" autocomplete="username" value="admin">
       </div>
       <div class="form-group">
-        <input type="password" id="setup-password" class="form-input" placeholder="Mot de passe (min. 6 caracteres)" autocomplete="new-password">
+        <input type="password" id="setup-password" class="form-input" placeholder="Mot de passe (min. 6 caractères)" autocomplete="new-password">
       </div>
       <div class="form-group">
         <input type="password" id="setup-password-confirm" class="form-input" placeholder="Confirmer le mot de passe" autocomplete="new-password">
       </div>
       <div id="setup-error" class="error-msg hidden"></div>
-      <button class="btn btn-primary full-width" onclick="doSetupAdmin()">Creer le compte</button>
+      <button class="btn btn-primary full-width" onclick="doSetupAdmin()">Créer le compte</button>
     </div>
   </div>
 </div>
@@ -80,7 +80,7 @@
       </button>
       <div id="mkdir-input-wrap" class="mkdir-wrap hidden">
         <input type="text" id="mkdir-name" class="form-input form-input-sm" placeholder="Nom du dossier..." onkeydown="if(event.key==='Enter')createFolder()">
-        <button class="btn btn-primary btn-sm" onclick="createFolder()">Creer</button>
+        <button class="btn btn-primary btn-sm" onclick="createFolder()">Créer</button>
         <button class="btn btn-sm" onclick="hideMkdirInput()">Annuler</button>
       </div>
     </div>
@@ -90,11 +90,11 @@
     <div class="modal-footer">
       <div id="fb-current-path" class="selected-path-display">
         <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="opacity:.5;flex-shrink:0"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
-        <span id="fb-path-text">Naviguez et selectionnez un dossier</span>
+        <span id="fb-path-text">Naviguez et sélectionnez un dossier</span>
       </div>
       <div class="modal-actions">
         <button class="btn" onclick="closeFilerBrowser()">Annuler</button>
-        <button class="btn btn-primary" onclick="selectCurrentPath()">Selectionner ce dossier</button>
+        <button class="btn btn-primary" onclick="selectCurrentPath()">Sélectionner ce dossier</button>
       </div>
     </div>
   </div>
@@ -137,7 +137,7 @@
     </div>
     <div class="modal-footer" style="display:flex;justify-content:flex-end;gap:8px">
       <button class="btn" onclick="closePackageModal()">Annuler</button>
-      <button class="btn btn-primary" onclick="addPackage()">Creer le paquet</button>
+      <button class="btn btn-primary" onclick="addPackage()">Créer le paquet</button>
     </div>
   </div>
 </div>
@@ -158,11 +158,11 @@
       <nav class="header-nav">
         <a href="/" class="nav-tab active">
           <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-          Telechargements
+          Téléchargements
         </a>
         <a href="/settings-page" class="nav-tab">
           <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
-          Parametres
+          Paramètres
         </a>
       </nav>
 
@@ -172,14 +172,14 @@
       </div>
     </div>
     <div class="header-right">
-      <button class="theme-toggle" onclick="toggleTheme()" title="Basculer theme clair/sombre">
+      <button class="theme-toggle" onclick="toggleTheme()" title="Basculer thème clair/sombre">
         <svg class="icon-moon" xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
         <svg class="icon-sun" xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
       </button>
     </div>
   </header>
 
-  <!-- Ajout de telechargements -->
+  <!-- Ajout de téléchargements -->
   <section class="add-section">
     <div class="add-card">
       <div class="add-card-inner">
@@ -187,10 +187,10 @@
         <div class="textarea-header">
           <label class="textarea-label">
             <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
-            Liens a telecharger
+            Liens à télécharger
           </label>
           <div style="display:flex;gap:6px">
-            <button class="btn-paste" onclick="openPackageModal()" title="Creer un paquet de liens">
+            <button class="btn-paste" onclick="openPackageModal()" title="Créer un paquet de liens">
               <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16.5 9.4 7.55 4.24"/><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.29 7 12 12 20.71 7"/><line x1="12" y1="22" x2="12" y2="12"/></svg>
               Paquet
             </button>
@@ -204,7 +204,7 @@
         <textarea
           id="links-input"
           class="links-textarea"
-          placeholder="Collez vos liens ici, un par ligne...&#10;Compatible : liens directs, Up2Box, 1fichier, et tous les hebergeurs AllDebrid."
+          placeholder="Collez vos liens ici, un par ligne...&#10;Compatible : liens directs, Up2Box, 1fichier, et tous les hébergeurs AllDebrid."
           rows="4"
           spellcheck="false"
         ></textarea>
@@ -230,7 +230,7 @@
     </div>
   </section>
 
-  <!-- Barre de controle -->
+  <!-- Barre de contrôle -->
   <section class="controls-bar">
     <div class="controls-left">
       <button class="btn-ctrl play" onclick="bulkAction('resume_all')" title="Reprendre tout">
@@ -241,7 +241,7 @@
         <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>
         <span class="btn-ctrl-label">Pause</span>
       </button>
-      <button class="btn-ctrl clear" onclick="bulkAction('clear_completed')" title="Supprimer les termines">
+      <button class="btn-ctrl clear" onclick="bulkAction('clear_completed')" title="Supprimer les terminés">
         <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>
         <span class="btn-ctrl-label">Nettoyer</span>
       </button>
@@ -257,7 +257,7 @@
     <div id="packages-list"></div>
   </section>
 
-  <!-- Liste des telechargements -->
+  <!-- Liste des téléchargements -->
   <section class="table-wrap">
     <table class="dl-table">
       <thead>
@@ -277,7 +277,7 @@
             <div class="empty-icon">
               <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
             </div>
-            <div class="empty-title">Aucun telechargement en cours</div>
+            <div class="empty-title">Aucun téléchargement en cours</div>
             <div class="empty-sub">Collez des liens dans le champ ci-dessus pour commencer</div>
           </td>
         </tr>
@@ -312,9 +312,9 @@
 
 <div id="toast" class="toast hidden"></div>
 
-<script src="/static/js/theme.js?v=8"></script>
-<script src="/static/js/websocket.js?v=8"></script>
-<script src="/static/js/filebrowser.js?v=8"></script>
-<script src="/static/js/app.js?v=8"></script>
+<script src="/static/js/theme.js?v=9"></script>
+<script src="/static/js/websocket.js?v=9"></script>
+<script src="/static/js/filebrowser.js?v=9"></script>
+<script src="/static/js/app.js?v=9"></script>
 </body>
 </html>

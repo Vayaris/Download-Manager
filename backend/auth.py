@@ -38,6 +38,18 @@ async def get_current_user(
     if not config["auth"]["enabled"]:
         return {"username": "anonymous"}
 
+    # Failsafe: if auth is enabled but no users exist, auto-disable auth
+    import aiosqlite
+    from database import DB_PATH
+    async with aiosqlite.connect(str(DB_PATH)) as db:
+        cursor = await db.execute("SELECT COUNT(*) FROM users")
+        (count,) = await cursor.fetchone()
+    if count == 0:
+        from config import save_config
+        config["auth"]["enabled"] = False
+        save_config(config)
+        return {"username": "anonymous"}
+
     if not credentials:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
