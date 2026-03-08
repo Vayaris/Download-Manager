@@ -71,6 +71,9 @@
       </nav>
     </div>
     <div class="header-right">
+      <button id="account-btn" class="btn-account hidden" onclick="openAccountModal()" title="Mon compte">
+        <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+      </button>
       <button class="theme-toggle" onclick="toggleTheme()" title="Basculer thème clair/sombre">
         <svg class="icon-moon" xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
         <svg class="icon-sun" xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
@@ -216,62 +219,14 @@
       <div class="form-group toggle-group">
         <label class="form-label">Activer l'authentification</label>
         <label class="toggle">
-          <input type="checkbox" id="auth-enabled" onchange="toggleAuthFields()">
+          <input type="checkbox" id="auth-enabled">
           <span class="toggle-slider"></span>
         </label>
       </div>
       <p class="form-hint" style="margin-top:8px">
-        Un compte administrateur doit exister avant de pouvoir activer l'authentification.
+        Un compte administrateur doit exister avant de pouvoir activer l'authentification.<br>
+        La gestion du compte (mot de passe, 2FA) est accessible via l'icône utilisateur en haut à droite.
       </p>
-
-      <!-- User info (shown when auth is enabled and admin exists) -->
-      <div id="auth-user-info" class="hidden" style="margin-top:16px">
-        <div class="form-group">
-          <label class="form-label">Utilisateur connecté</label>
-          <div class="auth-user-badge">
-            <span id="auth-current-user">-</span>
-          </div>
-        </div>
-
-        <div class="form-group">
-          <label class="form-label">Changer le mot de passe</label>
-          <input type="password" id="auth-new-password" class="form-input" placeholder="Nouveau mot de passe (min. 6 caractères)" autocomplete="new-password">
-          <button class="btn" style="margin-top:8px" onclick="changePassword()">Mettre à jour</button>
-        </div>
-
-        <!-- 2FA Section -->
-        <div class="form-group" style="margin-top:16px;padding-top:16px;border-top:1px solid var(--border)">
-          <label class="form-label">Authentification à deux facteurs (2FA)</label>
-          <div id="otp-status">
-            <span class="conn-badge unknown" id="otp-badge">
-              <span class="b-dot"></span>
-              <span id="otp-badge-text">Chargement...</span>
-            </span>
-          </div>
-
-          <div id="otp-setup-section" class="hidden" style="margin-top:12px">
-            <button class="btn btn-primary" onclick="setupOTP()">Activer la 2FA</button>
-          </div>
-
-          <div id="otp-qr-section" class="hidden" style="margin-top:12px">
-            <p class="form-hint">Scannez ce QR code avec votre application d'authentification (Google Authenticator, Authy, etc.)</p>
-            <div id="otp-qr-container" style="margin:16px 0;text-align:center"></div>
-            <p class="form-hint">Ou entrez cette clé manuellement : <code id="otp-secret-display" class="otp-secret"></code></p>
-            <div class="form-group" style="margin-top:12px">
-              <input type="text" id="otp-verify-code" class="form-input" placeholder="Code OTP à 6 chiffres" maxlength="6" inputmode="numeric">
-              <button class="btn btn-primary" style="margin-top:8px" onclick="verifyOTP()">Vérifier et activer</button>
-            </div>
-          </div>
-
-          <div id="otp-disable-section" class="hidden" style="margin-top:12px">
-            <p class="form-hint">La 2FA est activée. Pour la désactiver, entrez votre code OTP actuel.</p>
-            <div class="form-group" style="margin-top:8px">
-              <input type="text" id="otp-disable-code" class="form-input" placeholder="Code OTP à 6 chiffres" maxlength="6" inputmode="numeric">
-              <button class="btn btn-danger" style="margin-top:8px" onclick="disableOTP()">Désactiver la 2FA</button>
-            </div>
-          </div>
-        </div>
-      </div>
     </div>
 
     <!-- Sauvegarder -->
@@ -345,7 +300,8 @@
 </div>
 
 <div id="toast" class="toast hidden"></div>
-<script src="/static/js/theme.js?v=10"></script>
-<script src="/static/js/settings.js?v=10"></script>
+<script src="/static/js/theme.js?v=12"></script>
+<script src="/static/js/settings.js?v=12"></script>
+<script src="/static/js/account.js?v=12"></script>
 </body>
 </html>

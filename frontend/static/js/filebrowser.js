@@ -64,23 +64,43 @@ const FileBrowser = (() => {
   }
 
   return {
-    open(callback) {
+    open(callback, startPath) {
       onSelectCallback = callback;
-      document.getElementById("filebrowser-modal").classList.remove("hidden");
+      const modal = document.getElementById("filebrowser-modal");
+      modal.classList.remove("hidden");
       hideMkdirInput();
-      browse("/");
+      // Determine starting path
+      const initial = startPath || _getDefaultDest() || "/";
+      browse(initial);
     },
     close() {
-      document.getElementById("filebrowser-modal").classList.add("hidden");
+      const modal = document.getElementById("filebrowser-modal");
+      modal.classList.add("hidden");
+      // Reset z-index
+      modal.style.zIndex = "";
     },
     confirm() {
       if (onSelectCallback) onSelectCallback(selectedPath);
       this.close();
     },
+    // Elevate z-index so file browser appears above other modals (e.g. package modal)
+    elevate() {
+      document.getElementById("filebrowser-modal").style.zIndex = "2000";
+    },
     _browse: browse,
     getCurrentPath() { return currentPath; },
   };
 })();
+
+function _getDefaultDest() {
+  // Try to get default destination from existing inputs
+  const destInput = document.getElementById("dest-path");
+  if (destInput && destInput.value.trim()) return destInput.value.trim();
+  // For settings page
+  const defaultDest = document.getElementById("default-dest");
+  if (defaultDest && defaultDest.value.trim()) return defaultDest.value.trim();
+  return "";
+}
 
 function openFileBrowser() {
   FileBrowser.open((path) => {
