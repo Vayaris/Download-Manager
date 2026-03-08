@@ -41,8 +41,20 @@ async def update_settings(body: SettingsUpdate, _=Depends(get_current_user)):
     if body.default_destination is not None:
         cfg["downloads"]["default_destination"] = body.default_destination
 
-    # Auth settings - only toggle, user management is separate
+    # Auth settings — block enabling if no admin account exists
     if body.auth_enabled is not None:
+        if body.auth_enabled:
+            import aiosqlite
+            from database import DB_PATH
+            async with aiosqlite.connect(str(DB_PATH)) as db:
+                cursor = await db.execute("SELECT COUNT(*) FROM users")
+                (count,) = await cursor.fetchone()
+            if count == 0:
+                from fastapi import HTTPException
+                raise HTTPException(
+                    status_code=400,
+                    detail="Créez d'abord un compte administrateur avant d'activer l'authentification."
+                )
         cfg["auth"]["enabled"] = body.auth_enabled
 
     # Webhooks

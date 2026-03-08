@@ -69,13 +69,11 @@ async def login(body: LoginRequest):
 async def auth_status():
     cfg = get_config()
 
-    # Check if admin account exists
-    admin_exists = False
-    if cfg["auth"]["enabled"]:
-        async with aiosqlite.connect(str(DB_PATH)) as db:
-            cursor = await db.execute("SELECT COUNT(*) FROM users")
-            (count,) = await cursor.fetchone()
-            admin_exists = count > 0
+    # Check if admin account exists (always, regardless of auth state)
+    async with aiosqlite.connect(str(DB_PATH)) as db:
+        cursor = await db.execute("SELECT COUNT(*) FROM users")
+        (count,) = await cursor.fetchone()
+        admin_exists = count > 0
 
     return {
         "auth_enabled": cfg["auth"]["enabled"],
@@ -116,7 +114,7 @@ async def setup_admin(body: SetupAdminRequest):
     save_config(cfg)
 
     token = create_access_token({"sub": body.username.strip(), "otp_verified": True})
-    return {"status": "created", "token": token}
+    return {"status": "created", "token": token, "access_token": token}
 
 
 @router.post("/change-password")

@@ -42,15 +42,15 @@ async function testAllDebrid() {
   if (key) {
     try { await API.put("/api/settings/", { alldebrid_api_key: key }); } catch {}
   }
-  setAllDebridBadge("checking", "Verification...");
+  setAllDebridBadge("checking", "Vérification...");
   try {
     const res = await API.post("/api/settings/test-alldebrid", {});
     if (res.valid) {
-      setAllDebridBadge("ok", "Connecte");
-      showToast("Cle AllDebrid valide", "ok");
+      setAllDebridBadge("ok", "Connecté");
+      showToast("Clé AllDebrid valide", "ok");
     } else {
-      setAllDebridBadge("error", "Cle invalide");
-      showToast("Cle AllDebrid invalide", "error");
+      setAllDebridBadge("error", "Clé invalide");
+      showToast("Clé AllDebrid invalide", "error");
     }
   } catch (e) {
     setAllDebridBadge("error", "Erreur");
@@ -60,11 +60,11 @@ async function testAllDebrid() {
 
 async function checkAllDebridStatus() {
   const key = document.getElementById("alldebrid-key").value.trim();
-  if (!key) { setAllDebridBadge("unknown", "Non configure"); return; }
-  setAllDebridBadge("checking", "Verification...");
+  if (!key) { setAllDebridBadge("unknown", "Non configuré"); return; }
+  setAllDebridBadge("checking", "Vérification...");
   try {
     const res = await API.post("/api/settings/test-alldebrid", {});
-    setAllDebridBadge(res.valid ? "ok" : "error", res.valid ? "Connecte" : "Cle invalide");
+    setAllDebridBadge(res.valid ? "ok" : "error", res.valid ? "Connecté" : "Clé invalide");
   } catch {
     setAllDebridBadge("error", "Erreur de connexion");
   }
@@ -75,7 +75,7 @@ async function saveAllDebrid() {
   const enabled = document.getElementById("alldebrid-enabled").checked;
   try {
     await API.put("/api/settings/", { alldebrid_api_key: key, alldebrid_enabled: enabled });
-    showToast("AllDebrid sauvegarde", "ok");
+    showToast("AllDebrid sauvegardé", "ok");
     await checkAllDebridStatus();
   } catch (e) {
     showToast("Erreur : " + e.message, "error");
@@ -118,9 +118,9 @@ async function testWebhook() {
     await saveWebhookSettings();
     const res = await API.post("/api/settings/test-webhook", {});
     if (res.success) {
-      showToast("Webhook envoye avec succes !", "ok");
+      showToast("Webhook envoyé avec succès !", "ok");
     } else {
-      showToast("Echec : " + res.message, "error");
+      showToast("Échec : " + res.message, "error");
     }
   } catch (e) {
     showToast("Erreur : " + e.message, "error");
@@ -139,6 +139,53 @@ async function saveWebhookSettings() {
     webhook_format: document.getElementById("webhook-format").value,
     webhook_events: events,
   });
+}
+
+// ---- Create admin from settings page ----
+
+async function createAdminFromSettings() {
+  const username = document.getElementById("admin-username").value.trim();
+  const password = document.getElementById("admin-password").value;
+  const confirm = document.getElementById("admin-password-confirm").value;
+
+  if (!username) { showToast("Nom d'utilisateur requis", "error"); return; }
+  if (password.length < 6) { showToast("Mot de passe : 6 caractères minimum", "error"); return; }
+  if (password !== confirm) { showToast("Les mots de passe ne correspondent pas", "error"); return; }
+
+  try {
+    const res = await API.post("/api/auth/setup-admin", { username, password });
+    // Store the token
+    API.token = res.access_token;
+    localStorage.setItem("dm_token", res.access_token);
+    showToast("Compte administrateur créé avec succès !", "ok");
+    // Hide the create admin section, show user info
+    document.getElementById("auth-create-admin").classList.add("hidden");
+    loadUserInfo();
+  } catch (e) {
+    let msg = "Erreur lors de la création du compte";
+    try { msg = JSON.parse(e.message).detail; } catch {}
+    showToast(msg, "error");
+  }
+}
+
+// ---- Check if admin exists (for showing/hiding create admin section) ----
+
+async function checkAdminExists() {
+  try {
+    const res = await API.get("/api/auth/status");
+    const createSection = document.getElementById("auth-create-admin");
+    if (createSection) {
+      if (res.admin_exists) {
+        createSection.classList.add("hidden");
+      } else {
+        createSection.classList.remove("hidden");
+      }
+    }
+  } catch {
+    // If endpoint doesn't exist, hide the section
+    const createSection = document.getElementById("auth-create-admin");
+    if (createSection) createSection.classList.add("hidden");
+  }
 }
 
 // ---- Auth / User management ----
@@ -167,12 +214,12 @@ async function loadUserInfo() {
 
     if (info.otp_enabled) {
       badge.className = "conn-badge ok";
-      badgeText.textContent = "Active";
+      badgeText.textContent = "Activée";
       setupSection.classList.add("hidden");
       disableSection.classList.remove("hidden");
     } else {
       badge.className = "conn-badge unknown";
-      badgeText.textContent = "Desactive";
+      badgeText.textContent = "Désactivée";
       setupSection.classList.remove("hidden");
       disableSection.classList.add("hidden");
     }
@@ -183,10 +230,10 @@ async function loadUserInfo() {
 
 async function changePassword() {
   const pw = document.getElementById("auth-new-password").value;
-  if (pw.length < 6) { showToast("Mot de passe : 6 caracteres minimum", "error"); return; }
+  if (pw.length < 6) { showToast("Mot de passe : 6 caractères minimum", "error"); return; }
   try {
     await API.post("/api/auth/change-password", { username: "", password: pw });
-    showToast("Mot de passe mis a jour", "ok");
+    showToast("Mot de passe mis à jour", "ok");
     document.getElementById("auth-new-password").value = "";
   } catch (e) {
     showToast("Erreur : " + e.message, "error");
@@ -209,10 +256,10 @@ async function setupOTP() {
 
 async function verifyOTP() {
   const code = document.getElementById("otp-verify-code").value.trim();
-  if (code.length !== 6) { showToast("Entrez un code a 6 chiffres", "error"); return; }
+  if (code.length !== 6) { showToast("Entrez un code à 6 chiffres", "error"); return; }
   try {
     await API.post("/api/auth/verify-otp", { code });
-    showToast("2FA activee avec succes !", "ok");
+    showToast("2FA activée avec succès !", "ok");
     document.getElementById("otp-qr-section").classList.add("hidden");
     loadUserInfo();
   } catch (e) {
@@ -224,10 +271,10 @@ async function verifyOTP() {
 
 async function disableOTP() {
   const code = document.getElementById("otp-disable-code").value.trim();
-  if (code.length !== 6) { showToast("Entrez un code a 6 chiffres", "error"); return; }
+  if (code.length !== 6) { showToast("Entrez un code à 6 chiffres", "error"); return; }
   try {
     await API.post("/api/auth/disable-otp", { code });
-    showToast("2FA desactivee", "ok");
+    showToast("2FA désactivée", "ok");
     document.getElementById("otp-disable-code").value = "";
     loadUserInfo();
   } catch (e) {
@@ -266,13 +313,15 @@ async function saveSettings() {
 
   try {
     await API.put("/api/settings/", payload);
-    resultEl.textContent = "Sauvegarde";
+    resultEl.textContent = "Sauvegardé";
     resultEl.className = "inline-result ok";
-    showToast("Parametres sauvegardes", "ok");
+    showToast("Paramètres sauvegardés", "ok");
   } catch (e) {
     resultEl.textContent = "Erreur";
     resultEl.className = "inline-result error";
-    showToast("Erreur : " + e.message, "error");
+    let msg = e.message;
+    try { msg = JSON.parse(e.message).detail; } catch {}
+    showToast("Erreur : " + msg, "error");
   }
 }
 
@@ -315,8 +364,11 @@ function showToast(msg, type = "ok") {
       loadUserInfo();
     }
 
+    // Check if admin account exists
+    await checkAdminExists();
+
     await checkAllDebridStatus();
   } catch {
-    showToast("Impossible de charger les parametres", "error");
+    showToast("Impossible de charger les paramètres", "error");
   }
 })();
