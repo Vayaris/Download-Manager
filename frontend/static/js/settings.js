@@ -141,30 +141,59 @@ async function saveWebhookSettings() {
   });
 }
 
-// ---- Create admin from settings page ----
+// ---- Admin modal ----
+
+function openAdminModal() {
+  document.getElementById("admin-modal").classList.remove("hidden");
+  document.getElementById("admin-modal-form").classList.remove("hidden");
+  document.getElementById("admin-modal-success").classList.add("hidden");
+  document.getElementById("admin-modal-error").classList.add("hidden");
+  document.getElementById("admin-username").value = "admin";
+  document.getElementById("admin-password").value = "";
+  document.getElementById("admin-password-confirm").value = "";
+  document.getElementById("admin-username").focus();
+}
+
+function closeAdminModal() {
+  document.getElementById("admin-modal").classList.add("hidden");
+}
+
+function showAdminError(msg) {
+  const el = document.getElementById("admin-modal-error");
+  el.textContent = msg;
+  el.classList.remove("hidden");
+}
 
 async function createAdminFromSettings() {
   const username = document.getElementById("admin-username").value.trim();
   const password = document.getElementById("admin-password").value;
   const confirm = document.getElementById("admin-password-confirm").value;
 
-  if (!username) { showToast("Nom d'utilisateur requis", "error"); return; }
-  if (password.length < 6) { showToast("Mot de passe : 6 caractères minimum", "error"); return; }
-  if (password !== confirm) { showToast("Les mots de passe ne correspondent pas", "error"); return; }
+  document.getElementById("admin-modal-error").classList.add("hidden");
+
+  if (!username) { showAdminError("Nom d'utilisateur requis"); return; }
+  if (password.length < 6) { showAdminError("Le mot de passe doit faire au moins 6 caractères"); return; }
+  if (password !== confirm) { showAdminError("Les mots de passe ne correspondent pas"); return; }
 
   try {
     const res = await API.post("/api/auth/setup-admin", { username, password });
     // Store the token
     API.token = res.access_token;
     localStorage.setItem("dm_token", res.access_token);
-    showToast("Compte administrateur créé avec succès !", "ok");
-    // Hide the create admin section, show user info
+
+    // Show success step
+    document.getElementById("admin-modal-form").classList.add("hidden");
+    document.getElementById("admin-created-name").textContent = username;
+    document.getElementById("admin-modal-success").classList.remove("hidden");
+
+    // Update page state
     document.getElementById("auth-create-admin").classList.add("hidden");
+    document.getElementById("auth-enabled").checked = true;
     loadUserInfo();
   } catch (e) {
     let msg = "Erreur lors de la création du compte";
     try { msg = JSON.parse(e.message).detail; } catch {}
-    showToast(msg, "error");
+    showAdminError(msg);
   }
 }
 
@@ -182,7 +211,6 @@ async function checkAdminExists() {
       }
     }
   } catch {
-    // If endpoint doesn't exist, hide the section
     const createSection = document.getElementById("auth-create-admin");
     if (createSection) createSection.classList.add("hidden");
   }
