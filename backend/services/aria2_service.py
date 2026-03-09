@@ -34,10 +34,14 @@ class Aria2Service:
                 raise Exception(f"aria2 RPC error: {data['error'].get('message', data['error'])}")
             return data.get("result")
 
-    async def add_uri(self, url: str, destination: str, filename: Optional[str] = None) -> str:
+    async def add_uri(self, url: str, destination: str, filename: Optional[str] = None, split: int = 1) -> str:
         options: Dict[str, str] = {"dir": destination}
         if filename:
             options["out"] = filename
+        if split > 1:
+            options["split"] = str(split)
+            options["max-connection-per-server"] = str(split)
+            options["min-split-size"] = "1M"
         return await self._call("aria2.addUri", [[url], options])
 
     async def pause(self, gid: str) -> str:

@@ -20,7 +20,9 @@ DEFAULT_CONFIG = {
         "allowed_paths": [
             "/mnt/media",
             "/opt/download-manager/downloads"
-        ]
+        ],
+        "download_segments": 1,
+        "speed_limit": 0
     },
     "auth": {
         "enabled": False,
