@@ -172,7 +172,7 @@ html { overflow-y: scroll; }
   padding: 0 28px;
   transition: background .3s var(--ease);
 }
-@media (max-width: 768px) { .header { margin: 0 -16px 20px; padding: 0 16px; } }
+/* header mobile overrides are in the main 768px media query block below */
 
 .header-left {
   display: flex;
@@ -1190,6 +1190,18 @@ tr:hover .btn-copy-path { opacity: 1; }
 @media (max-width: 768px) {
   .header-nav { display: none; }
   .mobile-nav { display: flex; }
+
+  /* Minimal header on mobile: small bar, no logo text, just icons */
+  .header {
+    height: 44px; min-height: 44px;
+    margin: 0 -12px 12px; padding: 0 12px;
+    border-bottom: none; background: transparent; backdrop-filter: none;
+    -webkit-backdrop-filter: none; position: relative;
+  }
+  .logo-icon { width: 30px; height: 30px; border-radius: 8px; }
+  .logo-icon svg { width: 14px; height: 14px; }
+  .logo-text { display: none; }
+
   .add-footer { grid-template-columns: 1fr; }
   .btn-add-links { width: 100%; justify-content: center; }
   .settings-card { padding: 16px; }
@@ -1311,13 +1323,11 @@ tr:hover .btn-copy-path { opacity: 1; }
   .empty-sub { font-size: 11px; }
 }
 @media (max-width: 480px) {
-  .logo-text { display: none; }
   .engine-badge span:not(.status-dot) { display: none; }
   .engine-badge { padding: 5px 8px; }
   .btn-ctrl-label { display: none; }
   .btn-ctrl { padding: 6px 8px; font-size: 11px; }
-  .app { padding: 0 10px 80px; padding-top: 56px; }
-  .header { padding: 0 14px; min-height: 48px; }
+  .app { padding: 0 10px 80px; }
   .add-card { padding: 10px; }
   .links-textarea { font-size: 12px; rows: 2; }
   .preset-guide { font-size: 11px; }
