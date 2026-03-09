@@ -1156,6 +1156,30 @@ tr:hover .btn-copy-path { opacity: 1; }
 }
 
 /* ================================================================
+   MOBILE BOTTOM NAV
+================================================================ */
+
+.mobile-nav {
+  display: none;
+  position: fixed; bottom: 0; left: 0; right: 0; z-index: 900;
+  background: var(--bg-elevated); border-top: 1px solid var(--border);
+  justify-content: space-around; align-items: center;
+  padding: 6px 0; padding-bottom: env(safe-area-inset-bottom, 6px);
+  box-shadow: 0 -2px 8px rgba(0,0,0,.08);
+}
+.mobile-nav a, .mobile-nav button {
+  display: flex; flex-direction: column; align-items: center; gap: 3px;
+  font-size: 10px; font-weight: 600; color: var(--text-2);
+  text-decoration: none; padding: 8px 16px; border-radius: var(--radius);
+  transition: color var(--transition); background: none; border: none; cursor: pointer;
+}
+.mobile-nav svg { width: 20px; height: 20px; }
+.mobile-nav a.active { color: var(--accent-text); }
+.mobile-nav a:hover, .mobile-nav button:hover { color: var(--text); }
+.mobile-nav .install-btn { color: var(--accent-text); }
+.mobile-nav .install-btn.hidden { display: none; }
+
+/* ================================================================
    RESPONSIVE
 ================================================================ */
 
@@ -1176,7 +1200,7 @@ tr:hover .btn-copy-path { opacity: 1; }
   .controls-left { flex-wrap: wrap; gap: 4px; }
   .stats-chips { flex-wrap: wrap; }
   .login-box { padding: 24px 16px; }
-  .app { padding: 0 8px 70px; }
+  .app { padding: 0 12px 80px; }
 
   /* ---- Mobile card layout for downloads ---- */
   .dl-table { table-layout: auto; }
@@ -1292,8 +1316,8 @@ tr:hover .btn-copy-path { opacity: 1; }
   .engine-badge { padding: 5px 8px; }
   .btn-ctrl-label { display: none; }
   .btn-ctrl { padding: 6px 8px; font-size: 11px; }
-  .app { padding: 0 6px 70px; padding-top: 56px; }
-  .header { padding: 0 8px; min-height: 48px; }
+  .app { padding: 0 10px 80px; padding-top: 56px; }
+  .header { padding: 0 14px; min-height: 48px; }
   .add-card { padding: 10px; }
   .links-textarea { font-size: 12px; rows: 2; }
   .preset-guide { font-size: 11px; }
@@ -1332,25 +1356,7 @@ tr:hover .btn-copy-path { opacity: 1; }
 
 :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
-/* Mobile bottom nav */
-.mobile-nav {
-  display: none;
-  position: fixed; bottom: 0; left: 0; right: 0; z-index: 900;
-  background: var(--bg-elevated); border-top: 1px solid var(--border);
-  justify-content: space-around; align-items: center;
-  padding: 4px 0; padding-bottom: env(safe-area-inset-bottom, 4px);
-  box-shadow: 0 -1px 6px rgba(0,0,0,.08);
-}
-.mobile-nav a, .mobile-nav button {
-  display: flex; flex-direction: column; align-items: center; gap: 2px;
-  font-size: 10px; font-weight: 600; color: var(--text-2);
-  text-decoration: none; padding: 6px 16px; border-radius: var(--radius);
-  transition: color var(--transition); background: none; border: none; cursor: pointer;
-}
-.mobile-nav a.active { color: var(--accent-text); }
-.mobile-nav a:hover, .mobile-nav button:hover { color: var(--text); }
-.mobile-nav .install-btn { color: var(--accent-text); }
-.mobile-nav .install-btn.hidden { display: none; }
+/* Mobile bottom nav — styles only, display controlled via media query above */
 
 /* ================================================================
    PACKAGES
