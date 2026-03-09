@@ -550,16 +550,23 @@ async function checkAuth() {
     // No admin exists — force setup
     if (!status.admin_exists) {
       showSetupForm();
-      return;
+      return false;
     }
 
     // Admin exists — require valid token
     const token = localStorage.getItem("dm_token");
-    if (!token) { showLogin(); return; }
+    if (!token) { showLogin(); return false; }
     API.token = token;
-    try { await API.get("/api/settings/"); }
-    catch { showLogin(); }
-  } catch { /* server unreachable */ }
+    try {
+      await API.get("/api/settings/");
+      return true;
+    } catch {
+      showLogin();
+      return false;
+    }
+  } catch {
+    return true; // server unreachable, try anyway
+  }
 }
 
 function showLogin() {
@@ -622,7 +629,7 @@ async function doLogin() {
     API.token = data.token;
     document.getElementById("login-modal").classList.add("hidden");
     errEl.classList.add("hidden");
-    loadInitial();
+    startApp();
   } catch {
     errEl.textContent = "Erreur de connexion au serveur";
     errEl.classList.remove("hidden");
@@ -664,7 +671,7 @@ async function doOtpVerify() {
     localStorage.setItem("dm_token", data.token);
     API.token = data.token;
     document.getElementById("login-modal").classList.add("hidden");
-    loadInitial();
+    startApp();
   } catch {
     errEl.textContent = "Erreur de connexion au serveur";
     errEl.classList.remove("hidden");
@@ -705,7 +712,7 @@ async function doSetupAdmin() {
     API.token = data.token;
     document.getElementById("login-modal").classList.add("hidden");
     showToast("Compte admin créé avec succès !", "ok");
-    loadInitial();
+    startApp();
   } catch {
     errEl.textContent = "Erreur de connexion";
     errEl.classList.remove("hidden");
@@ -766,11 +773,14 @@ async function loadInitial() {
   loadHistory();
 }
 
-// ---- Boot ----
+// ---- Start app after auth ----
 
-(async () => {
-  await checkAuth();
-  await loadInitial();
+let _appStarted = false;
+function startApp() {
+  if (_appStarted) return;
+  _appStarted = true;
+
+  loadInitial();
 
   WS.on("downloads_update", (data, msg) => {
     renderDownloads(data);
@@ -781,6 +791,12 @@ async function loadInitial() {
   });
   WS.init();
 
-  // Show account button if auth is enabled
   if (typeof initAccountButton === "function") initAccountButton();
+}
+
+// ---- Boot ----
+
+(async () => {
+  const authed = await checkAuth();
+  if (authed) startApp();
 })();
