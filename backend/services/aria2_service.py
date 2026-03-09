@@ -26,7 +26,7 @@ class Aria2Service:
             "method": method,
             "params": [f"token:{self._get_secret()}"] + params,
         }
-        async with httpx.AsyncClient(timeout=10.0) as client:
+        async with httpx.AsyncClient(timeout=30.0) as client:
             resp = await client.post(self._get_url(), json=payload)
             resp.raise_for_status()
             data = resp.json()
