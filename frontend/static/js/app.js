@@ -1,5 +1,5 @@
 // ============================================================
-//  Download Manager — Main Application v4
+//  Download Manager — Main Application v5
 // ============================================================
 
 // ---- SVG Icons ----
@@ -17,7 +17,13 @@ const ICONS = {
   retry: `<svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>`,
 };
 
+// ---- Auth state ----
+
+let _appStarted = false;
+
 // ---- API helper ----
+// IMPORTANT: No showLogin() in API methods. Auth is handled exclusively
+// by checkAuth() at boot and by explicit user actions.
 
 const API = {
   token: localStorage.getItem("dm_token") || "",
@@ -30,28 +36,40 @@ const API = {
 
   async get(url) {
     const r = await fetch(url, { headers: this._headers() });
-    if (r.status === 401) { showLogin(); throw new Error("Unauthorized"); }
+    if (r.status === 401) {
+      if (_appStarted) { _appStarted = false; showLogin(); }
+      throw new Error("Unauthorized");
+    }
     if (!r.ok) throw new Error(await r.text());
     return r.json();
   },
 
   async post(url, body) {
     const r = await fetch(url, { method: "POST", headers: this._headers(), body: JSON.stringify(body) });
-    if (r.status === 401) { showLogin(); throw new Error("Unauthorized"); }
+    if (r.status === 401) {
+      if (_appStarted) { _appStarted = false; showLogin(); }
+      throw new Error("Unauthorized");
+    }
     if (!r.ok) throw new Error(await r.text());
     return r.json();
   },
 
   async put(url, body) {
     const r = await fetch(url, { method: "PUT", headers: this._headers(), body: JSON.stringify(body) });
-    if (r.status === 401) { showLogin(); throw new Error("Unauthorized"); }
+    if (r.status === 401) {
+      if (_appStarted) { _appStarted = false; showLogin(); }
+      throw new Error("Unauthorized");
+    }
     if (!r.ok) throw new Error(await r.text());
     return r.json();
   },
 
   async del(url) {
     const r = await fetch(url, { method: "DELETE", headers: this._headers() });
-    if (r.status === 401) { showLogin(); throw new Error("Unauthorized"); }
+    if (r.status === 401) {
+      if (_appStarted) { _appStarted = false; showLogin(); }
+      throw new Error("Unauthorized");
+    }
     if (!r.ok) throw new Error(await r.text());
     return r.json();
   },
@@ -541,42 +559,50 @@ async function bulkAction(action) {
   catch (e) { showToast("Erreur : " + e.message, "error"); }
 }
 
-// ---- Auth ----
+// ============================================================
+//  Auth — clean state machine
+//  States: boot → checkAuth → [showLogin | showSetup | startApp]
+//  No API call is made until auth is fully complete.
+// ============================================================
 
 async function checkAuth() {
   try {
-    const status = await fetch("/api/auth/status").then(r => r.json());
+    const resp = await fetch("/api/auth/status");
+    const status = await resp.json();
 
-    // No admin exists — force setup
     if (!status.admin_exists) {
       showSetupForm();
-      return false;
+      return;
     }
 
-    // Admin exists — require valid token
     const token = localStorage.getItem("dm_token");
-    if (!token) { showLogin(); return false; }
-    API.token = token;
-    try {
-      await API.get("/api/settings/");
-      return true;
-    } catch {
+    if (!token) {
       showLogin();
-      return false;
+      return;
     }
+
+    // Validate token with a raw fetch (not API.get — avoids side effects)
+    API.token = token;
+    const check = await fetch("/api/settings/", {
+      headers: { "Authorization": `Bearer ${token}` },
+    });
+    if (check.status === 401) {
+      localStorage.removeItem("dm_token");
+      API.token = "";
+      showLogin();
+      return;
+    }
+
+    // Token is valid — start the app
+    startApp();
   } catch {
-    return true; // server unreachable, try anyway
+    // Server unreachable — start anyway, errors will show naturally
+    startApp();
   }
 }
 
 function showLogin() {
   const modal = document.getElementById("login-modal");
-  // Don't reset if OTP or setup form is already showing
-  if (!modal.classList.contains("hidden") &&
-      (!document.getElementById("otp-form").classList.contains("hidden") ||
-       !document.getElementById("setup-form").classList.contains("hidden"))) {
-    return;
-  }
   modal.classList.remove("hidden");
   document.getElementById("login-form").classList.remove("hidden");
   document.getElementById("otp-form").classList.add("hidden");
@@ -587,6 +613,7 @@ function showSetupForm() {
   const modal = document.getElementById("login-modal");
   modal.classList.remove("hidden");
   document.getElementById("login-form").classList.add("hidden");
+  document.getElementById("otp-form").classList.add("hidden");
   document.getElementById("setup-form").classList.remove("hidden");
 }
 
@@ -615,7 +642,6 @@ async function doLogin() {
     const data = await resp.json();
 
     if (data.otp_required) {
-      // Save credentials and show OTP step
       _pendingLogin = { username, password };
       document.getElementById("login-form").classList.add("hidden");
       document.getElementById("otp-form").classList.remove("hidden");
@@ -625,11 +651,7 @@ async function doLogin() {
       return;
     }
 
-    localStorage.setItem("dm_token", data.token);
-    API.token = data.token;
-    document.getElementById("login-modal").classList.add("hidden");
-    errEl.classList.add("hidden");
-    startApp();
+    loginSuccess(data.token);
   } catch {
     errEl.textContent = "Erreur de connexion au serveur";
     errEl.classList.remove("hidden");
@@ -668,10 +690,7 @@ async function doOtpVerify() {
 
     const data = await resp.json();
     _pendingLogin = {};
-    localStorage.setItem("dm_token", data.token);
-    API.token = data.token;
-    document.getElementById("login-modal").classList.add("hidden");
-    startApp();
+    loginSuccess(data.token);
   } catch {
     errEl.textContent = "Erreur de connexion au serveur";
     errEl.classList.remove("hidden");
@@ -708,15 +727,22 @@ async function doSetupAdmin() {
       return;
     }
     const data = await resp.json();
-    localStorage.setItem("dm_token", data.token);
-    API.token = data.token;
-    document.getElementById("login-modal").classList.add("hidden");
     showToast("Compte admin créé avec succès !", "ok");
-    startApp();
+    loginSuccess(data.token);
   } catch {
     errEl.textContent = "Erreur de connexion";
     errEl.classList.remove("hidden");
   }
+}
+
+// ---- Single entry point after successful auth ----
+
+function loginSuccess(token) {
+  localStorage.setItem("dm_token", token);
+  API.token = token;
+  document.getElementById("login-modal").classList.add("hidden");
+  document.getElementById("login-error").classList.add("hidden");
+  startApp();
 }
 
 document.addEventListener("keydown", (e) => {
@@ -767,15 +793,14 @@ async function loadInitial() {
       document.getElementById("dest-label").textContent = cfg.default_destination;
       document.getElementById("dest-selector").classList.add("selected");
     }
-  } catch { /* auth handled elsewhere */ }
+  } catch {}
 
   loadPackages();
   loadHistory();
 }
 
-// ---- Start app after auth ----
+// ---- Start app (called ONLY after auth is confirmed) ----
 
-let _appStarted = false;
 function startApp() {
   if (_appStarted) return;
   _appStarted = true;
@@ -796,7 +821,4 @@ function startApp() {
 
 // ---- Boot ----
 
-(async () => {
-  const authed = await checkAuth();
-  if (authed) startApp();
-})();
+checkAuth();
