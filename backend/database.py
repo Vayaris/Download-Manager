@@ -67,6 +67,23 @@ async def init_db():
             )
         """)
 
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS login_attempts (
+                id         INTEGER PRIMARY KEY AUTOINCREMENT,
+                ip         TEXT NOT NULL,
+                attempted_at TEXT NOT NULL
+            )
+        """)
+
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS blocked_ips (
+                ip          TEXT PRIMARY KEY,
+                blocked_at  TEXT NOT NULL,
+                expires_at  TEXT NOT NULL,
+                reason      TEXT
+            )
+        """)
+
         # Migrations for existing databases
         columns = [row[1] for row in await (await db.execute("PRAGMA table_info(downloads)")).fetchall()]
         if "retry_count" not in columns:

@@ -1,10 +1,10 @@
 import uuid
 import io
 import base64
-from datetime import datetime
+from datetime import datetime, timedelta
 
 import aiosqlite
-from fastapi import APIRouter, HTTPException, Depends
+from fastapi import APIRouter, HTTPException, Depends, Request
 
 from models import (
     LoginRequest, LoginResponse, SetupAdminRequest,
@@ -15,9 +15,88 @@ from database import DB_PATH
 
 router = APIRouter()
 
+MAX_ATTEMPTS = 5
+ATTEMPT_WINDOW_MINUTES = 15
+BLOCK_DURATION_HOURS = 4
+
+
+def _get_client_ip(request: Request) -> str:
+    """Get real client IP, respecting reverse proxy headers."""
+    forwarded = request.headers.get("x-forwarded-for")
+    if forwarded:
+        return forwarded.split(",")[0].strip()
+    real_ip = request.headers.get("x-real-ip")
+    if real_ip:
+        return real_ip.strip()
+    return request.client.host if request.client else "unknown"
+
+
+async def _check_ip_blocked(ip: str):
+    """Raise 403 if IP is currently blocked."""
+    now = datetime.utcnow().isoformat()
+    async with aiosqlite.connect(str(DB_PATH)) as db:
+        cursor = await db.execute(
+            "SELECT expires_at FROM blocked_ips WHERE ip = ? AND expires_at > ?",
+            (ip, now),
+        )
+        row = await cursor.fetchone()
+    if row:
+        raise HTTPException(
+            status_code=403,
+            detail="Trop de tentatives. Reessayez plus tard.",
+        )
+
+
+async def _record_failed_attempt(ip: str):
+    """Record a failed login attempt and block IP if threshold reached."""
+    now = datetime.utcnow()
+    window_start = (now - timedelta(minutes=ATTEMPT_WINDOW_MINUTES)).isoformat()
+    async with aiosqlite.connect(str(DB_PATH)) as db:
+        await db.execute(
+            "INSERT INTO login_attempts (ip, attempted_at) VALUES (?, ?)",
+            (ip, now.isoformat()),
+        )
+        # Clean up old attempts (older than window)
+        await db.execute(
+            "DELETE FROM login_attempts WHERE attempted_at < ?",
+            (window_start,),
+        )
+        cursor = await db.execute(
+            "SELECT COUNT(*) FROM login_attempts WHERE ip = ? AND attempted_at >= ?",
+            (ip, window_start),
+        )
+        (count,) = await cursor.fetchone()
+
+        if count >= MAX_ATTEMPTS:
+            expires = (now + timedelta(hours=BLOCK_DURATION_HOURS)).isoformat()
+            await db.execute(
+                "INSERT OR REPLACE INTO blocked_ips (ip, blocked_at, expires_at, reason) VALUES (?, ?, ?, ?)",
+                (ip, now.isoformat(), expires, f"{count} echecs en {ATTEMPT_WINDOW_MINUTES}min"),
+            )
+            # Clear attempts for this IP (already blocked)
+            await db.execute("DELETE FROM login_attempts WHERE ip = ?", (ip,))
+
+        await db.commit()
+
+    if count >= MAX_ATTEMPTS:
+        raise HTTPException(
+            status_code=403,
+            detail="Trop de tentatives. Reessayez plus tard.",
+        )
+
+
+async def _clear_attempts(ip: str):
+    """Clear failed attempts on successful login."""
+    async with aiosqlite.connect(str(DB_PATH)) as db:
+        await db.execute("DELETE FROM login_attempts WHERE ip = ?", (ip,))
+        await db.commit()
+
 
 @router.post("/login", response_model=LoginResponse)
-async def login(body: LoginRequest):
+async def login(body: LoginRequest, request: Request):
+    client_ip = _get_client_ip(request)
+    await _check_ip_blocked(client_ip)
+
     async with aiosqlite.connect(str(DB_PATH)) as db:
         db.row_factory = aiosqlite.Row
         cursor = await db.execute(
@@ -26,15 +105,17 @@ async def login(body: LoginRequest):
         user = await cursor.fetchone()
 
     if not user:
+        await _record_failed_attempt(client_ip)
         raise HTTPException(status_code=401, detail="Identifiants invalides")
 
     if not verify_password(body.password, user["password_hash"]):
+        await _record_failed_attempt(client_ip)
         raise HTTPException(status_code=401, detail="Identifiants invalides")
 
     # Check 2FA
     if user["otp_enabled"]:
         if not body.otp_code:
-            # Return a partial token that requires OTP verification
+            # Password OK — return partial token requiring OTP
             token = create_access_token({
                 "sub": body.username,
                 "otp_required": True,
@@ -47,9 +128,13 @@ async def login(body: LoginRequest):
             import pyotp
             totp = pyotp.TOTP(user["otp_secret"])
             if not totp.verify(body.otp_code, valid_window=1):
+                await _record_failed_attempt(client_ip)
                 raise HTTPException(status_code=401, detail="Code OTP invalide")
         except ImportError:
             raise HTTPException(status_code=500, detail="Module pyotp non installe")
+
+    # Success — clear failed attempts
+    await _clear_attempts(client_ip)
 
     token = create_access_token({
         "sub": body.username,
