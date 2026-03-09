@@ -135,82 +135,6 @@ async function saveWebhookSettings() {
   });
 }
 
-// ---- Admin modal ----
-
-function openAdminModal() {
-  document.getElementById("admin-modal").classList.remove("hidden");
-  document.getElementById("admin-modal-form").classList.remove("hidden");
-  document.getElementById("admin-modal-success").classList.add("hidden");
-  document.getElementById("admin-modal-error").classList.add("hidden");
-  document.getElementById("admin-username").value = "admin";
-  document.getElementById("admin-password").value = "";
-  document.getElementById("admin-password-confirm").value = "";
-  document.getElementById("admin-username").focus();
-}
-
-function closeAdminModal() {
-  document.getElementById("admin-modal").classList.add("hidden");
-}
-
-function showAdminError(msg) {
-  const el = document.getElementById("admin-modal-error");
-  el.textContent = msg;
-  el.classList.remove("hidden");
-}
-
-async function createAdminFromSettings() {
-  const username = document.getElementById("admin-username").value.trim();
-  const password = document.getElementById("admin-password").value;
-  const confirm = document.getElementById("admin-password-confirm").value;
-
-  document.getElementById("admin-modal-error").classList.add("hidden");
-
-  if (!username) { showAdminError("Nom d'utilisateur requis"); return; }
-  if (password.length < 6) { showAdminError("Le mot de passe doit faire au moins 6 caractères"); return; }
-  if (password !== confirm) { showAdminError("Les mots de passe ne correspondent pas"); return; }
-
-  try {
-    const res = await API.post("/api/auth/setup-admin", { username, password });
-    // Store the token
-    API.token = res.access_token;
-    localStorage.setItem("dm_token", res.access_token);
-
-    // Show success step
-    document.getElementById("admin-modal-form").classList.add("hidden");
-    document.getElementById("admin-created-name").textContent = username;
-    document.getElementById("admin-modal-success").classList.remove("hidden");
-
-    // Update page state
-    document.getElementById("auth-create-admin").classList.add("hidden");
-    document.getElementById("auth-enabled").checked = true;
-    // Show account button now that admin exists
-    if (typeof initAccountButton === "function") initAccountButton();
-  } catch (e) {
-    let msg = "Erreur lors de la création du compte";
-    try { msg = JSON.parse(e.message).detail; } catch {}
-    showAdminError(msg);
-  }
-}
-
-// ---- Check if admin exists (for showing/hiding create admin section) ----
-
-async function checkAdminExists() {
-  try {
-    const res = await API.get("/api/auth/status");
-    const createSection = document.getElementById("auth-create-admin");
-    if (createSection) {
-      if (res.admin_exists) {
-        createSection.classList.add("hidden");
-      } else {
-        createSection.classList.remove("hidden");
-      }
-    }
-  } catch {
-    const createSection = document.getElementById("auth-create-admin");
-    if (createSection) createSection.classList.add("hidden");
-  }
-}
-
 // ---- Save all settings ----
 
 async function saveSettings() {
@@ -229,7 +153,6 @@ async function saveSettings() {
     alldebrid_enabled: document.getElementById("alldebrid-enabled").checked,
     simultaneous_downloads: simultaneousValue,
     default_destination: document.getElementById("default-dest").value.trim() || undefined,
-    auth_enabled: document.getElementById("auth-enabled").checked,
     webhook_enabled: document.getElementById("webhook-enabled").checked,
     webhook_url: document.getElementById("webhook-url").value.trim() || undefined,
     webhook_format: document.getElementById("webhook-format").value,
@@ -270,7 +193,12 @@ let _settingsPendingLogin = {};
 async function checkSettingsAuth() {
   try {
     const status = await fetch("/api/auth/status").then(r => r.json());
-    if (!status.auth_enabled) return true;
+
+    // No admin exists — redirect to main page for setup
+    if (!status.admin_exists) {
+      window.location.href = "/";
+      return false;
+    }
 
     const token = localStorage.getItem("dm_token");
     if (!token) { showSettingsLogin(); return false; }
@@ -386,8 +314,6 @@ async function bootSettings() {
     document.getElementById("alldebrid-key").value      = cfg.alldebrid_api_key || "";
     document.getElementById("alldebrid-enabled").checked = cfg.alldebrid_enabled || false;
     document.getElementById("default-dest").value        = cfg.default_destination || "";
-    document.getElementById("auth-enabled").checked      = cfg.auth_enabled || false;
-
     // Webhooks
     document.getElementById("webhook-enabled").checked = cfg.webhook_enabled || false;
     document.getElementById("webhook-url").value = cfg.webhook_url || "";
@@ -401,7 +327,6 @@ async function bootSettings() {
 
     setSimultaneous(cfg.simultaneous_downloads || 3);
 
-    await checkAdminExists();
     await checkAllDebridStatus();
 
     // Show account button if auth is enabled

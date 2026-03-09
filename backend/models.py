@@ -26,9 +26,6 @@ class SettingsUpdate(BaseModel):
     alldebrid_enabled: Optional[bool] = None
     simultaneous_downloads: Optional[int] = None
     default_destination: Optional[str] = None
-    auth_enabled: Optional[bool] = None
-    auth_username: Optional[str] = None
-    auth_password: Optional[str] = None
     webhook_enabled: Optional[bool] = None
     webhook_url: Optional[str] = None
     webhook_format: Optional[str] = None
