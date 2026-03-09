@@ -11,7 +11,6 @@ from models import (
     SetupOTPResponse, VerifyOTPRequest,
 )
 from auth import verify_password, get_password_hash, create_access_token, get_current_user
-from config import get_config, save_config
 from database import DB_PATH
 
 router = APIRouter()
@@ -19,11 +18,6 @@ router = APIRouter()
 
 @router.post("/login", response_model=LoginResponse)
 async def login(body: LoginRequest):
-    cfg = get_config()
-    if not cfg["auth"]["enabled"]:
-        token = create_access_token({"sub": "anonymous"})
-        return LoginResponse(token=token)
-
     async with aiosqlite.connect(str(DB_PATH)) as db:
         db.row_factory = aiosqlite.Row
         cursor = await db.execute(
@@ -67,16 +61,12 @@ async def login(body: LoginRequest):
 
 @router.get("/status")
 async def auth_status():
-    cfg = get_config()
-
-    # Check if admin account exists (always, regardless of auth state)
     async with aiosqlite.connect(str(DB_PATH)) as db:
         cursor = await db.execute("SELECT COUNT(*) FROM users")
         (count,) = await cursor.fetchone()
         admin_exists = count > 0
 
     return {
-        "auth_enabled": cfg["auth"]["enabled"],
         "admin_exists": admin_exists,
     }
 
@@ -84,8 +74,6 @@ async def auth_status():
 @router.post("/setup-admin")
 async def setup_admin(body: SetupAdminRequest):
     """Create the initial admin account. Only works if no users exist."""
-    cfg = get_config()
-
     async with aiosqlite.connect(str(DB_PATH)) as db:
         cursor = await db.execute("SELECT COUNT(*) FROM users")
         (count,) = await cursor.fetchone()
@@ -108,10 +96,6 @@ async def setup_admin(body: SetupAdminRequest):
             (user_id, body.username.strip(), pw_hash, now),
         )
         await db.commit()
-
-    # Enable auth
-    cfg["auth"]["enabled"] = True
-    save_config(cfg)
 
     token = create_access_token({"sub": body.username.strip(), "otp_verified": True})
     return {"status": "created", "token": token, "access_token": token}

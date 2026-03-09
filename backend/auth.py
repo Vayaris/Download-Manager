@@ -34,22 +34,17 @@ def create_access_token(data: dict) -> str:
 async def get_current_user(
     credentials: Optional[HTTPAuthorizationCredentials] = Depends(security),
 ):
-    config = get_config()
-    if not config["auth"]["enabled"]:
-        return {"username": "anonymous"}
-
-    # Failsafe: if auth is enabled but no users exist, auto-disable auth
     import aiosqlite
     from database import DB_PATH
     async with aiosqlite.connect(str(DB_PATH)) as db:
         cursor = await db.execute("SELECT COUNT(*) FROM users")
         (count,) = await cursor.fetchone()
+
+    # No users yet — allow anonymous access for setup-admin
     if count == 0:
-        from config import save_config
-        config["auth"]["enabled"] = False
-        save_config(config)
         return {"username": "anonymous"}
 
+    # Users exist — require valid Bearer token
     if not credentials:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,

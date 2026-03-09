@@ -223,17 +223,12 @@ function acctLogout() {
 
 // ---- Show/hide account button based on auth state ----
 
-async function initAccountButton() {
+function initAccountButton() {
   const btn = document.getElementById("account-btn");
   if (!btn) return;
-  try {
-    const status = await fetch("/api/auth/status").then(r => r.json());
-    if (status.auth_enabled && status.admin_exists) {
-      btn.classList.remove("hidden");
-    } else {
-      btn.classList.add("hidden");
-    }
-  } catch {
+  if (localStorage.getItem("dm_token")) {
+    btn.classList.remove("hidden");
+  } else {
     btn.classList.add("hidden");
   }
 }
