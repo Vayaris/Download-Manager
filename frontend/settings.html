@@ -33,17 +33,12 @@
       <div class="form-group">
         <input type="password" id="login-password" class="form-input" placeholder="Mot de passe" autocomplete="current-password">
       </div>
+      <div id="otp-group" class="form-group hidden">
+        <input type="text" id="login-otp" class="form-input" placeholder="Code 2FA à 6 chiffres" autocomplete="one-time-code" maxlength="6" inputmode="numeric" pattern="[0-9]{6}" style="text-align:center;font-size:20px;letter-spacing:8px;font-family:var(--font-mono)">
+        <p class="form-hint" style="margin-top:6px;font-size:12px">Entrez le code affiché dans votre application d'authentification</p>
+      </div>
       <div id="login-error" class="error-msg hidden"></div>
       <button class="btn btn-primary full-width" onclick="doSettingsLogin()">Se connecter</button>
-    </div>
-    <div id="otp-form" class="hidden">
-      <p class="login-sub">Entrez le code de vérification affiché dans votre application d'authentification</p>
-      <div class="form-group">
-        <input type="text" id="login-otp" class="form-input" placeholder="Code à 6 chiffres" autocomplete="one-time-code" maxlength="6" inputmode="numeric" pattern="[0-9]{6}" style="text-align:center;font-size:20px;letter-spacing:8px;font-family:var(--font-mono)">
-      </div>
-      <div id="otp-error" class="error-msg hidden"></div>
-      <button class="btn btn-primary full-width" onclick="doSettingsOtpVerify()">Vérifier</button>
-      <button class="btn full-width" style="margin-top:8px" onclick="backToSettingsLogin()">Retour</button>
     </div>
   </div>
 </div>
@@ -213,8 +208,8 @@
 </div>
 
 <div id="toast" class="toast hidden"></div>
-<script src="/static/js/theme.js?v=13"></script>
-<script src="/static/js/settings.js?v=13"></script>
-<script src="/static/js/account.js?v=13"></script>
+<script src="/static/js/theme.js?v=15"></script>
+<script src="/static/js/settings.js?v=15"></script>
+<script src="/static/js/account.js?v=15"></script>
 </body>
 </html>
