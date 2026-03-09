@@ -1,10 +1,12 @@
 import asyncio
-import logging
+import sys
 import uuid
 from datetime import datetime
 from typing import Optional
 
-logger = logging.getLogger(__name__)
+
+def log(msg):
+    print(f"[queue] {msg}", flush=True)
 
 import aiosqlite
 
@@ -26,14 +28,6 @@ class QueueManager:
 
     async def start(self):
         self._running = True
-        # Apply speed limit from config on startup
-        try:
-            config = get_config()
-            limit = config["downloads"].get("speed_limit", 0)
-            limit_str = f"{limit}M" if limit > 0 else "0"
-            await aria2.change_global_option({"max-overall-download-limit": limit_str})
-        except Exception:
-            pass
         self._task = asyncio.create_task(self._loop())
 
     async def stop(self):
@@ -50,11 +44,32 @@ class QueueManager:
     # ------------------------------------------------------------------ #
 
     async def _loop(self):
+        # Wait for aria2 to be ready before processing
+        for attempt in range(30):
+            if not self._running:
+                return
+            if await aria2.is_alive():
+                log("aria2 RPC is ready")
+                break
+            log(f"Waiting for aria2 RPC... (attempt {attempt + 1}/30)")
+            await asyncio.sleep(2)
+        else:
+            log("aria2 RPC not available after 60s, starting loop anyway")
+
+        # Apply speed limit from config
+        try:
+            config = get_config()
+            limit = config["downloads"].get("speed_limit", 0)
+            limit_str = f"{limit}M" if limit > 0 else "0"
+            await aria2.change_global_option({"max-overall-download-limit": limit_str})
+        except Exception as e:
+            log(f"Could not set speed limit: {e}")
+
         while self._running:
             try:
                 await self._tick()
             except Exception as e:
-                logger.error(f"Queue tick error: {e}", exc_info=True)
+                import traceback; log(f"Queue tick error: {e}\n{traceback.format_exc()}")
             await asyncio.sleep(1)
 
     async def _tick(self):
@@ -163,7 +178,7 @@ class QueueManager:
                         )
 
                 except Exception as e:
-                    logger.warning(f"aria2 status check failed for {row['id']}: {e}")
+                    log(f"aria2 status check failed for {row['id']} (gid={row['aria2_gid']}): {type(e).__name__}: {e}")
                     # aria2 doesn't know this GID anymore — reset to pending
                     await db.execute(
                         """UPDATE downloads SET
