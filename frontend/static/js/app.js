@@ -129,8 +129,9 @@ const STATUS_LABELS = {
 };
 
 function statusBadge(status) {
-  const label = STATUS_LABELS[status] || status;
-  return `<span class="badge badge-${status}"><span class="b-dot"></span>${label}</span>`;
+  const label = STATUS_LABELS[status] || escHtml(status);
+  const safeClass = escHtml(status);
+  return `<span class="badge badge-${safeClass}"><span class="b-dot"></span>${label}</span>`;
 }
 
 // ---- Copy to clipboard ----
@@ -169,24 +170,21 @@ async function pasteFromClipboard() {
 
 function renderDownloads(downloads) {
   const tbody = document.getElementById("dl-tbody");
-  const standalone = downloads.filter(d => !d.package_id);
+  const tableSection = tbody.closest(".table-wrap");
+  // Only show active downloads (not completed/failed — those go to history)
+  const active = downloads.filter(d => !d.package_id && d.status !== "complete" && d.status !== "failed");
 
-  if (!standalone || standalone.length === 0) {
-    tbody.innerHTML = `
-      <tr class="empty-row">
-        <td colspan="7" class="empty-state">
-          <div class="empty-icon">
-            <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-          </div>
-          <div class="empty-title">Aucun téléchargement en cours</div>
-          <div class="empty-sub">Collez des liens dans le champ ci-dessus pour commencer</div>
-        </td>
-      </tr>`;
-    updateStats(downloads);
+  updateStats(downloads);
+
+  if (!active || active.length === 0) {
+    // Hide the table section entirely when empty
+    if (tableSection) tableSection.classList.add("dl-empty");
+    tbody.innerHTML = "";
     return;
   }
 
-  updateStats(downloads);
+  if (tableSection) tableSection.classList.remove("dl-empty");
+  const standalone = active;
 
   // Differential rendering: update existing rows in-place to avoid DOM destruction
   const existingRows = {};
@@ -384,7 +382,7 @@ function renderPackages(packages) {
     if (isExpanded && pkg.downloads) {
       downloadsHtml = `<div class="pkg-downloads">
         <table class="dl-table pkg-table">
-          <tbody>${pkg.downloads.map(d => renderDownloadRow(d)).join("")}</tbody>
+          <tbody>${pkg.downloads.map(d => `<tr data-id="${d.id}">${buildDownloadRowInner(d)}</tr>`).join("")}</tbody>
         </table>
       </div>`;
     }
@@ -503,18 +501,18 @@ async function addPackage() {
 function updateStats(downloads) {
   const el = document.getElementById("stats-chips");
   if (!el) return;
-  if (!downloads || downloads.length === 0) { el.innerHTML = ""; return; }
 
-  const total  = downloads.length;
-  const active = downloads.filter(d => d.status === "downloading").length;
-  const done   = downloads.filter(d => d.status === "complete").length;
-  const failed = downloads.filter(d => d.status === "failed").length;
+  // Count only active (non-completed, non-failed) standalone downloads
+  const queue   = downloads.filter(d => !d.package_id && d.status !== "complete" && d.status !== "failed");
+  const active  = queue.filter(d => d.status === "downloading").length;
+  const pending = queue.filter(d => d.status === "pending" || d.status === "paused" || d.status === "error").length;
+
+  if (queue.length === 0) { el.innerHTML = ""; return; }
 
   el.innerHTML = `
-    <div class="stat-chip total"><span class="dot"></span>${total} fichier${total > 1 ? "s" : ""}</div>
+    <div class="stat-chip total"><span class="dot"></span>${queue.length} fichier${queue.length > 1 ? "s" : ""}</div>
     ${active > 0 ? `<div class="stat-chip active"><span class="dot"></span>${active} actif${active > 1 ? "s" : ""}</div>` : ""}
-    ${done   > 0 ? `<div class="stat-chip done"><span class="dot"></span>${done} terminé${done > 1 ? "s" : ""}</div>` : ""}
-    ${failed > 0 ? `<div class="stat-chip failed"><span class="dot"></span>${failed} échoué${failed > 1 ? "s" : ""}</div>` : ""}
+    ${pending > 0 ? `<div class="stat-chip"><span class="dot"></span>${pending} en attente</div>` : ""}
   `;
 }
 

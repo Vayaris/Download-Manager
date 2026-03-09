@@ -28,11 +28,33 @@ async def list_downloads(request: Request, _=Depends(get_current_user)):
         return [dict(r) for r in rows]
 
 
+def _validate_destination(dest: str):
+    """Validate download destination is within allowed paths."""
+    if not dest:
+        return
+    cfg = get_config()
+    resolved = Path(dest).resolve()
+    allowed = [Path(p).resolve() for p in cfg["downloads"].get("allowed_paths", [])]
+    default_dest = cfg["downloads"].get("default_destination", "")
+    if default_dest:
+        allowed.append(Path(default_dest).resolve())
+    if not allowed:
+        return  # No restrictions configured
+    for a in allowed:
+        try:
+            resolved.relative_to(a)
+            return
+        except ValueError:
+            continue
+    raise HTTPException(status_code=403, detail="Destination non autorisée")
+
+
 @router.post("/")
 async def add_downloads(body: AddDownloadsRequest, request: Request, _=Depends(get_current_user)):
     urls = [u.strip() for u in body.urls if u.strip()]
     if not urls:
         raise HTTPException(status_code=400, detail="No valid URLs provided")
+    _validate_destination(body.destination)
     ids = await _qm(request).add_downloads(urls, body.destination)
     return {"added": len(ids), "ids": ids}
 
@@ -82,6 +104,7 @@ async def create_package(body: AddPackageRequest, request: Request, _=Depends(ge
     urls = [u.strip() for u in body.urls if u.strip()]
     if not urls:
         raise HTTPException(status_code=400, detail="No valid URLs provided")
+    _validate_destination(body.destination)
     result = await _qm(request).add_package(body.name, urls, body.destination)
     return {"added": len(result["download_ids"]), **result}
 
@@ -170,7 +193,15 @@ async def delete_history_item(
             if default_dest:
                 allowed.append(Path(default_dest).resolve())
 
-            if not any(str(resolved).startswith(str(a)) for a in allowed):
+            path_allowed = False
+            for a in allowed:
+                try:
+                    resolved.relative_to(a)
+                    path_allowed = True
+                    break
+                except ValueError:
+                    continue
+            if not path_allowed:
                 raise HTTPException(status_code=403, detail="Chemin non autorisé")
 
             if resolved.is_file():

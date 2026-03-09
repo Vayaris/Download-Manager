@@ -5,22 +5,41 @@ Interface web de gestion de téléchargements avec support **AllDebrid**, conçu
 ![Python](https://img.shields.io/badge/Python-3.8+-3776AB?logo=python&logoColor=white)
 ![FastAPI](https://img.shields.io/badge/FastAPI-009688?logo=fastapi&logoColor=white)
 ![aria2](https://img.shields.io/badge/aria2-Download_Engine-blue)
+![PWA](https://img.shields.io/badge/PWA-Installable-5A0FC8?logo=pwa&logoColor=white)
 ![License](https://img.shields.io/badge/License-MIT-green)
 
 ---
 
 ## Fonctionnalités
 
-- **Interface web moderne** — thème clair/sombre, responsive, temps réel via WebSocket
+- **Interface web moderne** — thème clair/sombre, responsive mobile, temps réel via WebSocket
+- **PWA installable** — ajoutez l'app sur l'écran d'accueil de votre téléphone (Android / iOS)
+- **Vue mobile optimisée** — layout carte compact, navigation tactile, barre de navigation bas d'écran
 - **AllDebrid intégré** — débridage automatique des liens hébergeurs (1fichier, Uptobox, etc.)
-- **aria2 sous le capot** — téléchargements rapides, multi-connexions, reprise automatique
-- **Système de paquets** — groupez vos liens par saison, album, etc. (à la JDownloader)
+- **aria2 sous le capot** — téléchargements rapides, multi-segments (split), reprise automatique
+- **Multi-segments** — jusqu'à 16 connexions par fichier (style JDownloader) pour maximiser la vitesse
+- **Limite de vitesse** — bridez la bande passante globale en Mo/s
+- **Système de paquets** — groupez vos liens par saison, album, etc. avec suivi de progression global
 - **Retry automatique** — 5 tentatives par défaut, délai entre chaque retry
-- **Historique** — tous les téléchargements terminés/échoués sont conservés
-- **Notifications webhook** — Discord, Slack, Telegram, Gotify, ntfy, ou générique JSON
+- **Historique automatique** — les téléchargements terminés/échoués passent automatiquement dans l'historique
+- **Notifications webhook** — Discord, Slack, Telegram, Gotify, ntfy, ou générique JSON (avec guides de configuration intégrés)
 - **Navigateur de fichiers** — sélection et création de dossiers directement depuis l'interface
-- **Authentification** — login/mot de passe avec 2FA (OTP 6 chiffres)
+- **Authentification sécurisée** — login/mot de passe avec 2FA (OTP 6 chiffres), rate limiting, blocage IP
+- **CLI d'administration** — reset admin, gestion des IPs bloquées en ligne de commande
 - **Service systemd** — démarrage automatique, redémarrage en cas de crash
+
+---
+
+## Sécurité
+
+- **Authentification JWT** avec 2FA (TOTP) — compatible Google Authenticator, Authy, etc.
+- **Rate limiting** — 5 tentatives de login en 15 min, blocage IP automatique pendant 4h
+- **WebSocket authentifié** — les connexions temps réel requièrent un token valide
+- **Protection path traversal** — navigation fichiers restreinte aux chemins autorisés
+- **Validation des destinations** — impossible de télécharger vers un chemin non autorisé
+- **Protection SSRF webhook** — les URLs internes (localhost, IPs privées) sont bloquées
+- **Protection IP spoofing** — les headers proxy ne sont acceptés que depuis des proxys locaux
+- **Pas de CORS wildcard** — CORS désactivé par défaut, configurable si nécessaire
 
 ---
 
@@ -59,6 +78,14 @@ http://<IP_DE_VOTRE_MACHINE>:40320
 
 Le port est configurable lors de l'installation.
 
+### Sur mobile
+
+L'application est une **PWA** (Progressive Web App). Depuis votre navigateur mobile :
+- **Android** : Menu (⋮) → "Ajouter à l'écran d'accueil"
+- **iOS** : Bouton partage (↑) → "Sur l'écran d'accueil"
+
+L'app se lance ensuite comme une application native, sans barre de navigateur.
+
 ### Commandes utiles
 
 | Commande | Description |
@@ -68,6 +95,24 @@ Le port est configurable lors de l'installation.
 | `systemctl stop download-manager` | Arrêter |
 | `journalctl -u download-manager -f` | Logs en temps réel |
 | `nano /etc/download-manager/config.yml` | Modifier la configuration |
+
+### CLI d'administration
+
+```bash
+cd /opt/download-manager/backend
+
+# Réinitialiser le compte admin
+python3 dm-cli.py reset-admin
+
+# Lister les IPs bloquées
+python3 dm-cli.py list-ips
+
+# Débloquer une IP
+python3 dm-cli.py unblock 1.2.3.4
+
+# Débloquer toutes les IPs
+python3 dm-cli.py unblock-all
+```
 
 ---
 
@@ -79,21 +124,24 @@ Le fichier de configuration se trouve dans `/etc/download-manager/config.yml` :
 server:
   host: "0.0.0.0"
   port: 40320
+  cors_origins: []          # Liste d'origines CORS autorisées (vide = désactivé)
+  trusted_proxies: []       # IPs de reverse proxy de confiance
 
 alldebrid:
   api_key: ""
   enabled: false
 
 downloads:
-  simultaneous: 3
+  simultaneous: 3           # 1-10 téléchargements simultanés
+  download_segments: 1      # 1-16 segments par fichier (multi-connexion)
+  speed_limit: 0            # Mo/s (0 = illimité)
   default_destination: "/opt/download-manager/downloads"
   allowed_paths:
     - "/mnt"
     - "/opt/download-manager/downloads"
 
 auth:
-  enabled: false
-  jwt_secret: ""  # Auto-généré au premier lancement
+  jwt_secret: ""            # Auto-généré au premier lancement
 
 aria2:
   rpc_port: 6800
@@ -102,7 +150,7 @@ aria2:
 webhooks:
   enabled: false
   url: ""
-  format: "generic"  # generic | discord | slack | telegram | gotify | ntfy
+  format: "generic"         # generic | discord | slack | telegram | gotify | ntfy
   events:
     - "download_complete"
     - "download_failed"
@@ -117,11 +165,23 @@ La plupart des paramètres sont modifiables directement depuis la page **Paramè
 
 ### Système de paquets
 
-Groupez plusieurs liens en un seul paquet (ex : une saison complète). Le paquet affiche la progression globale et se déplie pour montrer chaque fichier individuellement.
+Groupez plusieurs liens en un seul paquet (ex : une saison complète). Le paquet affiche la progression globale en temps réel (nombre de fichiers terminés, pourcentage, vitesse cumulée) et se déplie pour montrer chaque fichier individuellement.
+
+### Multi-segments
+
+Chaque téléchargement peut utiliser jusqu'à 16 connexions simultanées vers le serveur (paramètre `download_segments`). Plus de segments = plus de vitesse, comme JDownloader. Configurable par section dans les paramètres.
+
+### Limite de vitesse
+
+Bridez la bande passante globale de tous les téléchargements en Mo/s. Utile pour ne pas saturer votre connexion. La limite s'applique immédiatement via aria2.
 
 ### Retry automatique
 
 Chaque téléchargement est automatiquement retenté jusqu'à 5 fois en cas d'erreur. Un délai de 10 secondes est appliqué entre chaque tentative. Le compteur est visible dans l'interface.
+
+### Historique automatique
+
+Les téléchargements terminés ou échoués sont automatiquement déplacés vers la section "Terminés". La zone de téléchargement ne montre que les fichiers en cours / en attente / en pause. Quand elle est vide, elle disparaît.
 
 ### Notifications Webhook
 
@@ -129,13 +189,14 @@ Configurez une URL webhook pour recevoir des notifications lors des événements
 - **Téléchargement terminé** / **échoué**
 - **Paquet terminé**
 
-Formats supportés : Discord (embed), Slack (block), Telegram (Markdown), Gotify, ntfy, ou JSON générique.
+Formats supportés : Discord (embed), Slack (block), Telegram (Markdown), Gotify, ntfy, ou JSON générique. Des guides de configuration intégrés vous accompagnent pour chaque service.
 
 ### Authentification et 2FA
 
-- Activez l'authentification depuis les paramètres
-- Créez un compte administrateur lors de la première activation
+- Créez un compte administrateur au premier lancement
 - Ajoutez la 2FA (TOTP) compatible Google Authenticator, Authy, etc.
+- Rate limiting : 5 tentatives en 15 min = blocage IP pendant 4h
+- Réinitialisation possible via `dm-cli.py reset-admin`
 
 ---
 
@@ -172,9 +233,11 @@ sudo rm -rf /var/log/download-manager
 | **FastAPI** | Backend API + WebSocket |
 | **aria2c** | Moteur de téléchargement |
 | **AllDebrid API** | Débridage de liens |
-| **Vanilla JS** | Frontend (aucun framework) |
+| **Vanilla JS** | Frontend PWA (aucun framework) |
 | **SQLite** | Base de données locale |
 | **pyotp + qrcode** | 2FA / TOTP |
+| **python-jose** | JWT tokens |
+| **bcrypt** | Hachage mots de passe |
 
 ---
 
