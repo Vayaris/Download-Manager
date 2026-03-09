@@ -661,6 +661,7 @@ html { overflow-y: scroll; }
 .col-size     { width: 85px; }
 .col-dest     { width: 22%; }
 .col-actions  { width: 112px; text-align: right; }
+.col-date     { width: 130px; font-size: 11px; font-variant-numeric: tabular-nums; }
 
 .cell-name { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
 .file-name {
@@ -1156,24 +1157,44 @@ tr:hover .btn-copy-path { opacity: 1; }
 ================================================================ */
 
 @media (max-width: 960px) {
-  .col-dest { display: none; }
+  .col-dest, .col-date { display: none; }
   .col-speed { width: 80px; }
 }
 @media (max-width: 768px) {
   .dl-table { table-layout: auto; }
   .col-speed, .col-size { display: none; }
   .col-name { width: auto; }
-  .col-status { width: 100px; }
-  .col-progress { width: 140px; }
-  .col-actions { width: 90px; }
+  .col-status { width: 80px; }
+  .col-progress { width: 120px; }
+  .col-actions { width: 70px; }
   .add-footer { grid-template-columns: 1fr; }
   .btn-add-links { width: 100%; justify-content: center; }
   .header-nav { display: none; }
+  .mobile-nav { display: flex; }
+  .settings-card { padding: 18px; }
+  .settings-wrap { padding: 0 8px; }
+  .key-actions { flex-wrap: wrap; }
+  .section-header { flex-wrap: wrap; gap: 8px; }
+  .controls-bar { flex-wrap: wrap; gap: 8px; }
+  .controls-left { flex-wrap: wrap; }
+  .stats-chips { flex-wrap: wrap; }
+  .login-box { padding: 28px 20px; }
+  .app { padding-bottom: 70px; }
 }
 @media (max-width: 480px) {
   .logo-text { display: none; }
   .engine-badge span:not(.status-dot) { display: none; }
   .engine-badge { padding: 5px 8px; }
+  .col-progress { width: 90px; }
+  .col-status { width: 60px; }
+  .status-badge { font-size: 10px; padding: 2px 6px; }
+  .progress-meta { font-size: 10px; }
+  .btn-ctrl-label { display: none; }
+  .btn-ctrl { padding: 6px 10px; }
+  .app { padding: 10px 8px; padding-top: 60px; }
+  .header { padding: 0 10px; }
+  .add-card { padding: 12px; }
+  .preset-guide { font-size: 11.5px; }
 }
 
 /* ================================================================
@@ -1189,6 +1210,23 @@ tr:hover .btn-copy-path { opacity: 1; }
 @keyframes blink { 0%, 100% { opacity: 1; } 50% { opacity: .3; } }
 
 :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* Mobile bottom nav */
+.mobile-nav {
+  display: none;
+  position: fixed; bottom: 0; left: 0; right: 0; z-index: 900;
+  background: var(--bg-elevated); border-top: 1px solid var(--border);
+  justify-content: space-around; align-items: center;
+  padding: 6px 0; padding-bottom: max(6px, env(safe-area-inset-bottom));
+}
+.mobile-nav a {
+  display: flex; flex-direction: column; align-items: center; gap: 2px;
+  font-size: 10px; font-weight: 500; color: var(--text-3);
+  text-decoration: none; padding: 6px 16px; border-radius: var(--radius);
+  transition: color var(--transition);
+}
+.mobile-nav a.active { color: var(--accent-text); }
+.mobile-nav a:hover { color: var(--text); }
 
 /* ================================================================
    PACKAGES

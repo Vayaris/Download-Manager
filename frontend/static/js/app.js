@@ -550,7 +550,7 @@ async function loadHistory() {
         <td class="col-dest">
           <span class="dest-cell-path" title="${escHtml(item.destination)}">${escHtml(item.destination)}</span>
         </td>
-        <td class="mono-cell" style="font-size:11px">${fmtDate(item.completed_at)}</td>
+        <td class="col-date mono-cell">${fmtDate(item.completed_at)}</td>
         <td class="col-actions">
           <div class="row-actions">
             <button class="btn-act act-delete" onclick="deleteHistoryItem('${item.id}', false)" title="Supprimer de l'historique">${ICONS.trash}</button>

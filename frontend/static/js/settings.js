@@ -2,8 +2,7 @@
 //  Settings page v2
 // ============================================================
 
-let simultaneousValue = 3;
-let segmentsValue = 1;
+// Values now read directly from input fields
 
 const API = {
   token: localStorage.getItem("dm_token") || "",
@@ -88,18 +87,27 @@ async function saveAllDebrid() {
 
 // ---- Other settings ----
 
-function setSimultaneous(val) {
-  simultaneousValue = val;
-  document.querySelectorAll("#simultaneous-selector .btn-num").forEach((btn) => {
-    btn.classList.toggle("active", parseInt(btn.dataset.val) === val);
-  });
-}
+async function saveDownloadSettings() {
+  const simultaneous = Math.min(10, Math.max(1, parseInt(document.getElementById("simultaneous-input").value) || 3));
+  const segments = Math.min(8, Math.max(1, parseInt(document.getElementById("segments-input").value) || 1));
+  const speedLimit = parseInt(document.getElementById("speed-limit").value) || 0;
+  const dest = document.getElementById("default-dest").value.trim() || undefined;
 
-function setSegments(val) {
-  segmentsValue = val;
-  document.querySelectorAll("#segments-selector .btn-num").forEach((btn) => {
-    btn.classList.toggle("active", parseInt(btn.dataset.val) === val);
-  });
+  // Clamp input values visually
+  document.getElementById("simultaneous-input").value = simultaneous;
+  document.getElementById("segments-input").value = segments;
+
+  try {
+    await API.put("/api/settings/", {
+      simultaneous_downloads: simultaneous,
+      download_segments: segments,
+      speed_limit: speedLimit,
+      default_destination: dest,
+    });
+    showToast("Paramètres téléchargements sauvegardés", "ok");
+  } catch (e) {
+    showToast("Erreur : " + e.message, "error");
+  }
 }
 
 function toggleKeyVisibility() {
@@ -238,8 +246,8 @@ async function saveSettings() {
   const payload = {
     alldebrid_api_key: document.getElementById("alldebrid-key").value.trim() || undefined,
     alldebrid_enabled: document.getElementById("alldebrid-enabled").checked,
-    simultaneous_downloads: simultaneousValue,
-    download_segments: segmentsValue,
+    simultaneous_downloads: Math.min(10, Math.max(1, parseInt(document.getElementById("simultaneous-input").value) || 3)),
+    download_segments: Math.min(8, Math.max(1, parseInt(document.getElementById("segments-input").value) || 1)),
     speed_limit: parseInt(document.getElementById("speed-limit").value) || 0,
     default_destination: document.getElementById("default-dest").value.trim() || undefined,
     webhook_enabled: document.getElementById("webhook-enabled").checked,
@@ -393,8 +401,8 @@ async function bootSettings() {
     }
     toggleWebhookFields();
 
-    setSimultaneous(cfg.simultaneous_downloads || 3);
-    setSegments(cfg.download_segments || 1);
+    document.getElementById("simultaneous-input").value = cfg.simultaneous_downloads || 3;
+    document.getElementById("segments-input").value = cfg.download_segments || 1;
     document.getElementById("speed-limit").value = cfg.speed_limit || 0;
 
     await checkAllDebridStatus();
