@@ -976,6 +976,37 @@ tr:hover .btn-copy-path { opacity: 1; }
 .toggle input:checked + .toggle-slider { background: var(--accent); border-color: var(--accent); }
 .toggle input:checked + .toggle-slider::before { transform: translateX(18px); background: #fff; }
 
+/* Webhook preset info */
+.preset-info {
+  margin-top: 10px;
+  padding: 14px 16px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  font-size: 12.5px;
+  line-height: 1.7;
+  color: var(--text-2);
+}
+.preset-header { margin-bottom: 8px; }
+.preset-badge {
+  display: inline-block;
+  padding: 2px 8px;
+  font-size: 11px;
+  font-weight: 600;
+  border-radius: 10px;
+  background: var(--green-dim, rgba(52,199,89,.12));
+  color: var(--green, #34c759);
+  border: 1px solid var(--green-border, rgba(52,199,89,.25));
+}
+.preset-guide { color: var(--text-3); }
+.preset-guide code {
+  background: var(--surface-3);
+  padding: 1px 5px;
+  border-radius: 3px;
+  font-size: 11.5px;
+  font-family: var(--font-mono);
+}
+
 .num-selector { display: flex; gap: 8px; flex-wrap: wrap; }
 .btn-num {
   width: 48px; height: 44px;

@@ -187,10 +187,111 @@ function renderDownloads(downloads) {
   }
 
   updateStats(downloads);
-  tbody.innerHTML = standalone.map(item => renderDownloadRow(item)).join("");
+
+  // Differential rendering: update existing rows in-place to avoid DOM destruction
+  const existingRows = {};
+  tbody.querySelectorAll("tr[data-id]").forEach(tr => { existingRows[tr.dataset.id] = tr; });
+
+  const newIds = new Set(standalone.map(d => d.id));
+
+  // Remove rows that no longer exist
+  for (const id of Object.keys(existingRows)) {
+    if (!newIds.has(id)) existingRows[id].remove();
+  }
+
+  // Update or insert rows
+  let prevRow = null;
+  for (const item of standalone) {
+    const existing = existingRows[item.id];
+    if (existing) {
+      updateDownloadRow(existing, item);
+      prevRow = existing;
+    } else {
+      const tr = createDownloadRow(item);
+      if (prevRow && prevRow.nextSibling) {
+        tbody.insertBefore(tr, prevRow.nextSibling);
+      } else if (!prevRow) {
+        tbody.prepend(tr);
+      } else {
+        tbody.appendChild(tr);
+      }
+      prevRow = tr;
+    }
+  }
+
+  // Remove empty-row if present
+  const emptyRow = tbody.querySelector(".empty-row");
+  if (emptyRow) emptyRow.remove();
 }
 
-function renderDownloadRow(item) {
+function createDownloadRow(item) {
+  const tr = document.createElement("tr");
+  tr.dataset.id = item.id;
+  tr.innerHTML = buildDownloadRowInner(item);
+  return tr;
+}
+
+function updateDownloadRow(tr, item) {
+  const name  = fmtName(item);
+  const pct   = item.progress ? item.progress.toFixed(1) : "0.0";
+  const done  = parseInt(item.downloaded || 0);
+  const total = parseInt(item.size || 0);
+
+  // Update status badge
+  const statusTd = tr.querySelector(".col-status");
+  const newBadge = statusBadge(item.status);
+  if (statusTd && statusTd.innerHTML !== newBadge) statusTd.innerHTML = newBadge;
+
+  // Update progress bar
+  const fill = tr.querySelector(".progress-fill");
+  if (fill) {
+    fill.style.width = pct + "%";
+    fill.className = "progress-fill " + (item.status === "complete" ? "complete"
+      : item.status === "error" || item.status === "failed" ? "error"
+      : item.status === "downloading" ? "downloading" : "");
+  }
+
+  // Update progress meta
+  const meta = tr.querySelector(".progress-meta");
+  if (meta) {
+    const progressMeta = item.status === "complete"
+      ? `<span class="progress-pct" style="color:var(--green)">100%</span><span class="progress-done">${escHtml(fmtBytes(total))}</span>`
+      : item.status === "downloading"
+      ? `<span class="progress-pct">${pct}%</span><span class="progress-done">${escHtml(fmtBytes(done))} / ${escHtml(fmtBytes(total))}</span>`
+      : `<span class="progress-pct">${pct}%</span><span class="progress-done">${escHtml(fmtBytes(total))}</span>`;
+    meta.innerHTML = progressMeta;
+  }
+
+  // Update speed
+  const speedTd = tr.querySelector(".col-speed");
+  if (speedTd) speedTd.textContent = fmtSpeed(item.speed);
+
+  // Update size
+  const sizeTd = tr.querySelector(".col-size");
+  if (sizeTd) sizeTd.textContent = fmtBytes(total);
+
+  // Update name (only if changed)
+  const nameSpan = tr.querySelector(".file-name");
+  if (nameSpan && nameSpan.textContent !== name) {
+    nameSpan.textContent = name;
+    nameSpan.title = name;
+  }
+
+  // Update actions (pause/resume buttons change with status)
+  const actionsDiv = tr.querySelector(".row-actions");
+  if (actionsDiv) {
+    let pauseResumeBtn = "";
+    if (item.status === "downloading") {
+      pauseResumeBtn = `<button class="btn-act act-pause" onclick="pauseDownload('${item.id}')" title="Mettre en pause">${ICONS.pause}</button>`;
+    } else if (item.status === "paused" || item.status === "error" || item.status === "failed") {
+      pauseResumeBtn = `<button class="btn-act act-resume" onclick="resumeDownload('${item.id}')" title="Reprendre">${ICONS.play}</button>`;
+    }
+    const newActions = `${pauseResumeBtn}<button class="btn-act act-delete" onclick="removeDownload('${item.id}')" title="Supprimer">${ICONS.trash}</button>`;
+    if (actionsDiv.innerHTML !== newActions) actionsDiv.innerHTML = newActions;
+  }
+}
+
+function buildDownloadRowInner(item) {
   const name  = fmtName(item);
   const pct   = item.progress ? item.progress.toFixed(1) : "0.0";
   const done  = parseInt(item.downloaded || 0);
@@ -220,7 +321,6 @@ function renderDownloadRow(item) {
     : `<span class="progress-pct">${pct}%</span><span class="progress-done">${escHtml(fmtBytes(total))}</span>`;
 
   return `
-    <tr>
       <td class="col-name">
         <div class="cell-name">
           <span class="file-name" title="${escHtml(name)}">${escHtml(name)}</span>
@@ -249,8 +349,7 @@ function renderDownloadRow(item) {
           ${pauseResumeBtn}
           <button class="btn-act act-delete" onclick="removeDownload('${item.id}')" title="Supprimer">${ICONS.trash}</button>
         </div>
-      </td>
-    </tr>`;
+      </td>`;
 }
 
 // ---- Packages rendering ----

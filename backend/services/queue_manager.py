@@ -23,6 +23,14 @@ class QueueManager:
 
     async def start(self):
         self._running = True
+        # Apply speed limit from config on startup
+        try:
+            config = get_config()
+            limit = config["downloads"].get("speed_limit", 0)
+            limit_str = f"{limit}M" if limit > 0 else "0"
+            await aria2.change_global_option({"max-overall-download-limit": limit_str})
+        except Exception:
+            pass
         self._task = asyncio.create_task(self._loop())
 
     async def stop(self):
@@ -171,10 +179,11 @@ class QueueManager:
                 )
                 pending = await cursor.fetchall()
 
+                segments = config["downloads"].get("download_segments", 1)
                 for item in pending:
                     try:
                         direct_url = await alldebrid.process_url(item["url"])
-                        gid = await aria2.add_uri(direct_url, item["destination"])
+                        gid = await aria2.add_uri(direct_url, item["destination"], split=segments)
                         await db.execute(
                             "UPDATE downloads SET aria2_gid = ?, status = 'downloading', updated_at = ? WHERE id = ?",
                             (gid, now, item["id"]),
