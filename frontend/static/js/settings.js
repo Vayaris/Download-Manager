@@ -188,13 +188,10 @@ function showToast(msg, type = "ok") {
 
 // ---- Auth check for settings page ----
 
-let _settingsPendingLogin = {};
-
 async function checkSettingsAuth() {
   try {
     const status = await fetch("/api/auth/status").then(r => r.json());
 
-    // No admin exists — redirect to main page for setup
     if (!status.admin_exists) {
       window.location.href = "/";
       return false;
@@ -203,50 +200,73 @@ async function checkSettingsAuth() {
     const token = localStorage.getItem("dm_token");
     if (!token) { showSettingsLogin(); return false; }
     API.token = token;
-    try {
-      await API.get("/api/settings/");
-      return true;
-    } catch {
+
+    // Validate token with raw fetch
+    const check = await fetch("/api/settings/", {
+      headers: { "Authorization": `Bearer ${token}` },
+    });
+    if (check.status === 401) {
+      localStorage.removeItem("dm_token");
+      API.token = "";
       showSettingsLogin();
       return false;
     }
+    return true;
   } catch {
-    return true; // server unreachable, let it try
+    return true;
   }
 }
 
 function showSettingsLogin() {
   document.getElementById("login-modal").classList.remove("hidden");
   document.getElementById("login-form").classList.remove("hidden");
-  document.getElementById("otp-form").classList.add("hidden");
+  document.getElementById("otp-group").classList.add("hidden");
+  document.getElementById("login-otp").value = "";
+  document.getElementById("login-error").classList.add("hidden");
 }
+
+let _settingsOtpRequired = false;
 
 async function doSettingsLogin() {
   const username = document.getElementById("login-username").value;
   const password = document.getElementById("login-password").value;
-  const errEl = document.getElementById("login-error");
+  const otpCode  = document.getElementById("login-otp").value.trim();
+  const errEl    = document.getElementById("login-error");
+
+  errEl.classList.add("hidden");
+
+  const body = { username, password };
+  if (_settingsOtpRequired && otpCode) {
+    body.otp_code = otpCode;
+  }
 
   try {
     const resp = await fetch("/api/auth/login", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ username, password }),
+      body: JSON.stringify(body),
     });
     if (!resp.ok) {
       const data = await resp.json();
       errEl.textContent = data.detail || "Identifiants invalides";
       errEl.classList.remove("hidden");
+      if (_settingsOtpRequired) {
+        document.getElementById("login-otp").value = "";
+        document.getElementById("login-otp").focus();
+      }
       return;
     }
     const data = await resp.json();
+
     if (data.otp_required) {
-      _settingsPendingLogin = { username, password };
-      document.getElementById("login-form").classList.add("hidden");
-      document.getElementById("otp-form").classList.remove("hidden");
+      _settingsOtpRequired = true;
+      document.getElementById("otp-group").classList.remove("hidden");
       document.getElementById("login-otp").value = "";
       document.getElementById("login-otp").focus();
       return;
     }
+
+    _settingsOtpRequired = false;
     localStorage.setItem("dm_token", data.token);
     API.token = data.token;
     document.getElementById("login-modal").classList.add("hidden");
@@ -255,53 +275,12 @@ async function doSettingsLogin() {
     errEl.textContent = "Erreur de connexion au serveur";
     errEl.classList.remove("hidden");
   }
-}
-
-async function doSettingsOtpVerify() {
-  const otpCode = document.getElementById("login-otp").value.trim();
-  const errEl = document.getElementById("otp-error");
-  if (otpCode.length !== 6) { errEl.textContent = "Entrez un code à 6 chiffres"; errEl.classList.remove("hidden"); return; }
-  try {
-    const resp = await fetch("/api/auth/login", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ username: _settingsPendingLogin.username, password: _settingsPendingLogin.password, otp_code: otpCode }),
-    });
-    if (!resp.ok) {
-      const data = await resp.json();
-      errEl.textContent = data.detail || "Code OTP invalide";
-      errEl.classList.remove("hidden");
-      document.getElementById("login-otp").value = "";
-      document.getElementById("login-otp").focus();
-      return;
-    }
-    const data = await resp.json();
-    _settingsPendingLogin = {};
-    localStorage.setItem("dm_token", data.token);
-    API.token = data.token;
-    document.getElementById("login-modal").classList.add("hidden");
-    bootSettings();
-  } catch {
-    errEl.textContent = "Erreur de connexion au serveur";
-    errEl.classList.remove("hidden");
-  }
-}
-
-function backToSettingsLogin() {
-  _settingsPendingLogin = {};
-  document.getElementById("otp-form").classList.add("hidden");
-  document.getElementById("login-form").classList.remove("hidden");
-  document.getElementById("login-password").value = "";
 }
 
 // Enter key support for login
 document.addEventListener("keydown", (e) => {
   if (e.key === "Enter" && !document.getElementById("login-modal").classList.contains("hidden")) {
-    if (!document.getElementById("otp-form").classList.contains("hidden")) {
-      doSettingsOtpVerify();
-    } else {
-      doSettingsLogin();
-    }
+    doSettingsLogin();
   }
 });
 

@@ -1,5 +1,5 @@
 // ============================================================
-//  Download Manager — Main Application v5
+//  Download Manager — Main Application v6
 // ============================================================
 
 // ---- SVG Icons ----
@@ -22,8 +22,6 @@ const ICONS = {
 let _appStarted = false;
 
 // ---- API helper ----
-// IMPORTANT: No showLogin() in API methods. Auth is handled exclusively
-// by checkAuth() at boot and by explicit user actions.
 
 const API = {
   token: localStorage.getItem("dm_token") || "",
@@ -171,8 +169,6 @@ async function pasteFromClipboard() {
 
 function renderDownloads(downloads) {
   const tbody = document.getElementById("dl-tbody");
-
-  // Filter out downloads that belong to packages (they're shown in package view)
   const standalone = downloads.filter(d => !d.package_id);
 
   if (!standalone || standalone.length === 0) {
@@ -212,7 +208,6 @@ function renderDownloadRow(item) {
     pauseResumeBtn = `<button class="btn-act act-resume" onclick="resumeDownload('${item.id}')" title="Reprendre">${ICONS.play}</button>`;
   }
 
-  // Retry info
   let retryInfo = "";
   if (item.retry_count > 0 && item.status !== "complete") {
     retryInfo = `<span class="retry-badge" title="${escHtml(item.error_msg || '')}">${ICONS.retry} ${item.retry_count}/${item.max_retries || 5}</span>`;
@@ -362,7 +357,7 @@ function closePackageModal() {
 
 function openFileBrowserForPackage() {
   _pkgFileBrowserMode = true;
-  FileBrowser.elevate(); // Bring file browser above package modal
+  FileBrowser.elevate();
   const startPath = document.getElementById("pkg-dest-path").value.trim() || undefined;
   FileBrowser.open((path) => {
     document.getElementById("pkg-dest-path").value = path;
@@ -560,9 +555,8 @@ async function bulkAction(action) {
 }
 
 // ============================================================
-//  Auth — clean state machine
-//  States: boot → checkAuth → [showLogin | showSetup | startApp]
-//  No API call is made until auth is fully complete.
+//  Auth — Single-form login (username + password + OTP inline)
+//  No form switching, no race conditions.
 // ============================================================
 
 async function checkAuth() {
@@ -581,7 +575,7 @@ async function checkAuth() {
       return;
     }
 
-    // Validate token with a raw fetch (not API.get — avoids side effects)
+    // Validate token with raw fetch (no API.get side effects)
     API.token = token;
     const check = await fetch("/api/settings/", {
       headers: { "Authorization": `Bearer ${token}` },
@@ -593,115 +587,82 @@ async function checkAuth() {
       return;
     }
 
-    // Token is valid — start the app
     startApp();
   } catch {
-    // Server unreachable — start anyway, errors will show naturally
     startApp();
   }
 }
 
 function showLogin() {
-  const modal = document.getElementById("login-modal");
-  modal.classList.remove("hidden");
+  document.getElementById("login-modal").classList.remove("hidden");
   document.getElementById("login-form").classList.remove("hidden");
-  document.getElementById("otp-form").classList.add("hidden");
   document.getElementById("setup-form").classList.add("hidden");
+  document.getElementById("otp-group").classList.add("hidden");
+  document.getElementById("login-otp").value = "";
+  document.getElementById("login-error").classList.add("hidden");
 }
 
 function showSetupForm() {
-  const modal = document.getElementById("login-modal");
-  modal.classList.remove("hidden");
+  document.getElementById("login-modal").classList.remove("hidden");
   document.getElementById("login-form").classList.add("hidden");
-  document.getElementById("otp-form").classList.add("hidden");
   document.getElementById("setup-form").classList.remove("hidden");
 }
 
-// Store credentials temporarily for OTP step
-let _pendingLogin = {};
+// doLogin handles both initial login and OTP submission in one function.
+// First call: sends username+password. If OTP required, reveals the OTP field.
+// Second call: sends username+password+otp_code.
+let _loginOtpRequired = false;
 
 async function doLogin() {
   const username = document.getElementById("login-username").value;
   const password = document.getElementById("login-password").value;
+  const otpCode  = document.getElementById("login-otp").value.trim();
   const errEl    = document.getElementById("login-error");
+
+  errEl.classList.add("hidden");
+
+  // Build request body
+  const body = { username, password };
+  if (_loginOtpRequired && otpCode) {
+    body.otp_code = otpCode;
+  }
 
   try {
     const resp = await fetch("/api/auth/login", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ username, password }),
+      body: JSON.stringify(body),
     });
 
     if (!resp.ok) {
       const data = await resp.json();
       errEl.textContent = data.detail || "Identifiants invalides";
       errEl.classList.remove("hidden");
+      if (_loginOtpRequired) {
+        document.getElementById("login-otp").value = "";
+        document.getElementById("login-otp").focus();
+      }
       return;
     }
 
     const data = await resp.json();
 
     if (data.otp_required) {
-      _pendingLogin = { username, password };
-      document.getElementById("login-form").classList.add("hidden");
-      document.getElementById("otp-form").classList.remove("hidden");
-      document.getElementById("login-otp").value = "";
-      document.getElementById("login-otp").focus();
-      document.getElementById("otp-error").classList.add("hidden");
-      return;
-    }
-
-    loginSuccess(data.token);
-  } catch {
-    errEl.textContent = "Erreur de connexion au serveur";
-    errEl.classList.remove("hidden");
-  }
-}
-
-async function doOtpVerify() {
-  const otpCode = document.getElementById("login-otp").value.trim();
-  const errEl   = document.getElementById("otp-error");
-
-  if (otpCode.length !== 6) {
-    errEl.textContent = "Entrez un code à 6 chiffres";
-    errEl.classList.remove("hidden");
-    return;
-  }
-
-  try {
-    const resp = await fetch("/api/auth/login", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        username: _pendingLogin.username,
-        password: _pendingLogin.password,
-        otp_code: otpCode,
-      }),
-    });
-
-    if (!resp.ok) {
-      const data = await resp.json();
-      errEl.textContent = data.detail || "Code OTP invalide";
-      errEl.classList.remove("hidden");
+      // Show OTP field inline (same form, no switching)
+      _loginOtpRequired = true;
+      document.getElementById("otp-group").classList.remove("hidden");
       document.getElementById("login-otp").value = "";
       document.getElementById("login-otp").focus();
       return;
     }
 
-    const data = await resp.json();
-    _pendingLogin = {};
+    // Success
+    _loginOtpRequired = false;
     loginSuccess(data.token);
   } catch {
     errEl.textContent = "Erreur de connexion au serveur";
     errEl.classList.remove("hidden");
   }
-}
-
-function backToLogin() {
-  _pendingLogin = {};
-  document.getElementById("otp-form").classList.add("hidden");
-  document.getElementById("login-form").classList.remove("hidden");
-  document.getElementById("login-password").value = "";
 }
 
 async function doSetupAdmin() {
@@ -735,22 +696,18 @@ async function doSetupAdmin() {
   }
 }
 
-// ---- Single entry point after successful auth ----
-
 function loginSuccess(token) {
   localStorage.setItem("dm_token", token);
   API.token = token;
   document.getElementById("login-modal").classList.add("hidden");
-  document.getElementById("login-error").classList.add("hidden");
   startApp();
 }
 
+// Enter key handler
 document.addEventListener("keydown", (e) => {
   if (e.key === "Enter" && !document.getElementById("login-modal").classList.contains("hidden")) {
     if (!document.getElementById("setup-form").classList.contains("hidden")) {
       doSetupAdmin();
-    } else if (!document.getElementById("otp-form").classList.contains("hidden")) {
-      doOtpVerify();
     } else {
       doLogin();
     }
