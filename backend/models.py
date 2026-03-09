@@ -26,6 +26,8 @@ class SettingsUpdate(BaseModel):
     alldebrid_enabled: Optional[bool] = None
     simultaneous_downloads: Optional[int] = None
     default_destination: Optional[str] = None
+    download_segments: Optional[int] = None
+    speed_limit: Optional[int] = None
     webhook_enabled: Optional[bool] = None
     webhook_url: Optional[str] = None
     webhook_format: Optional[str] = None

@@ -3,6 +3,7 @@
 // ============================================================
 
 let simultaneousValue = 3;
+let segmentsValue = 1;
 
 const API = {
   token: localStorage.getItem("dm_token") || "",
@@ -89,7 +90,14 @@ async function saveAllDebrid() {
 
 function setSimultaneous(val) {
   simultaneousValue = val;
-  document.querySelectorAll(".btn-num").forEach((btn) => {
+  document.querySelectorAll("#simultaneous-selector .btn-num").forEach((btn) => {
+    btn.classList.toggle("active", parseInt(btn.dataset.val) === val);
+  });
+}
+
+function setSegments(val) {
+  segmentsValue = val;
+  document.querySelectorAll("#segments-selector .btn-num").forEach((btn) => {
     btn.classList.toggle("active", parseInt(btn.dataset.val) === val);
   });
 }
@@ -102,6 +110,85 @@ function toggleKeyVisibility() {
 function toggleWebhookFields() {
   const enabled = document.getElementById("webhook-enabled").checked;
   document.getElementById("webhook-fields").classList.toggle("hidden", !enabled);
+  if (enabled) updateWebhookPreset();
+}
+
+const WEBHOOK_PRESETS = {
+  generic: {
+    placeholder: "https://example.com/webhook",
+    badge: null,
+    info: null,
+  },
+  discord: {
+    placeholder: "https://discord.com/api/webhooks/...",
+    badge: "Gratuit",
+    info: `<strong>Comment configurer :</strong><br>
+1. Ouvrir les <em>Paramètres du serveur</em> Discord<br>
+2. Aller dans <em>Intégrations</em> &rarr; <em>Webhooks</em><br>
+3. Cliquer <em>Nouveau webhook</em>, choisir le salon<br>
+4. Copier l'URL du webhook et la coller ici`,
+  },
+  slack: {
+    placeholder: "https://hooks.slack.com/services/T.../B.../...",
+    badge: "Gratuit",
+    info: `<strong>Comment configurer :</strong><br>
+1. Aller sur <a href="https://api.slack.com/apps" target="_blank" style="color:var(--accent)">api.slack.com/apps</a><br>
+2. Créer une app &rarr; <em>Incoming Webhooks</em> &rarr; Activer<br>
+3. <em>Add New Webhook to Workspace</em>, choisir le channel<br>
+4. Copier l'URL du webhook`,
+  },
+  telegram: {
+    placeholder: "https://api.telegram.org/bot<TOKEN>/sendMessage",
+    badge: "Gratuit",
+    info: `<strong>Comment configurer :</strong><br>
+1. Parler à <a href="https://t.me/BotFather" target="_blank" style="color:var(--accent)">@BotFather</a> sur Telegram<br>
+2. Envoyer <code>/newbot</code> et suivre les étapes pour obtenir le <em>token</em><br>
+3. Obtenir votre <em>chat_id</em> via <a href="https://t.me/userinfobot" target="_blank" style="color:var(--accent)">@userinfobot</a><br>
+4. URL : <code>https://api.telegram.org/bot&lt;TOKEN&gt;/sendMessage</code><br>
+<em>Le chat_id est envoyé automatiquement dans le payload.</em>`,
+  },
+  gotify: {
+    placeholder: "https://gotify.example.com/message?token=...",
+    badge: "Gratuit (self-hosted)",
+    info: `<strong>Comment configurer :</strong><br>
+1. Installer <a href="https://gotify.net" target="_blank" style="color:var(--accent)">Gotify</a> sur votre serveur<br>
+2. Aller dans <em>Apps</em> &rarr; <em>Créer une application</em><br>
+3. Copier le token de l'app<br>
+4. URL : <code>https://votre-gotify/message?token=VOTRE_TOKEN</code>`,
+  },
+  ntfy: {
+    placeholder: "https://ntfy.sh/votre-topic",
+    badge: "Gratuit",
+    info: `<strong>Comment configurer :</strong><br>
+1. Aller sur <a href="https://ntfy.sh" target="_blank" style="color:var(--accent)">ntfy.sh</a> (ou votre instance)<br>
+2. Choisir un nom de topic unique<br>
+3. S'abonner au topic dans l'app ntfy (Android/iOS/Web)<br>
+4. URL : <code>https://ntfy.sh/votre-topic</code><br>
+<em>Aucune inscription requise !</em>`,
+  },
+};
+
+function updateWebhookPreset() {
+  const format = document.getElementById("webhook-format").value;
+  const preset = WEBHOOK_PRESETS[format];
+  const urlInput = document.getElementById("webhook-url");
+  const infoDiv = document.getElementById("webhook-preset-info");
+
+  if (preset && preset.placeholder) {
+    urlInput.placeholder = preset.placeholder;
+  }
+
+  if (!preset || !preset.info) {
+    infoDiv.classList.add("hidden");
+    return;
+  }
+
+  infoDiv.classList.remove("hidden");
+  infoDiv.innerHTML = `
+    <div class="preset-header">
+      ${preset.badge ? `<span class="preset-badge">${preset.badge}</span>` : ""}
+    </div>
+    <div class="preset-guide">${preset.info}</div>`;
 }
 
 // ---- Webhook test ----
@@ -152,6 +239,8 @@ async function saveSettings() {
     alldebrid_api_key: document.getElementById("alldebrid-key").value.trim() || undefined,
     alldebrid_enabled: document.getElementById("alldebrid-enabled").checked,
     simultaneous_downloads: simultaneousValue,
+    download_segments: segmentsValue,
+    speed_limit: parseInt(document.getElementById("speed-limit").value) || 0,
     default_destination: document.getElementById("default-dest").value.trim() || undefined,
     webhook_enabled: document.getElementById("webhook-enabled").checked,
     webhook_url: document.getElementById("webhook-url").value.trim() || undefined,
@@ -305,6 +394,8 @@ async function bootSettings() {
     toggleWebhookFields();
 
     setSimultaneous(cfg.simultaneous_downloads || 3);
+    setSegments(cfg.download_segments || 1);
+    document.getElementById("speed-limit").value = cfg.speed_limit || 0;
 
     await checkAllDebridStatus();
 

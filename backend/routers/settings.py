@@ -19,6 +19,8 @@ async def get_settings(_=Depends(get_current_user)):
         "simultaneous_downloads": cfg["downloads"]["simultaneous"],
         "default_destination": cfg["downloads"]["default_destination"],
         "allowed_paths": cfg["downloads"]["allowed_paths"],
+        "download_segments": cfg["downloads"].get("download_segments", 1),
+        "speed_limit": cfg["downloads"].get("speed_limit", 0),
         "port": cfg["server"]["port"],
         "webhook_enabled": wh.get("enabled", False),
         "webhook_url": wh.get("url", ""),
@@ -39,6 +41,18 @@ async def update_settings(body: SettingsUpdate, _=Depends(get_current_user)):
         cfg["downloads"]["simultaneous"] = body.simultaneous_downloads
     if body.default_destination is not None:
         cfg["downloads"]["default_destination"] = body.default_destination
+    if body.download_segments is not None and 1 <= body.download_segments <= 16:
+        cfg["downloads"]["download_segments"] = body.download_segments
+    if body.speed_limit is not None and body.speed_limit >= 0:
+        cfg["downloads"]["speed_limit"] = body.speed_limit
+        # Apply speed limit to aria2 immediately
+        from services.aria2_service import aria2
+        import asyncio
+        try:
+            limit_str = f"{body.speed_limit}M" if body.speed_limit > 0 else "0"
+            asyncio.create_task(aria2.change_global_option({"max-overall-download-limit": limit_str}))
+        except Exception:
+            pass
 
     # Webhooks
     if "webhooks" not in cfg:

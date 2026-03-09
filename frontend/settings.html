@@ -34,7 +34,7 @@
         <input type="password" id="login-password" class="form-input" placeholder="Mot de passe" autocomplete="current-password">
       </div>
       <div id="otp-group" class="form-group hidden">
-        <input type="text" id="login-otp" class="form-input" placeholder="Code 2FA à 6 chiffres" autocomplete="one-time-code" maxlength="6" inputmode="numeric" pattern="[0-9]{6}" style="text-align:center;font-size:20px;letter-spacing:8px;font-family:var(--font-mono)">
+        <input type="text" id="login-otp" class="form-input" placeholder="Code 2FA à 6 chiffres" autocomplete="one-time-code" maxlength="6" inputmode="numeric" pattern="[0-9]{6}" style="text-align:center;font-size:15px;letter-spacing:4px;font-family:var(--font-mono)">
         <p class="form-hint" style="margin-top:6px;font-size:12px">Entrez le code affiché dans votre application d'authentification</p>
       </div>
       <div id="login-error" class="error-msg hidden"></div>
@@ -69,6 +69,7 @@
       <button id="account-btn" class="btn-account hidden" onclick="openAccountModal()" title="Mon compte">
         <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
       </button>
+      <script>if(localStorage.getItem("dm_token"))document.getElementById("account-btn").classList.remove("hidden")</script>
       <button class="theme-toggle" onclick="toggleTheme()" title="Basculer thème clair/sombre">
         <svg class="icon-moon" xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
         <svg class="icon-sun" xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
@@ -133,6 +134,26 @@
       </div>
 
       <div class="form-group">
+        <label class="form-label">Segments par téléchargement</label>
+        <p class="form-hint" style="margin-bottom:8px">Plus de segments = plus de vitesse (comme JDownloader). 1 = connexion unique.</p>
+        <div class="num-selector" id="segments-selector">
+          <button class="btn-num" data-val="1" onclick="setSegments(1)">1</button>
+          <button class="btn-num" data-val="2" onclick="setSegments(2)">2</button>
+          <button class="btn-num" data-val="4" onclick="setSegments(4)">4</button>
+          <button class="btn-num" data-val="8" onclick="setSegments(8)">8</button>
+          <button class="btn-num" data-val="16" onclick="setSegments(16)">16</button>
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label">Limite de vitesse globale</label>
+        <div style="display:flex;align-items:center;gap:8px">
+          <input type="number" id="speed-limit" class="form-input" style="max-width:120px" placeholder="0" min="0">
+          <span style="color:var(--text-2);font-size:13px">Mo/s <span style="color:var(--text-3)">(0 = illimité)</span></span>
+        </div>
+      </div>
+
+      <div class="form-group">
         <label class="form-label">Dossier de destination par défaut</label>
         <input type="text" id="default-dest" class="form-input" placeholder="/opt/download-manager/downloads">
       </div>
@@ -161,7 +182,7 @@
 
         <div class="form-group">
           <label class="form-label">Format</label>
-          <select id="webhook-format" class="form-input">
+          <select id="webhook-format" class="form-input" onchange="updateWebhookPreset()">
             <option value="generic">Générique (JSON)</option>
             <option value="discord">Discord</option>
             <option value="slack">Slack</option>
@@ -169,6 +190,7 @@
             <option value="gotify">Gotify</option>
             <option value="ntfy">ntfy</option>
           </select>
+          <div id="webhook-preset-info" class="preset-info hidden"></div>
         </div>
 
         <div class="form-group">
@@ -208,8 +230,8 @@
 </div>
 
 <div id="toast" class="toast hidden"></div>
-<script src="/static/js/theme.js?v=15"></script>
-<script src="/static/js/settings.js?v=15"></script>
-<script src="/static/js/account.js?v=15"></script>
+<script src="/static/js/theme.js?v=17"></script>
+<script src="/static/js/settings.js?v=17"></script>
+<script src="/static/js/account.js?v=17"></script>
 </body>
 </html>
