@@ -11,7 +11,7 @@
   <link rel="apple-touch-icon" href="/static/icons/icon-192.svg">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link rel="stylesheet" href="/static/css/style.css?v=22">
+  <link rel="stylesheet" href="/static/css/style.css?v=23">
   <script>
     (function() {
       var t = localStorage.getItem('dm_theme');
@@ -332,11 +332,11 @@ window.addEventListener("beforeinstallprompt",e=>{e.preventDefault();pwaDeferred
 function pwaInstall(){if(pwaDeferred){pwaDeferred.prompt();pwaDeferred.userChoice.then(()=>{pwaDeferred=null;const b=document.getElementById("pwa-install-btn");if(b)b.classList.add("hidden")})}}
 </script>
 
-<script src="/static/js/theme.js?v=22"></script>
-<script src="/static/js/websocket.js?v=22"></script>
-<script src="/static/js/filebrowser.js?v=22"></script>
-<script src="/static/js/app.js?v=22"></script>
-<script src="/static/js/account.js?v=22"></script>
+<script src="/static/js/theme.js?v=23"></script>
+<script src="/static/js/websocket.js?v=23"></script>
+<script src="/static/js/filebrowser.js?v=23"></script>
+<script src="/static/js/app.js?v=23"></script>
+<script src="/static/js/account.js?v=23"></script>
 <script>if("serviceWorker"in navigator)navigator.serviceWorker.register("/sw.js").catch(()=>{})</script>
 </body>
 </html>
