@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 
 from models import SettingsUpdate
 from auth import get_current_user, get_password_hash
@@ -60,6 +60,16 @@ async def update_settings(body: SettingsUpdate, _=Depends(get_current_user)):
     if body.webhook_enabled is not None:
         cfg["webhooks"]["enabled"] = body.webhook_enabled
     if body.webhook_url is not None:
+        # Validate webhook URL: must be http/https and not target internal services
+        from urllib.parse import urlparse
+        if body.webhook_url:
+            parsed = urlparse(body.webhook_url)
+            if parsed.scheme not in ("http", "https"):
+                raise HTTPException(status_code=400, detail="L'URL du webhook doit utiliser http ou https")
+            # Block localhost and private IPs
+            host = parsed.hostname or ""
+            if host in ("localhost", "127.0.0.1", "::1", "0.0.0.0") or host.startswith("169.254."):
+                raise HTTPException(status_code=400, detail="L'URL du webhook ne peut pas cibler localhost")
         cfg["webhooks"]["url"] = body.webhook_url
     if body.webhook_format is not None:
         cfg["webhooks"]["format"] = body.webhook_format

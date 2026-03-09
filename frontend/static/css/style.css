@@ -629,6 +629,9 @@ html { overflow-y: scroll; }
   overflow: hidden;
   box-shadow: var(--shadow-sm);
 }
+.table-wrap.dl-empty {
+  display: none;
+}
 
 .dl-table { width: 100%; border-collapse: collapse; table-layout: fixed; }
 
@@ -1161,40 +1164,154 @@ tr:hover .btn-copy-path { opacity: 1; }
   .col-speed { width: 80px; }
 }
 @media (max-width: 768px) {
-  .dl-table { table-layout: auto; }
-  .col-speed, .col-size { display: none; }
-  .col-name { width: auto; }
-  .col-status { width: 80px; }
-  .col-progress { width: 120px; }
-  .col-actions { width: 70px; }
-  .add-footer { grid-template-columns: 1fr; }
-  .btn-add-links { width: 100%; justify-content: center; }
   .header-nav { display: none; }
   .mobile-nav { display: flex; }
-  .settings-card { padding: 18px; }
-  .settings-wrap { padding: 0 8px; }
+  .add-footer { grid-template-columns: 1fr; }
+  .btn-add-links { width: 100%; justify-content: center; }
+  .settings-card { padding: 16px; }
+  .settings-wrap { padding: 0 4px; }
   .key-actions { flex-wrap: wrap; }
   .section-header { flex-wrap: wrap; gap: 8px; }
-  .controls-bar { flex-wrap: wrap; gap: 8px; }
-  .controls-left { flex-wrap: wrap; }
+  .controls-bar { flex-wrap: wrap; gap: 6px; padding: 8px 0; }
+  .controls-left { flex-wrap: wrap; gap: 4px; }
   .stats-chips { flex-wrap: wrap; }
-  .login-box { padding: 28px 20px; }
-  .app { padding-bottom: 70px; }
+  .login-box { padding: 24px 16px; }
+  .app { padding: 0 8px 70px; }
+
+  /* ---- Mobile card layout for downloads ---- */
+  .dl-table { table-layout: auto; }
+  .dl-table thead { display: none; }
+  .dl-table tbody tr {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    grid-template-rows: auto auto;
+    padding: 10px 12px; gap: 4px 8px;
+    border-bottom: 1px solid var(--border);
+  }
+  .dl-table tbody tr:hover { background: var(--surface-2); }
+  .dl-table td { padding: 0; border: none; overflow: visible; }
+
+  /* Row 1: name + actions */
+  .dl-table .col-name {
+    grid-column: 1; grid-row: 1;
+    display: flex; flex-direction: column; gap: 1px;
+    min-width: 0;
+  }
+  .dl-table .col-name .file-name {
+    font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .dl-table .col-name .file-url { display: none; }
+  .dl-table .col-name .retry-badge { font-size: 9px; }
+
+  .dl-table .col-actions {
+    grid-column: 2; grid-row: 1;
+    width: auto; text-align: right;
+    display: flex; align-items: flex-start;
+  }
+  .dl-table .col-actions .row-actions { display: flex; gap: 4px; }
+
+  /* Row 2: status + progress + speed/size */
+  .dl-table .col-status {
+    grid-column: 1 / -1; grid-row: 2;
+    display: flex; align-items: center; gap: 6px;
+    width: 100%;
+  }
+  .dl-table .col-status .badge { font-size: 9.5px; padding: 2px 7px; flex-shrink: 0; }
+
+  .dl-table .col-progress {
+    grid-column: 1 / -1; grid-row: 2;
+    display: none; /* merged into status row via CSS below */
+  }
+
+  .dl-table .col-speed, .dl-table .col-size, .dl-table .col-dest, .dl-table .col-date {
+    display: none;
+  }
+
+  /* Status + progress on row 2 side by side */
+  .dl-table .col-status {
+    grid-column: 1; grid-row: 2; width: auto;
+    display: flex; align-items: center;
+  }
+  .dl-table .col-progress {
+    grid-column: 2; grid-row: 2;
+    display: flex; align-items: center; gap: 6px;
+    justify-content: flex-end;
+  }
+  .dl-table .col-progress .progress-track { width: 60px; height: 4px; flex-shrink: 0; }
+  .dl-table .col-progress .progress-meta { font-size: 10px; white-space: nowrap; }
+  .dl-table .col-progress .progress-done { display: none; }
+
+  /* ---- Mobile card layout for history ---- */
+  .history-table thead { display: none; }
+  .history-table tbody tr {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    grid-template-rows: auto auto;
+    padding: 10px 12px; gap: 4px 8px;
+    border-bottom: 1px solid var(--border);
+  }
+  .history-table td { padding: 0; border: none; }
+  .history-table .col-name {
+    grid-column: 1; grid-row: 1;
+    min-width: 0;
+  }
+  .history-table .col-name .file-url { display: none; }
+  .history-table .col-name .file-name { font-size: 12px; }
+  .history-table .col-actions {
+    grid-column: 2; grid-row: 1; width: auto;
+  }
+  .history-table .col-status {
+    grid-column: 1; grid-row: 2; width: auto;
+  }
+  .history-table .col-status .badge { font-size: 9.5px; }
+  .history-table .col-size {
+    grid-column: 2; grid-row: 2; width: auto; font-size: 10.5px;
+    text-align: right; display: flex; align-items: center;
+  }
+  .history-table .col-dest, .history-table .col-date { display: none; }
+
+  /* ---- Packages mobile ---- */
+  .pkg-header { padding: 10px 12px; gap: 6px; flex-wrap: wrap; }
+  .pkg-progress-wrap { width: 100%; order: 10; }
+  .pkg-progress-wrap .progress-track { flex: 1; }
+  .pkg-name { font-size: 12px; }
+  .pkg-meta { font-size: 10px; }
+
+  /* ---- Empty state smaller ---- */
+  .empty-icon svg { width: 32px; height: 32px; }
+  .empty-title { font-size: 13px; }
+  .empty-sub { font-size: 11px; }
 }
 @media (max-width: 480px) {
   .logo-text { display: none; }
   .engine-badge span:not(.status-dot) { display: none; }
   .engine-badge { padding: 5px 8px; }
-  .col-progress { width: 90px; }
-  .col-status { width: 60px; }
-  .status-badge { font-size: 10px; padding: 2px 6px; }
-  .progress-meta { font-size: 10px; }
   .btn-ctrl-label { display: none; }
-  .btn-ctrl { padding: 6px 10px; }
-  .app { padding: 10px 8px; padding-top: 60px; }
-  .header { padding: 0 10px; }
-  .add-card { padding: 12px; }
-  .preset-guide { font-size: 11.5px; }
+  .btn-ctrl { padding: 6px 8px; font-size: 11px; }
+  .app { padding: 0 6px 70px; padding-top: 56px; }
+  .header { padding: 0 8px; min-height: 48px; }
+  .add-card { padding: 10px; }
+  .links-textarea { font-size: 12px; rows: 2; }
+  .preset-guide { font-size: 11px; }
+  .form-input { font-size: 13px; padding: 8px 10px; }
+  .dl-table .col-name .file-name { font-size: 11px; }
+  .badge { font-size: 9px; padding: 2px 5px; gap: 4px; }
+  .badge .b-dot { width: 5px; height: 5px; }
+  .progress-meta { font-size: 9px; }
+  .btn-act { width: 26px; height: 26px; }
+  .btn-act svg { width: 11px; height: 11px; }
+  .section-title { font-size: 12px; }
+  .textarea-label { font-size: 11.5px; }
+  .btn-paste { font-size: 11px; padding: 4px 8px; }
+  .dest-selector { font-size: 12px; padding: 8px 10px; }
+  .controls-bar { padding: 6px 0; }
+  .stat-chip { font-size: 10px; padding: 3px 8px; }
+  .modal-box { margin: 8px; max-height: calc(100vh - 16px); }
+  .fb-box { width: calc(100vw - 16px); }
+  .login-box { width: calc(100vw - 32px); }
+  .dl-table tbody tr { padding: 8px 10px; gap: 3px 6px; }
+  .dl-table .col-progress .progress-track { width: 50px; }
+  .history-table .col-name .file-name { font-size: 11px; }
 }
 
 /* ================================================================

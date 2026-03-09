@@ -172,8 +172,13 @@ async function acctChangePassword() {
 async function acctSetupOTP() {
   try {
     const res = await _acctPost("/api/auth/setup-otp", {});
-    document.getElementById("acct-otp-qr-img").innerHTML =
-      `<img src="data:image/png;base64,${res.qr_code}" alt="QR Code" style="max-width:200px;border-radius:8px;border:2px solid var(--border)">`;
+    const qrImg = document.createElement("img");
+    qrImg.src = "data:image/png;base64," + res.qr_code.replace(/[^A-Za-z0-9+/=]/g, "");
+    qrImg.alt = "QR Code";
+    qrImg.style.cssText = "max-width:200px;border-radius:8px;border:2px solid var(--border)";
+    const qrContainer = document.getElementById("acct-otp-qr-img");
+    qrContainer.innerHTML = "";
+    qrContainer.appendChild(qrImg);
     document.getElementById("acct-otp-secret").textContent = res.secret;
     document.getElementById("acct-otp-qr").classList.remove("hidden");
     document.getElementById("acct-otp-setup").classList.add("hidden");

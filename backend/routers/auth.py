@@ -21,14 +21,24 @@ BLOCK_DURATION_HOURS = 4
 
 
 def _get_client_ip(request: Request) -> str:
-    """Get real client IP, respecting reverse proxy headers."""
-    forwarded = request.headers.get("x-forwarded-for")
-    if forwarded:
-        return forwarded.split(",")[0].strip()
-    real_ip = request.headers.get("x-real-ip")
-    if real_ip:
-        return real_ip.strip()
-    return request.client.host if request.client else "unknown"
+    """Get real client IP. Only trust proxy headers if request comes from local/private proxy."""
+    from config import get_config
+    client_host = request.client.host if request.client else "unknown"
+
+    # Only trust proxy headers when the direct connection is from a known proxy (localhost / private)
+    trusted_proxies = {"127.0.0.1", "::1", "localhost"}
+    cfg_proxies = get_config().get("server", {}).get("trusted_proxies", [])
+    trusted_proxies.update(cfg_proxies)
+
+    if client_host in trusted_proxies or client_host.startswith(("10.", "172.", "192.168.")):
+        forwarded = request.headers.get("x-forwarded-for")
+        if forwarded:
+            return forwarded.split(",")[0].strip()
+        real_ip = request.headers.get("x-real-ip")
+        if real_ip:
+            return real_ip.strip()
+
+    return client_host
 
 
 async def _check_ip_blocked(ip: str):

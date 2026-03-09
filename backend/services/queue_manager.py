@@ -96,8 +96,10 @@ class QueueManager:
                                  f"Max retries ({max_retries}) reached. Last error: {parsed['error_msg']}",
                                  retry_count, now, row["id"]),
                             )
-                            # Move to history
+                            # Move to history and remove from active queue
                             await self._move_to_history(db, row["id"], now)
+                            if not row["package_id"]:
+                                await db.execute("DELETE FROM downloads WHERE id = ?", (row["id"],))
                             # Webhook
                             asyncio.create_task(send_webhook("download_failed", {
                                 "name": name_update, "destination": row["destination"],
@@ -129,6 +131,12 @@ class QueueManager:
                              now, row["id"]),
                         )
                         await aria2.remove_result(row["aria2_gid"])
+
+                        # Move to history immediately and remove from active queue
+                        await self._move_to_history(db, row["id"], now)
+                        if not row["package_id"]:
+                            # Standalone download — remove from downloads table
+                            await db.execute("DELETE FROM downloads WHERE id = ?", (row["id"],))
 
                         # Webhook
                         asyncio.create_task(send_webhook("download_complete", {
@@ -202,6 +210,8 @@ class QueueManager:
                                  retry_count, now, item["id"]),
                             )
                             await self._move_to_history(db, item["id"], now)
+                            if not item["package_id"]:
+                                await db.execute("DELETE FROM downloads WHERE id = ?", (item["id"],))
                             asyncio.create_task(send_webhook("download_failed", {
                                 "name": item["name"] or item["url"],
                                 "destination": item["destination"],
@@ -252,6 +262,20 @@ class QueueManager:
                     "SELECT * FROM packages ORDER BY created_at DESC"
                 )
                 packages = [dict(r) for r in await cursor.fetchall()]
+
+                # Enrich packages with download data for frontend
+                all_downloads = active_downloads + finished_downloads
+                for pkg in packages:
+                    pkg_downloads = [d for d in all_downloads if d.get("package_id") == pkg["id"]]
+                    pkg["downloads"] = pkg_downloads
+                    pkg["total_files"] = len(pkg_downloads)
+                    pkg["completed_files"] = sum(1 for d in pkg_downloads if d["status"] == "complete")
+                    pkg["active_files"] = sum(1 for d in pkg_downloads if d["status"] == "downloading")
+                    total_size = sum(d.get("size") or 0 for d in pkg_downloads)
+                    total_downloaded = sum(d.get("downloaded") or 0 for d in pkg_downloads)
+                    pkg["total_size"] = total_size
+                    pkg["total_downloaded"] = total_downloaded
+                    pkg["progress"] = round(total_downloaded / total_size * 100, 1) if total_size > 0 else 0
 
                 await self._ws_manager.broadcast({
                     "type": "downloads_update",

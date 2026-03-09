@@ -2,11 +2,16 @@
 <html lang="fr" data-theme="dark">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="theme-color" content="#0c0c0f">
   <title>Download Manager</title>
+  <link rel="manifest" href="/manifest.json">
+  <link rel="apple-touch-icon" href="/static/icons/icon-192.svg">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link rel="stylesheet" href="/static/css/style.css?v=18">
+  <link rel="stylesheet" href="/static/css/style.css?v=21">
   <script>
     (function() {
       var t = localStorage.getItem('dm_theme');
@@ -259,7 +264,7 @@
   </section>
 
   <!-- Liste des téléchargements en cours -->
-  <section class="table-wrap">
+  <section class="table-wrap dl-empty">
     <table class="dl-table">
       <thead>
         <tr>
@@ -272,17 +277,7 @@
           <th class="col-actions">Actions</th>
         </tr>
       </thead>
-      <tbody id="dl-tbody">
-        <tr class="empty-row">
-          <td colspan="7" class="empty-state">
-            <div class="empty-icon">
-              <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-            </div>
-            <div class="empty-title">Aucun téléchargement en cours</div>
-            <div class="empty-sub">Collez des liens dans le champ ci-dessus pour commencer</div>
-          </td>
-        </tr>
-      </tbody>
+      <tbody id="dl-tbody"></tbody>
     </table>
   </section>
 
@@ -328,10 +323,11 @@
   </a>
 </nav>
 
-<script src="/static/js/theme.js?v=18"></script>
-<script src="/static/js/websocket.js?v=18"></script>
-<script src="/static/js/filebrowser.js?v=18"></script>
-<script src="/static/js/app.js?v=18"></script>
-<script src="/static/js/account.js?v=18"></script>
+<script src="/static/js/theme.js?v=21"></script>
+<script src="/static/js/websocket.js?v=21"></script>
+<script src="/static/js/filebrowser.js?v=21"></script>
+<script src="/static/js/app.js?v=21"></script>
+<script src="/static/js/account.js?v=21"></script>
+<script>if("serviceWorker"in navigator)navigator.serviceWorker.register("/sw.js").catch(()=>{})</script>
 </body>
 </html>
