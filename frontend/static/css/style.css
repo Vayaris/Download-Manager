@@ -1195,7 +1195,8 @@ tr:hover .btn-copy-path { opacity: 1; }
   .dl-table .col-name {
     grid-column: 1; grid-row: 1;
     display: flex; flex-direction: column; gap: 1px;
-    min-width: 0;
+    min-width: 0; width: auto;
+    overflow: hidden;
   }
   .dl-table .col-name .file-name {
     font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
@@ -1253,13 +1254,16 @@ tr:hover .btn-copy-path { opacity: 1; }
   .history-table td { padding: 0; border: none; }
   .history-table .col-name {
     grid-column: 1; grid-row: 1;
-    min-width: 0;
+    min-width: 0; width: auto;
+    overflow: hidden;
   }
   .history-table .col-name .file-url { display: none; }
-  .history-table .col-name .file-name { font-size: 12px; }
+  .history-table .col-name .file-name { font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .history-table .col-actions {
-    grid-column: 2; grid-row: 1; width: auto;
+    grid-column: 2; grid-row: 1; width: auto; flex-shrink: 0;
   }
+  .history-table .col-actions .row-actions { display: flex; gap: 2px; }
+  .history-table .col-actions .btn-act { width: 28px; height: 28px; }
   .history-table .col-status {
     grid-column: 1; grid-row: 2; width: auto;
   }
@@ -1334,16 +1338,19 @@ tr:hover .btn-copy-path { opacity: 1; }
   position: fixed; bottom: 0; left: 0; right: 0; z-index: 900;
   background: var(--bg-elevated); border-top: 1px solid var(--border);
   justify-content: space-around; align-items: center;
-  padding: 6px 0; padding-bottom: max(6px, env(safe-area-inset-bottom));
+  padding: 4px 0; padding-bottom: env(safe-area-inset-bottom, 4px);
+  box-shadow: 0 -1px 6px rgba(0,0,0,.08);
 }
-.mobile-nav a {
+.mobile-nav a, .mobile-nav button {
   display: flex; flex-direction: column; align-items: center; gap: 2px;
-  font-size: 10px; font-weight: 500; color: var(--text-3);
+  font-size: 10px; font-weight: 600; color: var(--text-2);
   text-decoration: none; padding: 6px 16px; border-radius: var(--radius);
-  transition: color var(--transition);
+  transition: color var(--transition); background: none; border: none; cursor: pointer;
 }
 .mobile-nav a.active { color: var(--accent-text); }
-.mobile-nav a:hover { color: var(--text); }
+.mobile-nav a:hover, .mobile-nav button:hover { color: var(--text); }
+.mobile-nav .install-btn { color: var(--accent-text); }
+.mobile-nav .install-btn.hidden { display: none; }
 
 /* ================================================================
    PACKAGES
