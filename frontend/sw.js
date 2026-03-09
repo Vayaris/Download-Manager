@@ -1,4 +1,4 @@
-const CACHE_NAME = "dm-v1";
+const CACHE_NAME = "dm-v2";
 const PRECACHE = [
   "/",
   "/settings-page",
@@ -29,6 +29,9 @@ self.addEventListener("activate", (e) => {
 
 self.addEventListener("fetch", (e) => {
   const url = new URL(e.request.url);
+
+  // Only handle same-origin http(s) requests
+  if (url.origin !== self.location.origin) return;
 
   // API and WebSocket requests: network only
   if (url.pathname.startsWith("/api/") || url.pathname.startsWith("/ws/")) {

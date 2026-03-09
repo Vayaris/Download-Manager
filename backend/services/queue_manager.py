@@ -1,7 +1,10 @@
 import asyncio
+import logging
 import uuid
 from datetime import datetime
 from typing import Optional
+
+logger = logging.getLogger(__name__)
 
 import aiosqlite
 
@@ -50,8 +53,8 @@ class QueueManager:
         while self._running:
             try:
                 await self._tick()
-            except Exception:
-                pass
+            except Exception as e:
+                logger.error(f"Queue tick error: {e}", exc_info=True)
             await asyncio.sleep(1)
 
     async def _tick(self):
@@ -159,7 +162,8 @@ class QueueManager:
                              now, row["id"]),
                         )
 
-                except Exception:
+                except Exception as e:
+                    logger.warning(f"aria2 status check failed for {row['id']}: {e}")
                     # aria2 doesn't know this GID anymore — reset to pending
                     await db.execute(
                         """UPDATE downloads SET
