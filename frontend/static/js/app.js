@@ -35,7 +35,7 @@ const API = {
   async get(url) {
     const r = await fetch(url, { headers: this._headers() });
     if (r.status === 401) {
-      if (_appStarted) { _appStarted = false; showLogin(); }
+      if (_appStarted) { _appStarted = false; showLogin(true); }
       throw new Error("Unauthorized");
     }
     if (!r.ok) throw new Error(await r.text());
@@ -45,7 +45,7 @@ const API = {
   async post(url, body) {
     const r = await fetch(url, { method: "POST", headers: this._headers(), body: JSON.stringify(body) });
     if (r.status === 401) {
-      if (_appStarted) { _appStarted = false; showLogin(); }
+      if (_appStarted) { _appStarted = false; showLogin(true); }
       throw new Error("Unauthorized");
     }
     if (!r.ok) throw new Error(await r.text());
@@ -55,7 +55,7 @@ const API = {
   async put(url, body) {
     const r = await fetch(url, { method: "PUT", headers: this._headers(), body: JSON.stringify(body) });
     if (r.status === 401) {
-      if (_appStarted) { _appStarted = false; showLogin(); }
+      if (_appStarted) { _appStarted = false; showLogin(true); }
       throw new Error("Unauthorized");
     }
     if (!r.ok) throw new Error(await r.text());
@@ -65,7 +65,7 @@ const API = {
   async del(url) {
     const r = await fetch(url, { method: "DELETE", headers: this._headers() });
     if (r.status === 401) {
-      if (_appStarted) { _appStarted = false; showLogin(); }
+      if (_appStarted) { _appStarted = false; showLogin(true); }
       throw new Error("Unauthorized");
     }
     if (!r.ok) throw new Error(await r.text());
@@ -593,13 +593,30 @@ async function checkAuth() {
   }
 }
 
-function showLogin() {
+function showLogin(forceReset) {
   document.getElementById("login-modal").classList.remove("hidden");
   document.getElementById("login-form").classList.remove("hidden");
   document.getElementById("setup-form").classList.add("hidden");
-  document.getElementById("otp-group").classList.add("hidden");
-  document.getElementById("login-otp").value = "";
+  // Don't reset OTP state if we're in the middle of OTP entry
+  if (!_loginOtpRequired || forceReset) {
+    document.getElementById("otp-group").classList.add("hidden");
+    document.getElementById("login-otp").value = "";
+    document.getElementById("login-username").disabled = false;
+    document.getElementById("login-password").disabled = false;
+    _loginOtpRequired = false;
+  }
   document.getElementById("login-error").classList.add("hidden");
+}
+
+function resetLoginForm() {
+  _loginOtpRequired = false;
+  _loginBusy = false;
+  showLogin(true);
+  const sub = document.querySelector("#login-form .login-sub");
+  if (sub) sub.textContent = "Connectez-vous pour accéder à l'interface";
+  document.getElementById("login-username").value = "";
+  document.getElementById("login-password").value = "";
+  document.getElementById("login-username").focus();
 }
 
 function showSetupForm() {
@@ -612,14 +629,24 @@ function showSetupForm() {
 // First call: sends username+password. If OTP required, reveals the OTP field.
 // Second call: sends username+password+otp_code.
 let _loginOtpRequired = false;
+let _loginBusy = false;
 
 async function doLogin() {
+  if (_loginBusy) return;
+
   const username = document.getElementById("login-username").value;
   const password = document.getElementById("login-password").value;
   const otpCode  = document.getElementById("login-otp").value.trim();
   const errEl    = document.getElementById("login-error");
 
+  // If in OTP phase but no code entered yet, just focus OTP field
+  if (_loginOtpRequired && !otpCode) {
+    document.getElementById("login-otp").focus();
+    return;
+  }
+
   errEl.classList.add("hidden");
+  _loginBusy = true;
 
   // Build request body
   const body = { username, password };
@@ -642,26 +669,35 @@ async function doLogin() {
         document.getElementById("login-otp").value = "";
         document.getElementById("login-otp").focus();
       }
+      _loginBusy = false;
       return;
     }
 
     const data = await resp.json();
 
-    if (data.otp_required) {
-      // Show OTP field inline (same form, no switching)
+    if (data.otp_required && !_loginOtpRequired) {
+      // Show OTP field inline, lock username/password fields
       _loginOtpRequired = true;
+      document.getElementById("login-username").disabled = true;
+      document.getElementById("login-password").disabled = true;
       document.getElementById("otp-group").classList.remove("hidden");
       document.getElementById("login-otp").value = "";
       document.getElementById("login-otp").focus();
+      // Update subtitle to indicate OTP step
+      const sub = document.querySelector("#login-form .login-sub");
+      if (sub) sub.innerHTML = 'Vérification en deux étapes requise <a href="#" onclick="resetLoginForm();return false" style="display:block;margin-top:6px;font-size:12px">Changer de compte</a>';
+      _loginBusy = false;
       return;
     }
 
     // Success
     _loginOtpRequired = false;
+    _loginBusy = false;
     loginSuccess(data.token);
   } catch {
     errEl.textContent = "Erreur de connexion au serveur";
     errEl.classList.remove("hidden");
+    _loginBusy = false;
   }
 }
 
@@ -700,6 +736,13 @@ function loginSuccess(token) {
   localStorage.setItem("dm_token", token);
   API.token = token;
   document.getElementById("login-modal").classList.add("hidden");
+  // Reset form state
+  document.getElementById("login-username").disabled = false;
+  document.getElementById("login-password").disabled = false;
+  _loginOtpRequired = false;
+  _loginBusy = false;
+  const sub = document.querySelector("#login-form .login-sub");
+  if (sub) sub.textContent = "Connectez-vous pour accéder à l'interface";
   startApp();
 }
 
