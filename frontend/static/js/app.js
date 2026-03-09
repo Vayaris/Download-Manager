@@ -88,6 +88,16 @@ function fmtSpeed(bps) {
   return fmtBytes(bps) + "/s";
 }
 
+function fmtEta(remaining, speed) {
+  if (!speed || speed <= 0 || !remaining || remaining <= 0) return "";
+  let s = Math.round(remaining / speed);
+  if (s < 60) return `${s}s`;
+  if (s < 3600) return `${Math.floor(s / 60)}m${String(s % 60).padStart(2, "0")}s`;
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  return h >= 24 ? `${Math.floor(h / 24)}j${h % 24}h` : `${h}h${String(m).padStart(2, "0")}m`;
+}
+
 function fmtName(item) {
   if (item.name && item.name.trim()) return item.name;
   try {
@@ -252,17 +262,24 @@ function updateDownloadRow(tr, item) {
   // Update progress meta
   const meta = tr.querySelector(".progress-meta");
   if (meta) {
+    const eta = fmtEta(total - done, item.speed);
+    const etaHtml = eta ? `<span class="progress-eta">${eta}</span>` : "";
     const progressMeta = item.status === "complete"
       ? `<span class="progress-pct" style="color:var(--green)">100%</span><span class="progress-done">${escHtml(fmtBytes(total))}</span>`
       : item.status === "downloading"
-      ? `<span class="progress-pct">${pct}%</span><span class="progress-done">${escHtml(fmtBytes(done))} / ${escHtml(fmtBytes(total))}</span>`
+      ? `<span class="progress-pct">${pct}%</span><span class="progress-done">${escHtml(fmtBytes(done))} / ${escHtml(fmtBytes(total))}</span>${etaHtml}`
       : `<span class="progress-pct">${pct}%</span><span class="progress-done">${escHtml(fmtBytes(total))}</span>`;
     meta.innerHTML = progressMeta;
   }
 
-  // Update speed
+  // Update speed + ETA
   const speedTd = tr.querySelector(".col-speed");
-  if (speedTd) speedTd.textContent = fmtSpeed(item.speed);
+  if (speedTd) {
+    const eta = fmtEta(total - done, item.speed);
+    speedTd.innerHTML = item.speed > 0
+      ? `${escHtml(fmtSpeed(item.speed))}${eta ? `<span class="speed-eta">${eta}</span>` : ""}`
+      : fmtSpeed(0);
+  }
 
   // Update size
   const sizeTd = tr.querySelector(".col-size");
@@ -312,11 +329,17 @@ function buildDownloadRowInner(item) {
     retryInfo = `<span class="retry-badge" title="${escHtml(item.error_msg || '')}">${ICONS.retry} ${item.retry_count}/${item.max_retries || 5}</span>`;
   }
 
+  const eta = fmtEta(total - done, item.speed);
+  const etaHtml = eta ? `<span class="progress-eta">${eta}</span>` : "";
   const progressMeta = item.status === "complete"
     ? `<span class="progress-pct" style="color:var(--green)">100%</span><span class="progress-done">${escHtml(fmtBytes(total))}</span>`
     : item.status === "downloading"
-    ? `<span class="progress-pct">${pct}%</span><span class="progress-done">${escHtml(fmtBytes(done))} / ${escHtml(fmtBytes(total))}</span>`
+    ? `<span class="progress-pct">${pct}%</span><span class="progress-done">${escHtml(fmtBytes(done))} / ${escHtml(fmtBytes(total))}</span>${etaHtml}`
     : `<span class="progress-pct">${pct}%</span><span class="progress-done">${escHtml(fmtBytes(total))}</span>`;
+
+  const speedContent = item.speed > 0
+    ? `${escHtml(fmtSpeed(item.speed))}${eta ? `<span class="speed-eta">${eta}</span>` : ""}`
+    : escHtml(fmtSpeed(0));
 
   return `
       <td class="col-name">
@@ -335,7 +358,7 @@ function buildDownloadRowInner(item) {
           <div class="progress-meta">${progressMeta}</div>
         </div>
       </td>
-      <td class="col-speed mono-cell">${escHtml(fmtSpeed(item.speed))}</td>
+      <td class="col-speed mono-cell">${speedContent}</td>
       <td class="col-size mono-cell">${escHtml(fmtBytes(total))}</td>
       <td class="col-dest">
         <div class="dest-cell">
