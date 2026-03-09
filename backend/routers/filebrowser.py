@@ -3,15 +3,53 @@ from fastapi import APIRouter, Depends, Query, HTTPException
 from pathlib import Path
 
 from auth import get_current_user
+from config import get_config
 from models import MkdirRequest
 
 router = APIRouter()
+
+
+def _get_allowed_roots() -> list:
+    """Get list of allowed browseable paths from config."""
+    cfg = get_config()
+    allowed = [Path(p).resolve() for p in cfg["downloads"].get("allowed_paths", [])]
+    default_dest = cfg["downloads"].get("default_destination", "")
+    if default_dest:
+        allowed.append(Path(default_dest).resolve())
+    # Also allow parent dirs of allowed paths for navigation
+    if not allowed:
+        allowed.append(Path("/").resolve())
+    return allowed
+
+
+def _is_path_allowed(target: Path, allowed_roots: list) -> bool:
+    """Check if target path is within an allowed root or is a parent of one."""
+    target = target.resolve()
+    for root in allowed_roots:
+        # target is inside an allowed root
+        try:
+            target.relative_to(root)
+            return True
+        except ValueError:
+            pass
+        # target is a parent of an allowed root (needed for navigation)
+        try:
+            root.relative_to(target)
+            return True
+        except ValueError:
+            pass
+    return False
 
 
 @router.get("/browse")
 async def browse(path: str = Query(default="/"), _=Depends(get_current_user)):
     try:
         target = Path(path).resolve()
+        allowed_roots = _get_allowed_roots()
+
+        if not _is_path_allowed(target, allowed_roots):
+            return {"path": str(target), "directories": [], "breadcrumbs": [], "parent": None,
+                    "error": "Accès non autorisé à ce chemin"}
 
         if not target.exists() or not target.is_dir():
             return {"path": str(target), "directories": [], "breadcrumbs": [], "parent": None,
@@ -65,6 +103,9 @@ async def mkdir(body: MkdirRequest, _=Depends(get_current_user)):
         raise HTTPException(status_code=400, detail="Nom de dossier invalide")
 
     parent = Path(body.path).resolve()
+    allowed_roots = _get_allowed_roots()
+    if not _is_path_allowed(parent, allowed_roots):
+        raise HTTPException(status_code=403, detail="Accès non autorisé à ce chemin")
     if not parent.exists() or not parent.is_dir():
         raise HTTPException(status_code=400, detail="Le dossier parent n'existe pas")
 

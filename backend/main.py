@@ -77,13 +77,18 @@ class NoCacheStaticMiddleware(BaseHTTPMiddleware):
 
 
 app.add_middleware(NoCacheStaticMiddleware)
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+
+# CORS: only allow same-origin requests (app is served from same host)
+_cfg = get_config()
+_cors_origins = _cfg.get("server", {}).get("cors_origins", [])
+if _cors_origins:
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=_cors_origins,
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
 
 app.include_router(downloads.router, prefix="/api/downloads", tags=["downloads"])
 app.include_router(settings.router,  prefix="/api/settings",  tags=["settings"])
@@ -103,8 +108,47 @@ async def settings_page():
     return FileResponse(str(FRONTEND_DIR / "settings.html"))
 
 
+@app.get("/manifest.json")
+async def manifest():
+    return FileResponse(str(FRONTEND_DIR / "manifest.json"), media_type="application/manifest+json")
+
+
+@app.get("/sw.js")
+async def service_worker():
+    return FileResponse(str(FRONTEND_DIR / "sw.js"), media_type="application/javascript")
+
+
 @app.websocket("/ws/downloads")
 async def websocket_endpoint(ws: WebSocket):
+    # Authenticate WebSocket: require token as query param or first message
+    import aiosqlite
+    from database import DB_PATH
+    from jose import jwt as ws_jwt, JWTError as WSJWTError
+
+    # Check if auth is required (users exist)
+    async with aiosqlite.connect(str(DB_PATH)) as db:
+        cursor = await db.execute("SELECT COUNT(*) FROM users")
+        (count,) = await cursor.fetchone()
+
+    if count > 0:
+        # Require token in query string: /ws/downloads?token=...
+        token = ws.query_params.get("token")
+        if not token:
+            await ws.close(code=4001, reason="Authentication required")
+            return
+        try:
+            from auth import _get_secret, ALGORITHM
+            payload = ws_jwt.decode(token, _get_secret(), algorithms=[ALGORITHM])
+            if not payload.get("sub"):
+                await ws.close(code=4001, reason="Invalid token")
+                return
+            if payload.get("otp_required") and not payload.get("otp_verified"):
+                await ws.close(code=4001, reason="OTP verification required")
+                return
+        except WSJWTError:
+            await ws.close(code=4001, reason="Invalid token")
+            return
+
     await ws_manager.connect(ws)
     try:
         while True:
