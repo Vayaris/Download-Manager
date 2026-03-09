@@ -439,6 +439,12 @@ async function loadHistory() {
           <span class="dest-cell-path" title="${escHtml(item.destination)}">${escHtml(item.destination)}</span>
         </td>
         <td class="mono-cell" style="font-size:11px">${fmtDate(item.completed_at)}</td>
+        <td class="col-actions">
+          <div class="row-actions">
+            <button class="btn-act act-delete" onclick="deleteHistoryItem('${item.id}', false)" title="Supprimer de l'historique">${ICONS.trash}</button>
+            ${item.status === 'complete' ? `<button class="btn-act act-delete" onclick="deleteHistoryItem('${item.id}', true)" title="Supprimer le fichier du disque" style="color:var(--red)">${ICONS.trash}</button>` : ''}
+          </div>
+        </td>
       </tr>
     `).join("");
 
@@ -465,6 +471,18 @@ async function clearHistory() {
     historyPage = 0;
     loadHistory();
     showToast("Historique vidé", "ok");
+  } catch (e) { showToast("Erreur : " + e.message, "error"); }
+}
+
+async function deleteHistoryItem(id, deleteFile) {
+  const msg = deleteFile
+    ? "Supprimer cette entrée ET le fichier du disque ?"
+    : "Supprimer cette entrée de l'historique ?";
+  if (!confirm(msg)) return;
+  try {
+    await API.del(`/api/downloads/history/${id}?delete_file=${deleteFile}`);
+    showToast(deleteFile ? "Entrée et fichier supprimés" : "Entrée supprimée", "ok");
+    loadHistory();
   } catch (e) { showToast("Erreur : " + e.message, "error"); }
 }
 
@@ -528,14 +546,14 @@ async function bulkAction(action) {
 async function checkAuth() {
   try {
     const status = await fetch("/api/auth/status").then(r => r.json());
-    if (!status.auth_enabled) return;
 
-    // Auth is enabled but no admin exists — show setup form
+    // No admin exists — force setup
     if (!status.admin_exists) {
       showSetupForm();
       return;
     }
 
+    // Admin exists — require valid token
     const token = localStorage.getItem("dm_token");
     if (!token) { showLogin(); return; }
     API.token = token;
@@ -546,6 +564,12 @@ async function checkAuth() {
 
 function showLogin() {
   const modal = document.getElementById("login-modal");
+  // Don't reset if OTP or setup form is already showing
+  if (!modal.classList.contains("hidden") &&
+      (!document.getElementById("otp-form").classList.contains("hidden") ||
+       !document.getElementById("setup-form").classList.contains("hidden"))) {
+    return;
+  }
   modal.classList.remove("hidden");
   document.getElementById("login-form").classList.remove("hidden");
   document.getElementById("otp-form").classList.add("hidden");

@@ -35,10 +35,18 @@ class AllDebridService:
         config = get_config()
         if not config["alldebrid"]["enabled"] or not config["alldebrid"]["api_key"]:
             return url
+
+        # Already-debrided links from AllDebrid CDN — use directly
+        if "debrid.it/" in url or "debrid.link/" in url:
+            return url
+
         try:
             direct = await self.unrestrict(url, config["alldebrid"]["api_key"])
             return direct or url
         except Exception:
+            # For alldebrid.com links, propagate the error (let retry handle it)
+            if "alldebrid.com/" in url:
+                raise
             return url
 
 

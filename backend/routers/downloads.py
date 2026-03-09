@@ -1,3 +1,5 @@
+from pathlib import Path
+
 from fastapi import APIRouter, Depends, HTTPException, Request, Query
 from typing import List, Optional
 
@@ -6,6 +8,7 @@ import aiosqlite
 from database import DB_PATH
 from models import AddDownloadsRequest, AddPackageRequest, BulkActionRequest, ReorderRequest
 from auth import get_current_user
+from config import get_config
 
 router = APIRouter()
 
@@ -137,6 +140,47 @@ async def get_history(
         )
         rows = [dict(r) for r in await cursor.fetchall()]
         return {"total": total, "items": rows}
+
+
+@router.delete("/history/{history_id}")
+async def delete_history_item(
+    history_id: str,
+    delete_file: bool = Query(default=False),
+    _=Depends(get_current_user),
+):
+    async with aiosqlite.connect(str(DB_PATH)) as db:
+        db.row_factory = aiosqlite.Row
+        cursor = await db.execute("SELECT * FROM history WHERE id = ?", (history_id,))
+        item = await cursor.fetchone()
+
+    if not item:
+        raise HTTPException(status_code=404, detail="Entrée introuvable")
+
+    if delete_file:
+        cfg = get_config()
+        dest = item["destination"] or ""
+        name = item["name"] or ""
+        if dest and name:
+            file_path = Path(dest) / name
+            resolved = file_path.resolve()
+
+            # Security: ensure path is within allowed_paths or default_destination
+            allowed = [Path(p).resolve() for p in cfg["downloads"].get("allowed_paths", [])]
+            default_dest = cfg["downloads"].get("default_destination", "")
+            if default_dest:
+                allowed.append(Path(default_dest).resolve())
+
+            if not any(str(resolved).startswith(str(a)) for a in allowed):
+                raise HTTPException(status_code=403, detail="Chemin non autorisé")
+
+            if resolved.is_file():
+                resolved.unlink()
+
+    async with aiosqlite.connect(str(DB_PATH)) as db:
+        await db.execute("DELETE FROM history WHERE id = ?", (history_id,))
+        await db.commit()
+
+    return {"status": "deleted"}
 
 
 @router.delete("/history")
