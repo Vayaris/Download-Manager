@@ -599,10 +599,12 @@ async function loadHistory() {
 }
 
 async function clearHistory() {
+  if (!confirm("Vider tout l'historique ?")) return;
   try {
-    await API.del("/api/downloads/history");
+    const resp = await API.del("/api/downloads/history");
     historyPage = 0;
-    loadHistory();
+    document.getElementById("history-tbody").innerHTML = "";
+    document.getElementById("history-section").classList.add("hidden");
     showToast("Historique vidé", "ok");
   } catch (e) { showToast("Erreur : " + e.message, "error"); }
 }
@@ -932,12 +934,17 @@ function startApp() {
 
   loadInitial();
 
+  let _lastHistoryLoad = 0;
   WS.on("downloads_update", (data, msg) => {
     renderDownloads(data);
     if (msg && msg.packages) {
       renderPackages(msg.packages);
     }
-    loadHistory();
+    const now = Date.now();
+    if (now - _lastHistoryLoad > 10000) {
+      _lastHistoryLoad = now;
+      loadHistory();
+    }
   });
   WS.init();
 
