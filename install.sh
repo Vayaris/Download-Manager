@@ -3,7 +3,7 @@
 #  Download Manager — Script d'installation
 #  Compatible : Ubuntu 20.04+, Debian 11+ (VM / LXC Proxmox)
 # ============================================================
-set -e
+set -eo pipefail
 
 RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'
 BLUE='\033[0;34m'; NC='\033[0m'; BOLD='\033[1m'
@@ -90,7 +90,19 @@ if [ "$PYTHON_MAJOR" -lt 3 ] || ([ "$PYTHON_MAJOR" -eq 3 ] && [ "$PYTHON_MINOR" 
 fi
 
 success "Python ${PYTHON_VERSION} detecte"
+
+# Verify aria2c is actually installed
+if ! command -v aria2c &> /dev/null; then
+    die "aria2c n'a pas ete installe correctement. Verifiez votre gestionnaire de paquets."
+fi
 success "aria2c $(aria2c --version | head -1 | awk '{print $3}') installe"
+
+# Check if the selected port is already in use (warning only)
+if command -v ss &> /dev/null; then
+    if ss -tlnp | grep -q ":${PORT} " 2>/dev/null; then
+        warn "Le port ${PORT} est deja utilise. Le service pourrait ne pas demarrer."
+    fi
+fi
 
 # ---- Create directories ----
 info "Creation de la structure de repertoires..."

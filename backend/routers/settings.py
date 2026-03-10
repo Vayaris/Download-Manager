@@ -1,3 +1,5 @@
+import ipaddress
+import socket
 import subprocess
 from pathlib import Path
 
@@ -75,10 +77,16 @@ async def update_settings(body: SettingsUpdate, _=Depends(get_current_user)):
             parsed = urlparse(body.webhook_url)
             if parsed.scheme not in ("http", "https"):
                 raise HTTPException(status_code=400, detail="L'URL du webhook doit utiliser http ou https")
-            # Block localhost and private IPs
+            # Block private/reserved IPs (SSRF protection)
             host = parsed.hostname or ""
-            if host in ("localhost", "127.0.0.1", "::1", "0.0.0.0") or host.startswith("169.254."):
-                raise HTTPException(status_code=400, detail="L'URL du webhook ne peut pas cibler localhost")
+            try:
+                infos = socket.getaddrinfo(host, None)
+                for info in infos:
+                    addr = ipaddress.ip_address(info[4][0])
+                    if addr.is_private or addr.is_reserved or addr.is_loopback or addr.is_link_local:
+                        raise HTTPException(status_code=400, detail="L'URL du webhook ne peut pas cibler une adresse privée ou locale")
+            except socket.gaierror:
+                pass  # DNS resolution failed, allow (will fail on actual webhook call anyway)
         cfg["webhooks"]["url"] = body.webhook_url
     if body.webhook_format is not None:
         cfg["webhooks"]["format"] = body.webhook_format
@@ -240,7 +248,7 @@ async def perform_update(_=Depends(get_current_user)):
                 capture_output=True, text=True, timeout=30,
             )
             if result.returncode != 0:
-                raise HTTPException(status_code=500, detail=f"Git pull échoué : {result.stderr[:300]}")
+                raise HTTPException(status_code=500, detail="Échec de la mise à jour. Consultez les logs système.")
 
         # If install_dir != git_dir, sync files
         if git_dir != install_dir:
@@ -276,4 +284,4 @@ async def perform_update(_=Depends(get_current_user)):
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e)[:300])
+        raise HTTPException(status_code=500, detail="Erreur interne lors de la mise à jour")

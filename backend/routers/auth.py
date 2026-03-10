@@ -1,7 +1,7 @@
 import uuid
 import io
 import base64
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 import aiosqlite
 from fastapi import APIRouter, HTTPException, Depends, Request
@@ -43,7 +43,7 @@ def _get_client_ip(request: Request) -> str:
 
 async def _check_ip_blocked(ip: str):
     """Raise 403 if IP is currently blocked."""
-    now = datetime.utcnow().isoformat()
+    now = datetime.now(timezone.utc).isoformat()
     async with aiosqlite.connect(str(DB_PATH)) as db:
         cursor = await db.execute(
             "SELECT expires_at FROM blocked_ips WHERE ip = ? AND expires_at > ?",
@@ -59,7 +59,7 @@ async def _check_ip_blocked(ip: str):
 
 async def _record_failed_attempt(ip: str):
     """Record a failed login attempt and block IP if threshold reached."""
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
     window_start = (now - timedelta(minutes=ATTEMPT_WINDOW_MINUTES)).isoformat()
     async with aiosqlite.connect(str(DB_PATH)) as db:
         await db.execute(
@@ -134,6 +134,8 @@ async def login(body: LoginRequest, request: Request):
             return LoginResponse(token=token, otp_required=True)
 
         # Verify OTP code
+        if not body.otp_code or not (len(body.otp_code) == 6 and body.otp_code.isdigit()):
+            raise HTTPException(status_code=400, detail="Le code OTP doit être exactement 6 chiffres")
         try:
             import pyotp
             totp = pyotp.TOTP(user["otp_secret"])
@@ -183,7 +185,7 @@ async def setup_admin(body: SetupAdminRequest):
             raise HTTPException(status_code=400, detail="Le mot de passe doit faire au moins 6 caracteres")
 
         user_id = str(uuid.uuid4())
-        now = datetime.utcnow().isoformat()
+        now = datetime.now(timezone.utc).isoformat()
         pw_hash = get_password_hash(body.password)
 
         await db.execute(
@@ -271,6 +273,8 @@ async def verify_otp(body: VerifyOTPRequest, user=Depends(get_current_user)):
     if not row or not row["otp_secret"]:
         raise HTTPException(status_code=400, detail="OTP non configure. Appelez /setup-otp d'abord")
 
+    if not body.code or not (len(body.code) == 6 and body.code.isdigit()):
+        raise HTTPException(status_code=400, detail="Le code OTP doit être exactement 6 chiffres")
     totp = pyotp.TOTP(row["otp_secret"])
     if not totp.verify(body.code, valid_window=1):
         raise HTTPException(status_code=400, detail="Code OTP invalide")
@@ -307,6 +311,8 @@ async def disable_otp(body: VerifyOTPRequest, user=Depends(get_current_user)):
     if not row or not row["otp_enabled"]:
         raise HTTPException(status_code=400, detail="2FA n'est pas activee")
 
+    if not body.code or not (len(body.code) == 6 and body.code.isdigit()):
+        raise HTTPException(status_code=400, detail="Le code OTP doit être exactement 6 chiffres")
     totp = pyotp.TOTP(row["otp_secret"])
     if not totp.verify(body.code, valid_window=1):
         raise HTTPException(status_code=400, detail="Code OTP invalide")

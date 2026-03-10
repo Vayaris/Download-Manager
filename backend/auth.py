@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
@@ -27,7 +27,7 @@ def get_password_hash(password: str) -> str:
 
 def create_access_token(data: dict) -> str:
     payload = data.copy()
-    payload["exp"] = datetime.utcnow() + timedelta(hours=TOKEN_EXPIRE_HOURS)
+    payload["exp"] = datetime.now(timezone.utc) + timedelta(hours=TOKEN_EXPIRE_HOURS)
     return jwt.encode(payload, _get_secret(), algorithm=ALGORITHM)
 
 

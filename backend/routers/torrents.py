@@ -1,5 +1,5 @@
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Request, UploadFile, File, Form
 
@@ -9,17 +9,13 @@ from database import DB_PATH
 from models import MagnetUploadRequest
 from auth import get_current_user
 from services.alldebrid import alldebrid
+from utils import validate_destination as _validate_destination
 
 router = APIRouter()
 
 
 def _qm(request: Request):
     return request.app.state.queue_manager
-
-
-def _validate_destination(dest: str):
-    from routers.downloads import _validate_destination as _vd
-    _vd(dest)
 
 
 async def _process_ready_magnet(magnet_id: int, name: str, destination: str, qm):
@@ -46,7 +42,7 @@ async def submit_magnets(body: MagnetUploadRequest, request: Request, _=Depends(
     except Exception as e:
         raise HTTPException(status_code=502, detail=str(e))
 
-    now = datetime.utcnow().isoformat()
+    now = datetime.now(timezone.utc).isoformat()
     qm = _qm(request)
     added = []
 
@@ -108,7 +104,7 @@ async def upload_torrent(
     except Exception as e:
         raise HTTPException(status_code=502, detail=str(e))
 
-    now = datetime.utcnow().isoformat()
+    now = datetime.now(timezone.utc).isoformat()
     qm = _qm(request)
     added = []
 

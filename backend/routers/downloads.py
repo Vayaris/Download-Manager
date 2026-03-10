@@ -9,6 +9,7 @@ from database import DB_PATH
 from models import AddDownloadsRequest, AddPackageRequest, BulkActionRequest, ReorderRequest
 from auth import get_current_user
 from config import get_config
+from utils import validate_destination as _validate_destination
 
 router = APIRouter()
 
@@ -27,26 +28,6 @@ async def list_downloads(request: Request, _=Depends(get_current_user)):
         rows = await cursor.fetchall()
         return [dict(r) for r in rows]
 
-
-def _validate_destination(dest: str):
-    """Validate download destination is within allowed paths."""
-    if not dest:
-        return
-    cfg = get_config()
-    resolved = Path(dest).resolve()
-    allowed = [Path(p).resolve() for p in cfg["downloads"].get("allowed_paths", [])]
-    default_dest = cfg["downloads"].get("default_destination", "")
-    if default_dest:
-        allowed.append(Path(default_dest).resolve())
-    if not allowed:
-        return  # No restrictions configured
-    for a in allowed:
-        try:
-            resolved.relative_to(a)
-            return
-        except ValueError:
-            continue
-    raise HTTPException(status_code=403, detail="Destination non autorisée")
 
 
 @router.post("/")

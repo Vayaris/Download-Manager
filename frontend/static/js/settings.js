@@ -4,29 +4,8 @@
 
 // Values now read directly from input fields
 
-const API = {
-  token: localStorage.getItem("dm_token") || "",
-  _headers() {
-    const h = { "Content-Type": "application/json" };
-    if (this.token) h["Authorization"] = `Bearer ${this.token}`;
-    return h;
-  },
-  async get(url) {
-    const r = await fetch(url, { headers: this._headers() });
-    if (!r.ok) throw new Error(await r.text());
-    return r.json();
-  },
-  async post(url, body) {
-    const r = await fetch(url, { method: "POST", headers: this._headers(), body: JSON.stringify(body) });
-    if (!r.ok) throw new Error(await r.text());
-    return r.json();
-  },
-  async put(url, body) {
-    const r = await fetch(url, { method: "PUT", headers: this._headers(), body: JSON.stringify(body) });
-    if (!r.ok) throw new Error(await r.text());
-    return r.json();
-  },
-};
+// API helper — delegates to shared apiFetch from api.js
+const API = apiFetch;
 
 // ---- AllDebrid connection badge ----
 
@@ -294,9 +273,8 @@ async function checkSettingsAuth() {
       return false;
     }
 
-    const token = localStorage.getItem("dm_token");
+    const token = getAuthToken();
     if (!token) { showSettingsLogin(); return false; }
-    API.token = token;
 
     // Validate token with raw fetch
     const check = await fetch("/api/settings/", {
@@ -461,7 +439,7 @@ async function checkForUpdate() {
       if (res.changelog) {
         document.getElementById("update-info").classList.remove("hidden");
         document.getElementById("update-changelog").innerHTML =
-          '<p style="font-size:12px;color:var(--text-3);margin-bottom:6px;font-weight:600;text-transform:uppercase;letter-spacing:.5px">Notes de version v' + res.latest + '</p>' +
+          '<p style="font-size:12px;color:var(--text-3);margin-bottom:6px;font-weight:600;text-transform:uppercase;letter-spacing:.5px">Notes de version v' + escHtml(res.latest) + '</p>' +
           '<div style="font-size:13px;color:var(--text-2);line-height:1.5">' + renderChangelog(res.changelog) + '</div>';
       }
       showToast("Mise à jour disponible : v" + res.latest, "ok");
