@@ -86,6 +86,8 @@ async def bulk_action(body: BulkActionRequest, request: Request, _=Depends(get_c
         await qm.resume_all()
     elif body.action == "clear_completed":
         await qm.clear_completed()
+    elif body.action == "remove_all":
+        await qm.remove_all()
     else:
         raise HTTPException(status_code=400, detail=f"Unknown action: {body.action}")
     return {"status": "ok"}
