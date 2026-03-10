@@ -1,6 +1,6 @@
 import httpx
 import asyncio
-from datetime import datetime
+from datetime import datetime, timezone
 from config import get_config
 
 
@@ -62,7 +62,7 @@ def _build_payload(fmt: str, event: str, data: dict) -> dict:
 def _generic_payload(event, name, dest, size, error, status, pkg_name, data):
     return {
         "event": event,
-        "timestamp": datetime.utcnow().isoformat(),
+        "timestamp": datetime.now(timezone.utc).isoformat(),
         "data": {
             "name": name,
             "destination": dest,
@@ -101,7 +101,7 @@ def _discord_payload(event, name, dest, size, error, pkg_name):
             "color": colors.get(event, 0x7c3aed),
             "fields": fields,
             "footer": {"text": "Download Manager"},
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
         }]
     }
 

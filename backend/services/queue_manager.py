@@ -1,7 +1,7 @@
 import asyncio
 import sys
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
 
 
@@ -76,7 +76,7 @@ class QueueManager:
     async def _tick(self):
         config = get_config()
         max_concurrent = config["downloads"]["simultaneous"]
-        now = datetime.utcnow().isoformat()
+        now = datetime.now(timezone.utc).isoformat()
 
         async with aiosqlite.connect(str(DB_PATH)) as db:
             db.row_factory = aiosqlite.Row
@@ -430,7 +430,7 @@ class QueueManager:
     # ------------------------------------------------------------------ #
 
     async def add_downloads(self, urls: list, destination: str, package_id: str = None) -> list:
-        now = datetime.utcnow().isoformat()
+        now = datetime.now(timezone.utc).isoformat()
         ids = []
         seen = set()
         async with aiosqlite.connect(str(DB_PATH)) as db:
@@ -476,7 +476,7 @@ class QueueManager:
             config = get_config()
             max_concurrent = config["downloads"]["simultaneous"]
             segments = config["downloads"].get("download_segments", 1)
-            now = datetime.utcnow().isoformat()
+            now = datetime.now(timezone.utc).isoformat()
 
             async with aiosqlite.connect(str(DB_PATH)) as db:
                 db.row_factory = aiosqlite.Row
@@ -501,10 +501,17 @@ class QueueManager:
                     try:
                         direct_url = await alldebrid.process_url(item["url"])
                         gid = await aria2.add_uri(direct_url, item["destination"], split=segments)
-                        await db.execute(
-                            "UPDATE downloads SET aria2_gid = ?, status = 'downloading', updated_at = ? WHERE id = ?",
+                        cursor = await db.execute(
+                            "UPDATE downloads SET aria2_gid = ?, status = 'downloading', updated_at = ? WHERE id = ? AND status = 'pending'",
                             (gid, now, item["id"]),
                         )
+                        if cursor.rowcount == 0:
+                            # Another task already picked up this download; cancel the aria2 download
+                            try:
+                                await aria2.remove(gid)
+                            except Exception:
+                                pass
+                            continue
                         await db.commit()
                     except Exception as e:
                         log(f"Immediate submit failed for {item['url'][:80]}: {e}")
@@ -513,7 +520,7 @@ class QueueManager:
             log(f"_submit_pending_now error: {e}")
 
     async def add_package(self, name: str, urls: list, destination: str) -> dict:
-        now = datetime.utcnow().isoformat()
+        now = datetime.now(timezone.utc).isoformat()
         pkg_id = str(uuid.uuid4())
 
         async with aiosqlite.connect(str(DB_PATH)) as db:
@@ -538,7 +545,7 @@ class QueueManager:
                     await aria2.pause(row["aria2_gid"])
                 except Exception:
                     pass
-            now = datetime.utcnow().isoformat()
+            now = datetime.now(timezone.utc).isoformat()
             await db.execute(
                 "UPDATE downloads SET status = 'paused', speed = 0, updated_at = ? WHERE id = ?",
                 (now, download_id),
@@ -565,17 +572,18 @@ class QueueManager:
                         "UPDATE downloads SET aria2_gid = NULL WHERE id = ?", (download_id,)
                     )
 
-            now = datetime.utcnow().isoformat()
+            now = datetime.now(timezone.utc).isoformat()
             # Reset retry count on manual resume of failed downloads
-            extra = ""
-            params = [new_status, now, download_id]
             if row["status"] == "failed":
-                extra = ", retry_count = 0, error_msg = NULL"
-
-            await db.execute(
-                f"UPDATE downloads SET status = ?{extra}, updated_at = ? WHERE id = ?",
-                params,
-            )
+                await db.execute(
+                    "UPDATE downloads SET status = ?, retry_count = 0, error_msg = NULL, updated_at = ? WHERE id = ?",
+                    (new_status, now, download_id),
+                )
+            else:
+                await db.execute(
+                    "UPDATE downloads SET status = ?, updated_at = ? WHERE id = ?",
+                    (new_status, now, download_id),
+                )
             await db.commit()
 
     async def remove_download(self, download_id: str):
@@ -625,7 +633,7 @@ class QueueManager:
             await db.commit()
 
     async def clear_completed(self):
-        now = datetime.utcnow().isoformat()
+        now = datetime.now(timezone.utc).isoformat()
         async with aiosqlite.connect(str(DB_PATH)) as db:
             db.row_factory = aiosqlite.Row
             # Move completed/failed to history before deleting

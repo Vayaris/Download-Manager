@@ -9,8 +9,10 @@ config.yml
 *.log
 .env
 downloads/
+config/
 *.egg-info/
 dist/
 build/
 .DS_Store
 Thumbs.db
+node_modules/

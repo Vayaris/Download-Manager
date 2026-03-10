@@ -106,25 +106,14 @@ function closeAccountModal() {
   document.getElementById("account-modal").classList.add("hidden");
 }
 
-// ---- Get API helper (use page's API object) ----
+// ---- API helpers (delegate to shared apiFetch from api.js) ----
 
-function _acctHeaders() {
-  const h = { "Content-Type": "application/json" };
-  const token = localStorage.getItem("dm_token");
-  if (token) h["Authorization"] = `Bearer ${token}`;
-  return h;
+function _acctGet(url) {
+  return apiFetch.get(url);
 }
 
-async function _acctGet(url) {
-  const r = await fetch(url, { headers: _acctHeaders() });
-  if (!r.ok) throw new Error(await r.text());
-  return r.json();
-}
-
-async function _acctPost(url, body) {
-  const r = await fetch(url, { method: "POST", headers: _acctHeaders(), body: JSON.stringify(body) });
-  if (!r.ok) throw new Error(await r.text());
-  return r.json();
+function _acctPost(url, body) {
+  return apiFetch.post(url, body);
 }
 
 // ---- Load user info ----
