@@ -12,7 +12,7 @@ from starlette.requests import Request
 from config import get_config
 from database import init_db
 from services.queue_manager import QueueManager
-from routers import downloads, settings, filebrowser
+from routers import downloads, settings, filebrowser, torrents
 from routers import auth as auth_router
 
 BASE_DIR = Path(__file__).parent
@@ -94,6 +94,7 @@ app.include_router(downloads.router, prefix="/api/downloads", tags=["downloads"]
 app.include_router(settings.router,  prefix="/api/settings",  tags=["settings"])
 app.include_router(filebrowser.router, prefix="/api/files",   tags=["files"])
 app.include_router(auth_router.router, prefix="/api/auth",    tags=["auth"])
+app.include_router(torrents.router,    prefix="/api/torrents", tags=["torrents"])
 
 app.mount("/static", StaticFiles(directory=str(FRONTEND_DIR / "static")), name="static")
 

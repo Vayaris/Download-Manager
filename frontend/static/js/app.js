@@ -621,6 +621,176 @@ async function deleteHistoryItem(id, deleteFile) {
   } catch (e) { showToast("Erreur : " + e.message, "error"); }
 }
 
+// ---- Torrent modal ----
+
+let _torrentFileBrowserMode = false;
+
+function openTorrentModal() {
+  document.getElementById("torrent-modal").classList.remove("hidden");
+  const mainDest = document.getElementById("dest-path").value;
+  if (mainDest) {
+    document.getElementById("torrent-dest-path").value = mainDest;
+    document.getElementById("torrent-dest-label").textContent = mainDest;
+    document.getElementById("torrent-dest-selector").classList.add("selected");
+  }
+}
+
+function closeTorrentModal() {
+  document.getElementById("torrent-modal").classList.add("hidden");
+  document.getElementById("torrent-magnets").value = "";
+  document.getElementById("torrent-file-input").value = "";
+  document.getElementById("torrent-file-label").textContent = "Cliquez ou glissez un fichier .torrent ici";
+}
+
+function switchTorrentTab(tab) {
+  document.getElementById("tab-magnet").classList.toggle("active", tab === "magnet");
+  document.getElementById("tab-file").classList.toggle("active", tab === "file");
+  document.getElementById("torrent-tab-magnet").classList.toggle("hidden", tab !== "magnet");
+  document.getElementById("torrent-tab-file").classList.toggle("hidden", tab !== "file");
+}
+
+function onTorrentFileSelected(input) {
+  if (input.files && input.files[0]) {
+    document.getElementById("torrent-file-label").textContent = input.files[0].name;
+  }
+}
+
+function openFileBrowserForTorrent() {
+  _torrentFileBrowserMode = true;
+  FileBrowser.elevate();
+  const startPath = document.getElementById("torrent-dest-path").value.trim() || undefined;
+  FileBrowser.open((path) => {
+    document.getElementById("torrent-dest-path").value = path;
+    document.getElementById("torrent-dest-label").textContent = path;
+    document.getElementById("torrent-dest-selector").classList.add("selected");
+    _torrentFileBrowserMode = false;
+  }, startPath);
+}
+
+async function submitTorrent() {
+  const activeTab = document.getElementById("tab-file").classList.contains("active") ? "file" : "magnet";
+  let destination = document.getElementById("torrent-dest-path").value.trim();
+
+  if (!destination) {
+    try {
+      const cfg = await API.get("/api/settings/");
+      destination = cfg.default_destination || "/opt/download-manager/downloads";
+    } catch {
+      destination = "/opt/download-manager/downloads";
+    }
+  }
+
+  if (activeTab === "magnet") {
+    const raw = document.getElementById("torrent-magnets").value.trim();
+    if (!raw) { showToast("Collez au moins un lien magnet", "error"); return; }
+    const magnets = raw.split("\n").map(u => u.trim()).filter(Boolean);
+
+    try {
+      const result = await API.post("/api/torrents/", { magnets, destination });
+      showToast(`${result.added} torrent(s) ajouté(s)`, "ok");
+      closeTorrentModal();
+    } catch (e) {
+      showToast("Erreur : " + e.message, "error");
+    }
+  } else {
+    const fileInput = document.getElementById("torrent-file-input");
+    if (!fileInput.files || !fileInput.files[0]) {
+      showToast("Sélectionnez un fichier .torrent", "error");
+      return;
+    }
+
+    const formData = new FormData();
+    formData.append("file", fileInput.files[0]);
+    formData.append("destination", destination);
+
+    try {
+      const token = API.token;
+      const headers = {};
+      if (token) headers["Authorization"] = `Bearer ${token}`;
+      const resp = await fetch("/api/torrents/upload", { method: "POST", headers, body: formData });
+      if (!resp.ok) throw new Error(await resp.text());
+      const result = await resp.json();
+      showToast(`${result.added} torrent(s) ajouté(s)`, "ok");
+      closeTorrentModal();
+    } catch (e) {
+      showToast("Erreur : " + e.message, "error");
+    }
+  }
+}
+
+// ---- Torrent dropzone ----
+
+(function() {
+  document.addEventListener("DOMContentLoaded", () => {
+    const dz = document.getElementById("torrent-dropzone");
+    if (!dz) return;
+    dz.addEventListener("dragover", (e) => { e.preventDefault(); dz.classList.add("dragover"); });
+    dz.addEventListener("dragleave", () => { dz.classList.remove("dragover"); });
+    dz.addEventListener("drop", (e) => {
+      e.preventDefault();
+      dz.classList.remove("dragover");
+      const files = e.dataTransfer.files;
+      if (files && files[0]) {
+        const input = document.getElementById("torrent-file-input");
+        input.files = files;
+        document.getElementById("torrent-file-label").textContent = files[0].name;
+      }
+    });
+  });
+})();
+
+// ---- Render torrents ----
+
+function renderTorrents(torrents) {
+  const section = document.getElementById("torrents-section");
+  const list = document.getElementById("torrents-list");
+
+  if (!torrents || torrents.length === 0) {
+    section.classList.add("hidden");
+    return;
+  }
+
+  section.classList.remove("hidden");
+
+  list.innerHTML = torrents.map(t => {
+    const pct = t.progress ? t.progress.toFixed(1) : "0.0";
+    const statusClass = t.status === "error" ? "error" : "downloading";
+    const statusLabel = t.status === "error" ? "Erreur" : "Traitement";
+
+    return `
+      <div class="torrent-card">
+        <div class="torrent-header">
+          <div class="torrent-icon">
+            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 14.899A7 7 0 1 1 15.71 8h1.79a4.5 4.5 0 0 1 2.5 8.242"/><path d="M12 12v9"/><path d="m8 17 4 4 4-4"/></svg>
+          </div>
+          <div class="torrent-info">
+            <span class="torrent-name" title="${escHtml(t.name)}">${escHtml(t.name || 'Torrent')}</span>
+            <span class="torrent-meta">
+              ${escHtml(fmtBytes(t.size))}
+              ${t.speed > 0 ? ` \u2022 ${escHtml(fmtSpeed(t.speed))}` : ''}
+              ${t.seeders > 0 ? ` \u2022 ${t.seeders} seed${t.seeders > 1 ? 's' : ''}` : ''}
+            </span>
+          </div>
+          <div class="torrent-progress-wrap">
+            <div class="progress-track" style="width:120px">
+              <div class="progress-fill ${statusClass}" style="width:${pct}%"></div>
+            </div>
+            <span class="progress-pct">${pct}%</span>
+          </div>
+          <span class="badge badge-${statusClass}" style="margin-left:8px"><span class="b-dot"></span>${statusLabel}</span>
+          <button class="btn-act act-delete" onclick="removeTorrent('${t.id}')" title="Supprimer">${ICONS.trash}</button>
+        </div>
+      </div>`;
+  }).join("");
+}
+
+async function removeTorrent(id) {
+  try {
+    await API.del(`/api/torrents/${id}`);
+    showToast("Torrent supprimé", "ok");
+  } catch (e) { showToast("Erreur : " + e.message, "error"); }
+}
+
 // ---- Actions ----
 
 async function addLinks() {
@@ -640,14 +810,40 @@ async function addLinks() {
     }
   }
 
-  const urls = rawUrls.split("\n").map(u => u.trim()).filter(Boolean);
+  const allLines = rawUrls.split("\n").map(u => u.trim()).filter(Boolean);
 
-  try {
-    const result = await API.post("/api/downloads/", { urls, destination });
+  // Separate magnet links from regular URLs
+  const magnets = allLines.filter(u => u.startsWith("magnet:"));
+  const urls = allLines.filter(u => !u.startsWith("magnet:"));
+
+  let added = 0;
+  let errors = [];
+
+  // Submit magnet links to torrent endpoint
+  if (magnets.length > 0) {
+    try {
+      const result = await API.post("/api/torrents/", { magnets, destination });
+      added += result.added;
+    } catch (e) {
+      errors.push(e.message);
+    }
+  }
+
+  // Submit regular URLs to downloads endpoint
+  if (urls.length > 0) {
+    try {
+      const result = await API.post("/api/downloads/", { urls, destination });
+      added += result.added;
+    } catch (e) {
+      errors.push(e.message);
+    }
+  }
+
+  if (errors.length > 0) {
+    showToast("Erreur : " + errors.join("; "), "error");
+  } else {
     textarea.value = "";
-    showToast(`${result.added} lien${result.added > 1 ? "s" : ""} ajouté${result.added > 1 ? "s" : ""} à la file.`, "ok");
-  } catch (e) {
-    showToast("Erreur lors de l'ajout : " + e.message, "error");
+    showToast(`${added} lien${added > 1 ? "s" : ""} ajouté${added > 1 ? "s" : ""} à la file.`, "ok");
   }
 }
 
@@ -939,6 +1135,9 @@ function startApp() {
     renderDownloads(data);
     if (msg && msg.packages) {
       renderPackages(msg.packages);
+    }
+    if (msg && msg.torrents) {
+      renderTorrents(msg.torrents);
     }
     const now = Date.now();
     if (now - _lastHistoryLoad > 10000) {

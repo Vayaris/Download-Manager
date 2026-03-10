@@ -63,3 +63,8 @@ class VerifyOTPRequest(BaseModel):
 class MkdirRequest(BaseModel):
     path: str
     name: str
+
+
+class MagnetUploadRequest(BaseModel):
+    magnets: List[str]
+    destination: str

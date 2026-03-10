@@ -22,6 +22,7 @@ class QueueManager:
         self._task: Optional[asyncio.Task] = None
         self._ws_manager = None
         self._running = False
+        self._last_torrent_check = 0
 
     def register_ws_manager(self, ws_manager):
         self._ws_manager = ws_manager
@@ -265,6 +266,13 @@ class QueueManager:
             # ---- Update package statuses ---- #
             await self._update_package_statuses(db, now)
 
+            # ---- Check torrents (every 5s) ---- #
+            import time
+            _now_ts = time.time()
+            if _now_ts - self._last_torrent_check >= 5:
+                self._last_torrent_check = _now_ts
+                await self._check_torrents(db, now)
+
             # ---- Broadcast to WebSocket clients ---- #
             if self._ws_manager:
                 cursor = await db.execute(
@@ -296,11 +304,68 @@ class QueueManager:
                     pkg["total_downloaded"] = total_downloaded
                     pkg["progress"] = round(total_downloaded / total_size * 100, 1) if total_size > 0 else 0
 
+                # Fetch torrents for broadcast
+                cursor = await db.execute(
+                    "SELECT * FROM torrents ORDER BY created_at DESC"
+                )
+                torrents_list = [dict(r) for r in await cursor.fetchall()]
+
                 await self._ws_manager.broadcast({
                     "type": "downloads_update",
                     "data": active_downloads + finished_downloads,
                     "packages": packages,
+                    "torrents": torrents_list,
                 })
+
+    async def _check_torrents(self, db, now: str):
+        cursor = await db.execute(
+            "SELECT * FROM torrents WHERE status = 'processing'"
+        )
+        rows = await cursor.fetchall()
+        for row in rows:
+            try:
+                status_data = await alldebrid.magnet_status(row["alldebrid_id"])
+                sc = status_data.get("statusCode", 0)
+
+                if sc == 4:
+                    # Ready — get files and create package
+                    links = await alldebrid.magnet_files(row["alldebrid_id"])
+                    if links:
+                        await self.add_package(
+                            row["name"] or "Torrent",
+                            links,
+                            row["destination"],
+                        )
+                    await db.execute("DELETE FROM torrents WHERE id = ?", (row["id"],))
+                    await db.commit()
+                    try:
+                        await alldebrid.magnet_delete(row["alldebrid_id"])
+                    except Exception:
+                        pass
+                elif sc >= 5:
+                    # Error
+                    await db.execute(
+                        "UPDATE torrents SET status = 'error', status_message = ?, updated_at = ? WHERE id = ?",
+                        (status_data.get("filename", "Erreur torrent"), now, row["id"]),
+                    )
+                    await db.commit()
+                else:
+                    # Processing — update progress
+                    dl = status_data.get("downloaded", 0)
+                    size = status_data.get("size", 0) or row["size"]
+                    progress = round(dl / size * 100, 1) if size > 0 else 0
+                    speed = status_data.get("downloadSpeed", 0)
+                    seeders = status_data.get("seeders", 0)
+                    await db.execute(
+                        """UPDATE torrents SET progress = ?, speed = ?, seeders = ?,
+                               size = ?, status_message = ?, updated_at = ?
+                           WHERE id = ?""",
+                        (progress, speed, seeders,
+                         size, status_data.get("filename", ""), now, row["id"]),
+                    )
+                    await db.commit()
+            except Exception as e:
+                log(f"Torrent check failed for {row['id']}: {e}")
 
     async def _move_to_history(self, db, download_id: str, now: str):
         cursor = await db.execute("SELECT * FROM downloads WHERE id = ?", (download_id,))
