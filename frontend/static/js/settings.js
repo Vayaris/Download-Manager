@@ -407,12 +407,124 @@ async function bootSettings() {
 
     await checkAllDebridStatus();
 
+    // Load current version
+    try {
+      const ver = await API.get("/api/settings/version");
+      document.getElementById("current-version").textContent = "v" + ver.version;
+    } catch {}
+
     // Show account button if auth is enabled
     if (typeof initAccountButton === "function") initAccountButton();
   } catch {
     showToast("Impossible de charger les paramètres", "error");
   }
 }
+
+// ---- Update system ----
+
+function setUpdateBadge(state, text) {
+  const badge = document.getElementById("update-badge");
+  const label = document.getElementById("update-badge-text");
+  badge.className = `conn-badge ${state}`;
+  label.textContent = text;
+}
+
+function renderChangelog(md) {
+  // Simple markdown → HTML (headers, bold, lists, line breaks)
+  if (!md) return "";
+  return md
+    .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+    .replace(/^### (.+)$/gm, '<h4 style="margin:8px 0 4px;font-size:13px;color:var(--text)">$1</h4>')
+    .replace(/^## (.+)$/gm, '<h3 style="margin:10px 0 6px;font-size:14px;color:var(--text)">$1</h3>')
+    .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+    .replace(/^- (.+)$/gm, '<div style="padding-left:12px;position:relative"><span style="position:absolute;left:0">•</span> $1</div>')
+    .replace(/\n\n/g, '<br>')
+    .replace(/`([^`]+)`/g, '<code style="background:var(--surface-3);padding:1px 5px;border-radius:3px;font-size:12px">$1</code>');
+}
+
+async function checkForUpdate() {
+  const btn = document.getElementById("btn-check-update");
+  btn.disabled = true;
+  btn.textContent = "Vérification...";
+  setUpdateBadge("checking", "Vérification...");
+
+  try {
+    const res = await API.get("/api/settings/check-update");
+    document.getElementById("current-version").textContent = "v" + res.current;
+
+    if (res.update_available) {
+      setUpdateBadge("error", `v${res.latest} disponible`);
+      document.getElementById("btn-do-update").classList.remove("hidden");
+      document.getElementById("btn-do-update").textContent = `Mettre à jour vers v${res.latest}`;
+
+      // Show changelog
+      if (res.changelog) {
+        document.getElementById("update-info").classList.remove("hidden");
+        document.getElementById("update-changelog").innerHTML =
+          '<p style="font-size:12px;color:var(--text-3);margin-bottom:6px;font-weight:600;text-transform:uppercase;letter-spacing:.5px">Notes de version v' + res.latest + '</p>' +
+          '<div style="font-size:13px;color:var(--text-2);line-height:1.5">' + renderChangelog(res.changelog) + '</div>';
+      }
+      showToast("Mise à jour disponible : v" + res.latest, "ok");
+    } else {
+      setUpdateBadge("ok", "À jour");
+      document.getElementById("btn-do-update").classList.add("hidden");
+      document.getElementById("update-info").classList.add("hidden");
+      showToast(res.message || "Vous êtes à jour", "ok");
+    }
+  } catch (e) {
+    setUpdateBadge("error", "Erreur");
+    showToast("Erreur : " + e.message, "error");
+  } finally {
+    btn.disabled = false;
+    btn.textContent = "Vérifier les mises à jour";
+  }
+}
+
+async function performUpdate() {
+  const btn = document.getElementById("btn-do-update");
+  btn.disabled = true;
+  const origText = btn.textContent;
+  btn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="animation:spin 1s linear infinite"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg> Mise à jour en cours...';
+  setUpdateBadge("checking", "Mise à jour...");
+
+  try {
+    const res = await API.post("/api/settings/update", {});
+    if (res.success) {
+      setUpdateBadge("ok", "v" + res.version);
+      showToast(res.message, "ok");
+      btn.textContent = "Redémarrage...";
+
+      // Wait for the service to restart, then reload
+      setTimeout(() => {
+        const poll = setInterval(async () => {
+          try {
+            const r = await fetch("/api/settings/version", {
+              headers: API._headers(),
+            });
+            if (r.ok) {
+              clearInterval(poll);
+              window.location.reload();
+            }
+          } catch {}
+        }, 1500);
+        // Stop polling after 30s
+        setTimeout(() => clearInterval(poll), 30000);
+      }, 2000);
+    } else {
+      setUpdateBadge("error", "Échec");
+      showToast(res.message || "Mise à jour échouée", "error");
+      btn.disabled = false;
+      btn.textContent = origText;
+    }
+  } catch (e) {
+    setUpdateBadge("error", "Échec");
+    showToast("Erreur : " + e.message, "error");
+    btn.disabled = false;
+    btn.textContent = origText;
+  }
+}
+
+// ---- Boot ----
 
 (async () => {
   const authed = await checkSettingsAuth();
