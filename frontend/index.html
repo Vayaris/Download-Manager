@@ -11,7 +11,7 @@
   <link rel="apple-touch-icon" href="/static/icons/icon-192.svg">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link rel="stylesheet" href="/static/css/style.css?v=25">
+  <link rel="stylesheet" href="/static/css/style.css?v=26">
   <script>
     (function() {
       var t = localStorage.getItem('dm_theme');
@@ -247,9 +247,9 @@
         <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>
         <span class="btn-ctrl-label">Pause</span>
       </button>
-      <button class="btn-ctrl clear" onclick="bulkAction('clear_completed')" title="Supprimer les terminés">
+      <button class="btn-ctrl clear" onclick="removeAllDownloads()" title="Tout supprimer">
         <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>
-        <span class="btn-ctrl-label">Nettoyer</span>
+        <span class="btn-ctrl-label">Supprimer</span>
       </button>
     </div>
     <div class="controls-right">
@@ -332,11 +332,11 @@ window.addEventListener("beforeinstallprompt",e=>{e.preventDefault();pwaDeferred
 function pwaInstall(){if(pwaDeferred){pwaDeferred.prompt();pwaDeferred.userChoice.then(()=>{pwaDeferred=null;const b=document.getElementById("pwa-install-btn");if(b)b.classList.add("hidden")})}}
 </script>
 
-<script src="/static/js/theme.js?v=25"></script>
-<script src="/static/js/websocket.js?v=25"></script>
-<script src="/static/js/filebrowser.js?v=25"></script>
-<script src="/static/js/app.js?v=25"></script>
-<script src="/static/js/account.js?v=25"></script>
+<script src="/static/js/theme.js?v=26"></script>
+<script src="/static/js/websocket.js?v=26"></script>
+<script src="/static/js/filebrowser.js?v=26"></script>
+<script src="/static/js/app.js?v=26"></script>
+<script src="/static/js/account.js?v=26"></script>
 <script>if("serviceWorker"in navigator)navigator.serviceWorker.register("/sw.js").catch(()=>{})</script>
 </body>
 </html>
