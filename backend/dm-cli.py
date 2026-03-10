@@ -11,7 +11,7 @@ Usage:
 import sys
 import os
 import sqlite3
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 DB_PATH = Path(os.environ.get("DM_DB", "/opt/download-manager/config/downloads.db"))
@@ -58,7 +58,7 @@ def cmd_reset_admin(username=None, password=None):
 
         import uuid
         user_id = str(uuid.uuid4())
-        now = datetime.utcnow().isoformat()
+        now = datetime.now(timezone.utc).isoformat()
         db.execute(
             "INSERT INTO users (id, username, password_hash, created_at) VALUES (?, ?, ?, ?)",
             (user_id, username, pw_hash, now),
@@ -92,7 +92,7 @@ def cmd_reset_admin(username=None, password=None):
 
 def cmd_list_ips():
     db = get_db()
-    now = datetime.utcnow().isoformat()
+    now = datetime.now(timezone.utc).isoformat()
     rows = db.execute(
         "SELECT ip, blocked_at, expires_at, reason FROM blocked_ips WHERE expires_at > ? ORDER BY blocked_at DESC",
         (now,),

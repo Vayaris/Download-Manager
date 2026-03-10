@@ -1,9 +1,21 @@
 #!/usr/bin/env bash
-set -e
+set -eo pipefail
 
 # Read config values
 CONFIG_FILE="${DM_CONFIG:-/etc/download-manager/config.yml}"
 VENV_PYTHON="/opt/download-manager/venv/bin/python"
+
+# Verify config file exists
+if [ ! -f "$CONFIG_FILE" ]; then
+    echo "[start.sh] ERREUR: Fichier de configuration introuvable: $CONFIG_FILE" >&2
+    exit 1
+fi
+
+# Verify aria2c is available
+if ! command -v aria2c &> /dev/null; then
+    echo "[start.sh] ERREUR: aria2c n'est pas installe ou pas dans le PATH" >&2
+    exit 1
+fi
 
 # Use venv python (has PyYAML), fall back to system python3
 PY="${VENV_PYTHON}"

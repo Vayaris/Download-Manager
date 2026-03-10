@@ -21,72 +21,17 @@ const ICONS = {
 
 let _appStarted = false;
 
-// ---- API helper ----
+// ---- API helper (delegates to shared apiFetch from api.js) ----
 
-const API = {
-  token: localStorage.getItem("dm_token") || "",
-
-  _headers() {
-    const h = { "Content-Type": "application/json" };
-    if (this.token) h["Authorization"] = `Bearer ${this.token}`;
-    return h;
-  },
-
-  async get(url) {
-    const r = await fetch(url, { headers: this._headers() });
-    if (r.status === 401) {
-      if (_appStarted) { _appStarted = false; showLogin(true); }
-      throw new Error("Unauthorized");
-    }
-    if (!r.ok) throw new Error(await r.text());
-    return r.json();
-  },
-
-  async post(url, body) {
-    const r = await fetch(url, { method: "POST", headers: this._headers(), body: JSON.stringify(body) });
-    if (r.status === 401) {
-      if (_appStarted) { _appStarted = false; showLogin(true); }
-      throw new Error("Unauthorized");
-    }
-    if (!r.ok) throw new Error(await r.text());
-    return r.json();
-  },
-
-  async put(url, body) {
-    const r = await fetch(url, { method: "PUT", headers: this._headers(), body: JSON.stringify(body) });
-    if (r.status === 401) {
-      if (_appStarted) { _appStarted = false; showLogin(true); }
-      throw new Error("Unauthorized");
-    }
-    if (!r.ok) throw new Error(await r.text());
-    return r.json();
-  },
-
-  async del(url) {
-    const r = await fetch(url, { method: "DELETE", headers: this._headers() });
-    if (r.status === 401) {
-      if (_appStarted) { _appStarted = false; showLogin(true); }
-      throw new Error("Unauthorized");
-    }
-    if (!r.ok) throw new Error(await r.text());
-    return r.json();
-  },
+const API = apiFetch;
+API._handleUnauth = function() {
+  if (_appStarted) { _appStarted = false; showLogin(true); }
 };
 
-// ---- Formatters ----
+// ---- Formatters (aliases to shared api.js) ----
 
-function fmtBytes(bytes) {
-  if (!bytes || bytes === 0) return "\u2014";
-  const k = 1024;
-  const sizes = ["B", "KB", "MB", "GB", "TB"];
-  const i = Math.floor(Math.log(bytes) / Math.log(k));
-  return `${(bytes / Math.pow(k, i)).toFixed(1)} ${sizes[i]}`;
-}
-
-function fmtSpeed(bps) {
-  if (!bps || bps === 0) return "\u2014";
-  return fmtBytes(bps) + "/s";
-}
+const fmtBytes = formatSize;
+const fmtSpeed = formatSpeed;
 
 function fmtEta(remaining, speed) {
   if (!speed || speed <= 0 || !remaining || remaining <= 0) return "";
@@ -117,14 +62,7 @@ function fmtDate(iso) {
     + " " + d.toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" });
 }
 
-function escHtml(str) {
-  return String(str || "")
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#39;");
-}
+// escHtml is provided by api.js
 
 // ---- Status badge ----
 
