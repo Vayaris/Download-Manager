@@ -1131,6 +1131,7 @@ function startApp() {
   loadInitial();
 
   let _lastHistoryLoad = 0;
+  let _prevCompleteIds = new Set();
   WS.on("downloads_update", (data, msg) => {
     renderDownloads(data);
     if (msg && msg.packages) {
@@ -1139,8 +1140,15 @@ function startApp() {
     if (msg && msg.torrents) {
       renderTorrents(msg.torrents);
     }
+    // Reload history immediately if a new download completed, otherwise every 10s
     const now = Date.now();
-    if (now - _lastHistoryLoad > 10000) {
+    const curCompleteIds = new Set(data.filter(d => d.status === "complete" || d.status === "failed").map(d => d.id));
+    let newCompletion = false;
+    for (const id of curCompleteIds) {
+      if (!_prevCompleteIds.has(id)) { newCompletion = true; break; }
+    }
+    _prevCompleteIds = curCompleteIds;
+    if (newCompletion || now - _lastHistoryLoad > 5000) {
       _lastHistoryLoad = now;
       loadHistory();
     }
