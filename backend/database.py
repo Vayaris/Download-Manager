@@ -84,6 +84,23 @@ async def init_db():
             )
         """)
 
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS torrents (
+                id              TEXT PRIMARY KEY,
+                alldebrid_id    INTEGER NOT NULL,
+                name            TEXT,
+                size            INTEGER DEFAULT 0,
+                status          TEXT DEFAULT 'processing',
+                destination     TEXT NOT NULL,
+                progress        REAL DEFAULT 0,
+                speed           INTEGER DEFAULT 0,
+                seeders         INTEGER DEFAULT 0,
+                status_message  TEXT,
+                created_at      TEXT,
+                updated_at      TEXT
+            )
+        """)
+
         # Migrations for existing databases
         columns = [row[1] for row in await (await db.execute("PRAGMA table_info(downloads)")).fetchall()]
         if "retry_count" not in columns:
