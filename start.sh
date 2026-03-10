@@ -3,27 +3,27 @@ set -e
 
 # Read config values
 CONFIG_FILE="${DM_CONFIG:-/etc/download-manager/config.yml}"
+VENV_PYTHON="/opt/download-manager/venv/bin/python"
 
-get_yaml_value() {
-    local key="$1"
-    grep "^\s*${key}:" "$CONFIG_FILE" | head -1 | awk '{print $2}' | tr -d '"'
-}
+# Use venv python (has PyYAML), fall back to system python3
+PY="${VENV_PYTHON}"
+[ -x "$PY" ] || PY="python3"
 
-ARIA2_PORT=$(python3 -c "
+ARIA2_PORT=$("$PY" -c "
 import yaml
 with open('$CONFIG_FILE') as f:
     c = yaml.safe_load(f)
 print(c.get('aria2', {}).get('rpc_port', 6800))
 " 2>/dev/null || echo "6800")
 
-ARIA2_SECRET=$(python3 -c "
+ARIA2_SECRET=$("$PY" -c "
 import yaml
 with open('$CONFIG_FILE') as f:
     c = yaml.safe_load(f)
 print(c.get('aria2', {}).get('rpc_secret', 'download-manager-secret'))
 " 2>/dev/null || echo "download-manager-secret")
 
-DL_DIR=$(python3 -c "
+DL_DIR=$("$PY" -c "
 import yaml
 with open('$CONFIG_FILE') as f:
     c = yaml.safe_load(f)
