@@ -43,6 +43,17 @@ CONFIG_DIR="/etc/download-manager"
 LOG_DIR="/var/log/download-manager"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
+# If run via bash <(curl ...), SCRIPT_DIR points to /dev/fd/ — need to clone repo
+CLONED_TEMP=""
+if [ ! -f "${SCRIPT_DIR}/requirements.txt" ]; then
+    info "Execution distante detectee, telechargement du projet..."
+    CLONED_TEMP="$(mktemp -d)"
+    apt-get install -y -qq git > /dev/null 2>&1
+    git clone --depth 1 https://github.com/Vayaris/Download-Manager.git "${CLONED_TEMP}/download-manager" > /dev/null 2>&1
+    SCRIPT_DIR="${CLONED_TEMP}/download-manager"
+    success "Projet telecharge"
+fi
+
 # ---- System dependencies ----
 info "Mise a jour des paquets..."
 apt-get update -qq
@@ -85,6 +96,7 @@ cp -r "${SCRIPT_DIR}/frontend/"* "${INSTALL_DIR}/frontend/"
 cp "${SCRIPT_DIR}/requirements.txt" "${INSTALL_DIR}/"
 cp "${SCRIPT_DIR}/start.sh" "${INSTALL_DIR}/start.sh"
 chmod +x "${INSTALL_DIR}/start.sh"
+[ -f "${SCRIPT_DIR}/VERSION" ] && cp "${SCRIPT_DIR}/VERSION" "${INSTALL_DIR}/VERSION"
 success "Fichiers copies"
 
 # ---- Generate aria2 secret ----
@@ -207,6 +219,23 @@ if systemctl is-active --quiet download-manager; then
     success "Service demarre avec succes"
 else
     warn "Le service n'a pas demarre. Verifiez : journalctl -u download-manager -n 30"
+fi
+
+# ---- Git repo for auto-updates ----
+if [ ! -d "${INSTALL_DIR}/.git" ]; then
+    info "Configuration du depot git pour les mises a jour..."
+    apt-get install -y -qq git > /dev/null 2>&1
+    git clone --depth 1 https://github.com/Vayaris/Download-Manager.git "${INSTALL_DIR}/.git-tmp" > /dev/null 2>&1 && \
+        mv "${INSTALL_DIR}/.git-tmp/.git" "${INSTALL_DIR}/.git" && \
+        rm -rf "${INSTALL_DIR}/.git-tmp" && \
+        git -C "${INSTALL_DIR}" reset --hard HEAD > /dev/null 2>&1 && \
+        success "Depot git configure" || \
+        warn "Impossible de configurer le depot git (mises a jour manuelles uniquement)"
+fi
+
+# ---- Cleanup temp clone ----
+if [ -n "${CLONED_TEMP}" ] && [ -d "${CLONED_TEMP}" ]; then
+    rm -rf "${CLONED_TEMP}"
 fi
 
 # ---- Summary ----
