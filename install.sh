@@ -24,6 +24,33 @@ echo -e "${BOLD}║       Download Manager — Install      ║${NC}"
 echo -e "${BOLD}╚═══════════════════════════════════════╝${NC}"
 echo ""
 
+# ---- Detect execution context (local clone vs bash <(curl ...)) ----
+INSTALL_DIR="/opt/download-manager"
+CONFIG_DIR="/etc/download-manager"
+LOG_DIR="/var/log/download-manager"
+CLONED_TEMP=""
+
+# Try to resolve SCRIPT_DIR from BASH_SOURCE
+_raw_source="${BASH_SOURCE[0]}"
+if [[ "$_raw_source" == /dev/fd/* ]] || [[ "$_raw_source" == /proc/* ]] || [ -z "$_raw_source" ]; then
+    # Running via bash <(curl ...) or pipe — must clone the repo
+    SCRIPT_DIR=""
+else
+    SCRIPT_DIR="$(cd "$(dirname "$_raw_source")" && pwd)"
+fi
+
+# If SCRIPT_DIR is empty or doesn't contain project files, clone from GitHub
+if [ -z "${SCRIPT_DIR}" ] || [ ! -f "${SCRIPT_DIR}/requirements.txt" ]; then
+    info "Telechargement du projet depuis GitHub..."
+    apt-get update -qq > /dev/null 2>&1
+    apt-get install -y -qq git > /dev/null 2>&1
+    CLONED_TEMP="$(mktemp -d)"
+    git clone --depth 1 https://github.com/Vayaris/Download-Manager.git "${CLONED_TEMP}/download-manager"
+    SCRIPT_DIR="${CLONED_TEMP}/download-manager"
+    success "Projet telecharge"
+    echo ""
+fi
+
 # ---- Port selection ----
 DEFAULT_PORT=40320
 read -rp "Sur quel port exposer l'interface web ? [${DEFAULT_PORT}] : " INPUT_PORT
@@ -37,23 +64,6 @@ fi
 info "Port selectionne : ${PORT}"
 echo ""
 
-# ---- Directories ----
-INSTALL_DIR="/opt/download-manager"
-CONFIG_DIR="/etc/download-manager"
-LOG_DIR="/var/log/download-manager"
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-
-# If run via bash <(curl ...), SCRIPT_DIR points to /dev/fd/ — need to clone repo
-CLONED_TEMP=""
-if [ ! -f "${SCRIPT_DIR}/requirements.txt" ]; then
-    info "Execution distante detectee, telechargement du projet..."
-    CLONED_TEMP="$(mktemp -d)"
-    apt-get install -y -qq git > /dev/null 2>&1
-    git clone --depth 1 https://github.com/Vayaris/Download-Manager.git "${CLONED_TEMP}/download-manager" > /dev/null 2>&1
-    SCRIPT_DIR="${CLONED_TEMP}/download-manager"
-    success "Projet telecharge"
-fi
-
 # ---- System dependencies ----
 info "Mise a jour des paquets..."
 apt-get update -qq
@@ -66,6 +76,7 @@ apt-get install -y -qq \
     aria2 \
     curl \
     wget \
+    git \
     ca-certificates \
     > /dev/null 2>&1
 
@@ -210,6 +221,17 @@ systemctl daemon-reload
 systemctl enable download-manager > /dev/null 2>&1
 success "Service systemd configure et active"
 
+# ---- Git repo for auto-updates ----
+if [ ! -d "${INSTALL_DIR}/.git" ]; then
+    info "Configuration du depot git pour les mises a jour..."
+    git clone --depth 1 https://github.com/Vayaris/Download-Manager.git "${INSTALL_DIR}/.git-tmp" > /dev/null 2>&1 && \
+        mv "${INSTALL_DIR}/.git-tmp/.git" "${INSTALL_DIR}/.git" && \
+        rm -rf "${INSTALL_DIR}/.git-tmp" && \
+        git -C "${INSTALL_DIR}" reset --hard HEAD > /dev/null 2>&1 && \
+        success "Depot git configure pour les mises a jour" || \
+        warn "Impossible de configurer le depot git (mises a jour manuelles uniquement)"
+fi
+
 # ---- Start ----
 info "Demarrage du service..."
 systemctl restart download-manager
@@ -219,18 +241,6 @@ if systemctl is-active --quiet download-manager; then
     success "Service demarre avec succes"
 else
     warn "Le service n'a pas demarre. Verifiez : journalctl -u download-manager -n 30"
-fi
-
-# ---- Git repo for auto-updates ----
-if [ ! -d "${INSTALL_DIR}/.git" ]; then
-    info "Configuration du depot git pour les mises a jour..."
-    apt-get install -y -qq git > /dev/null 2>&1
-    git clone --depth 1 https://github.com/Vayaris/Download-Manager.git "${INSTALL_DIR}/.git-tmp" > /dev/null 2>&1 && \
-        mv "${INSTALL_DIR}/.git-tmp/.git" "${INSTALL_DIR}/.git" && \
-        rm -rf "${INSTALL_DIR}/.git-tmp" && \
-        git -C "${INSTALL_DIR}" reset --hard HEAD > /dev/null 2>&1 && \
-        success "Depot git configure" || \
-        warn "Impossible de configurer le depot git (mises a jour manuelles uniquement)"
 fi
 
 # ---- Cleanup temp clone ----
@@ -256,8 +266,9 @@ echo -e "    ${YELLOW}nano ${CONFIG_DIR}/config.yml${NC}       — configuration
 echo ""
 echo -e "  Fonctionnalites :"
 echo -e "    - AllDebrid : configurez votre cle dans ${BOLD}Parametres${NC}"
+echo -e "    - Torrents  : upload .torrent ou magnet via AllDebrid"
 echo -e "    - Paquets   : groupez vos liens en paquets"
 echo -e "    - Webhooks  : Discord, Slack, Telegram, Gotify, ntfy"
 echo -e "    - 2FA       : activez depuis la page Parametres"
-echo -e "    - Retry     : 5 tentatives automatiques par defaut"
+echo -e "    - Mise a jour : depuis Parametres > Mise a jour"
 echo ""
