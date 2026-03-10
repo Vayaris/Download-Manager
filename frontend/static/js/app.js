@@ -667,11 +667,16 @@ async function resumeDownload(id) {
 async function bulkAction(action) {
   try {
     await API.post("/api/downloads/actions", { action });
-    if (action === "clear_completed") {
-      loadHistory();
-    }
   }
   catch (e) { showToast("Erreur : " + e.message, "error"); }
+}
+
+async function removeAllDownloads() {
+  if (!confirm("Supprimer tous les téléchargements en cours ?")) return;
+  try {
+    await API.post("/api/downloads/actions", { action: "remove_all" });
+    showToast("Tous les téléchargements supprimés", "ok");
+  } catch (e) { showToast("Erreur : " + e.message, "error"); }
 }
 
 // ============================================================

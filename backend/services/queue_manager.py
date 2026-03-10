@@ -398,7 +398,54 @@ class QueueManager:
                 ids.append(dl_id)
                 pos += 1
             await db.commit()
+
+        # Submit to aria2 immediately in background (don't block the HTTP response)
+        if ids:
+            asyncio.create_task(self._submit_pending_now())
+
         return ids
+
+    async def _submit_pending_now(self):
+        """Submit pending downloads to aria2 immediately (called after add)."""
+        try:
+            config = get_config()
+            max_concurrent = config["downloads"]["simultaneous"]
+            segments = config["downloads"].get("download_segments", 1)
+            now = datetime.utcnow().isoformat()
+
+            async with aiosqlite.connect(str(DB_PATH)) as db:
+                db.row_factory = aiosqlite.Row
+                cursor = await db.execute(
+                    "SELECT COUNT(*) FROM downloads WHERE status = 'downloading'"
+                )
+                (active_count,) = await cursor.fetchone()
+                slots = max_concurrent - active_count
+                if slots <= 0:
+                    return
+
+                cursor = await db.execute(
+                    """SELECT * FROM downloads
+                       WHERE status = 'pending' AND aria2_gid IS NULL
+                       ORDER BY position ASC, created_at ASC
+                       LIMIT ?""",
+                    (slots,),
+                )
+                pending = await cursor.fetchall()
+
+                for item in pending:
+                    try:
+                        direct_url = await alldebrid.process_url(item["url"])
+                        gid = await aria2.add_uri(direct_url, item["destination"], split=segments)
+                        await db.execute(
+                            "UPDATE downloads SET aria2_gid = ?, status = 'downloading', updated_at = ? WHERE id = ?",
+                            (gid, now, item["id"]),
+                        )
+                        await db.commit()
+                    except Exception as e:
+                        log(f"Immediate submit failed for {item['url'][:80]}: {e}")
+                        # Will be retried by the regular tick loop
+        except Exception as e:
+            log(f"_submit_pending_now error: {e}")
 
     async def add_package(self, name: str, urls: list, destination: str) -> dict:
         now = datetime.utcnow().isoformat()
@@ -497,6 +544,20 @@ class QueueManager:
             rows = await cursor.fetchall()
         for row in rows:
             await self.resume_download(row["id"])
+
+    async def remove_all(self):
+        async with aiosqlite.connect(str(DB_PATH)) as db:
+            db.row_factory = aiosqlite.Row
+            cursor = await db.execute("SELECT aria2_gid FROM downloads WHERE aria2_gid IS NOT NULL")
+            rows = await cursor.fetchall()
+            for row in rows:
+                try:
+                    await aria2.remove(row["aria2_gid"])
+                except Exception:
+                    pass
+            await db.execute("DELETE FROM downloads")
+            await db.execute("DELETE FROM packages")
+            await db.commit()
 
     async def clear_completed(self):
         now = datetime.utcnow().isoformat()
