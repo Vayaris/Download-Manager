@@ -23,7 +23,11 @@ class AllDebridService:
             if data.get("status") != "success":
                 msg = data.get("error", {}).get("message", "Unknown error")
                 raise Exception(f"AllDebrid: {msg}")
-            return data["data"]["link"]["link"]
+            link = data["data"]["link"]
+            # API can return link as string or as dict with "link" key
+            if isinstance(link, dict):
+                return link["link"]
+            return link
 
     async def test_key(self, api_key: str) -> bool:
         try:

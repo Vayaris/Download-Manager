@@ -16,6 +16,7 @@ Interface web de gestion de téléchargements avec support **AllDebrid**, conçu
 - **PWA installable** — ajoutez l'app sur l'écran d'accueil de votre téléphone (Android / iOS)
 - **Vue mobile optimisée** — layout carte compact, navigation tactile, barre de navigation bas d'écran
 - **AllDebrid intégré** — débridage automatique des liens hébergeurs (1fichier, Uptobox, etc.)
+- **Support Torrent / Magnet** — upload de fichiers `.torrent` ou liens magnet via AllDebrid, avec polling automatique et démarrage des DL dès que prêt
 - **aria2 sous le capot** — téléchargements rapides, multi-segments (split), reprise automatique
 - **Multi-segments** — jusqu'à 16 connexions par fichier (style JDownloader) pour maximiser la vitesse
 - **Limite de vitesse** — bridez la bande passante globale en Mo/s
@@ -25,6 +26,7 @@ Interface web de gestion de téléchargements avec support **AllDebrid**, conçu
 - **Notifications webhook** — Discord, Slack, Telegram, Gotify, ntfy, ou générique JSON (avec guides de configuration intégrés)
 - **Navigateur de fichiers** — sélection et création de dossiers directement depuis l'interface
 - **Authentification sécurisée** — login/mot de passe avec 2FA (OTP 6 chiffres), rate limiting, blocage IP
+- **Mise à jour intégrée** — vérification et installation des nouvelles versions depuis la page Paramètres, avec changelog
 - **CLI d'administration** — reset admin, gestion des IPs bloquées en ligne de commande
 - **Service systemd** — démarrage automatique, redémarrage en cas de crash
 
@@ -163,6 +165,14 @@ La plupart des paramètres sont modifiables directement depuis la page **Paramè
 
 ## Fonctionnalités détaillées
 
+### Support Torrent / Magnet
+
+Ajoutez des torrents directement depuis l'interface :
+- **Lien magnet** — collez un ou plusieurs liens magnet (auto-détection dans le textarea principal)
+- **Fichier .torrent** — uploadez un fichier via le modal avec drag & drop
+- Le torrent est envoyé à AllDebrid qui le débride. Si le torrent est déjà en cache, les téléchargements démarrent instantanément. Sinon, la section "Torrents en cours" affiche la progression (vitesse, seeders) en temps réel.
+- Dès que le torrent est prêt, un paquet est automatiquement créé avec tous les fichiers.
+
 ### Système de paquets
 
 Groupez plusieurs liens en un seul paquet (ex : une saison complète). Le paquet affiche la progression globale en temps réel (nombre de fichiers terminés, pourcentage, vitesse cumulée) et se déplie pour montrer chaque fichier individuellement.
@@ -202,6 +212,12 @@ Formats supportés : Discord (embed), Slack (block), Telegram (Markdown), Gotify
 
 ## Mise à jour
 
+### Depuis l'interface (recommandé)
+
+Allez dans **Paramètres** → **Mise à jour** → **Vérifier les mises à jour**. Si une nouvelle version est disponible, le changelog s'affiche et vous pouvez mettre à jour en un clic. La page se recharge automatiquement après le redémarrage.
+
+### En ligne de commande
+
 ```bash
 cd /chemin/vers/download-manager
 git pull
@@ -232,7 +248,7 @@ sudo rm -rf /var/log/download-manager
 |---|---|
 | **FastAPI** | Backend API + WebSocket |
 | **aria2c** | Moteur de téléchargement |
-| **AllDebrid API** | Débridage de liens |
+| **AllDebrid API** | Débridage de liens + torrents |
 | **Vanilla JS** | Frontend PWA (aucun framework) |
 | **SQLite** | Base de données locale |
 | **pyotp + qrcode** | 2FA / TOTP |

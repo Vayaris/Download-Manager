@@ -1,3 +1,6 @@
+import subprocess
+from pathlib import Path
+
 from fastapi import APIRouter, Depends, HTTPException
 
 from models import SettingsUpdate
@@ -7,6 +10,12 @@ from services.alldebrid import alldebrid
 from services.webhook import send_webhook
 
 router = APIRouter()
+
+REPO = "Vayaris/Download-Manager"
+INSTALL_DIR = Path("/opt/download-manager")
+# Find the git repo: could be /opt/download-manager or the dev repo
+_runtime_root = Path(__file__).parent.parent.parent
+GIT_DIR = _runtime_root if (_runtime_root / ".git").exists() else INSTALL_DIR
 
 
 @router.get("/")
@@ -125,3 +134,146 @@ async def test_webhook(_=Depends(get_current_user)):
                 return {"success": False, "message": f"Erreur HTTP {resp.status_code}"}
     except Exception as e:
         return {"success": False, "message": str(e)[:200]}
+
+
+def _get_current_version() -> str:
+    # Check install dir first, then git dir
+    for d in [INSTALL_DIR, GIT_DIR]:
+        vf = d / "VERSION"
+        if vf.exists():
+            return vf.read_text().strip()
+    return "0.0.0"
+
+
+def _find_git_dir() -> Path:
+    """Find the git repo directory (may differ from install dir)."""
+    for d in [INSTALL_DIR, GIT_DIR, Path("/root/download-manager")]:
+        if (d / ".git").exists():
+            return d
+    return INSTALL_DIR
+
+
+@router.get("/version")
+async def get_version(_=Depends(get_current_user)):
+    return {"version": _get_current_version()}
+
+
+@router.get("/check-update")
+async def check_update(_=Depends(get_current_user)):
+    import httpx
+
+    current = _get_current_version()
+
+    try:
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            resp = await client.get(
+                f"https://api.github.com/repos/{REPO}/releases/latest",
+                headers={"Accept": "application/vnd.github+json"},
+            )
+            if resp.status_code == 404:
+                return {"update_available": False, "current": current, "message": "Aucune release trouvée"}
+            if resp.status_code != 200:
+                return {"update_available": False, "current": current, "message": f"Erreur GitHub ({resp.status_code})"}
+
+            data = resp.json()
+            latest = data.get("tag_name", "").lstrip("v")
+            body = data.get("body", "")
+
+            if not latest:
+                return {"update_available": False, "current": current, "message": "Tag introuvable"}
+
+            update_available = latest != current
+            return {
+                "update_available": update_available,
+                "current": current,
+                "latest": latest,
+                "changelog": body,
+                "message": "Mise à jour disponible" if update_available else "Vous êtes à jour",
+            }
+    except Exception as e:
+        return {"update_available": False, "current": current, "message": f"Erreur : {str(e)[:200]}"}
+
+
+@router.post("/update")
+async def perform_update(_=Depends(get_current_user)):
+    import httpx
+
+    current = _get_current_version()
+
+    try:
+        # Fetch latest release info
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            resp = await client.get(
+                f"https://api.github.com/repos/{REPO}/releases/latest",
+                headers={"Accept": "application/vnd.github+json"},
+            )
+            if resp.status_code != 200:
+                raise HTTPException(status_code=502, detail="Impossible de contacter GitHub")
+
+            data = resp.json()
+            latest = data.get("tag_name", "").lstrip("v")
+            changelog = data.get("body", "")
+
+            if latest == current:
+                return {"success": True, "message": "Déjà à jour", "version": current, "changelog": ""}
+
+        # Perform git pull from the project root
+        install_dir = INSTALL_DIR
+        git_dir = _find_git_dir()
+
+        result = subprocess.run(
+            ["git", "pull", "--ff-only", "origin", "main"],
+            cwd=str(git_dir),
+            capture_output=True, text=True, timeout=60,
+        )
+
+        if result.returncode != 0:
+            # Try with reset if ff-only fails
+            subprocess.run(
+                ["git", "fetch", "origin", "main"],
+                cwd=str(git_dir),
+                capture_output=True, text=True, timeout=30,
+            )
+            result = subprocess.run(
+                ["git", "reset", "--hard", f"origin/main"],
+                cwd=str(git_dir),
+                capture_output=True, text=True, timeout=30,
+            )
+            if result.returncode != 0:
+                raise HTTPException(status_code=500, detail=f"Git pull échoué : {result.stderr[:300]}")
+
+        # If install_dir != git_dir, sync files
+        if git_dir != install_dir:
+            subprocess.run(
+                ["cp", "-r", f"{git_dir}/backend/.", f"{install_dir}/backend/"],
+                capture_output=True, timeout=30,
+            )
+            subprocess.run(
+                ["cp", "-r", f"{git_dir}/frontend/.", f"{install_dir}/frontend/"],
+                capture_output=True, timeout=30,
+            )
+            # Also copy VERSION file
+            version_src = git_dir / "VERSION"
+            if version_src.exists():
+                subprocess.run(
+                    ["cp", str(version_src), str(install_dir / "VERSION")],
+                    capture_output=True, timeout=10,
+                )
+
+        # Restart the service
+        subprocess.run(
+            ["systemctl", "restart", "download-manager"],
+            capture_output=True, timeout=30,
+        )
+
+        return {
+            "success": True,
+            "message": f"Mis à jour vers v{latest}",
+            "version": latest,
+            "changelog": changelog,
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e)[:300])
