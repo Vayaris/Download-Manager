@@ -21,34 +21,34 @@ async function testAllDebrid() {
   if (key) {
     try { await API.put("/api/settings/", { alldebrid_api_key: key }); } catch {}
   }
-  setAllDebridBadge("checking", "Vérification...");
+  setAllDebridBadge("checking", t("settings_checking"));
   try {
     const res = await API.post("/api/settings/test-alldebrid", {});
     if (res.valid) {
-      setAllDebridBadge("ok", "Connecté");
-      showToast("Clé AllDebrid valide", "ok");
+      setAllDebridBadge("ok", t("settings_connected"));
+      showToast(t("settings_key_valid"), "ok");
       // Auto-enable when key is valid
       document.getElementById("alldebrid-enabled").checked = true;
       await API.put("/api/settings/", { alldebrid_enabled: true });
     } else {
-      setAllDebridBadge("error", "Clé invalide");
-      showToast("Clé AllDebrid invalide", "error");
+      setAllDebridBadge("error", t("settings_invalid_key"));
+      showToast(t("settings_key_invalid"), "error");
     }
   } catch (e) {
-    setAllDebridBadge("error", "Erreur");
-    showToast("Erreur : " + e.message, "error");
+    setAllDebridBadge("error", t("settings_error"));
+    showToast(t("error_prefix") + e.message, "error");
   }
 }
 
 async function checkAllDebridStatus() {
   const key = document.getElementById("alldebrid-key").value.trim();
-  if (!key) { setAllDebridBadge("unknown", "Non configuré"); return; }
-  setAllDebridBadge("checking", "Vérification...");
+  if (!key) { setAllDebridBadge("unknown", t("settings_not_configured")); return; }
+  setAllDebridBadge("checking", t("settings_checking"));
   try {
     const res = await API.post("/api/settings/test-alldebrid", {});
-    setAllDebridBadge(res.valid ? "ok" : "error", res.valid ? "Connecté" : "Clé invalide");
+    setAllDebridBadge(res.valid ? "ok" : "error", res.valid ? t("settings_connected") : t("settings_invalid_key"));
   } catch {
-    setAllDebridBadge("error", "Erreur de connexion");
+    setAllDebridBadge("error", t("settings_connection_error"));
   }
 }
 
@@ -57,10 +57,10 @@ async function saveAllDebrid() {
   const enabled = document.getElementById("alldebrid-enabled").checked;
   try {
     await API.put("/api/settings/", { alldebrid_api_key: key, alldebrid_enabled: enabled });
-    showToast("AllDebrid sauvegardé", "ok");
+    showToast(t("settings_alldebrid_saved"), "ok");
     await checkAllDebridStatus();
   } catch (e) {
-    showToast("Erreur : " + e.message, "error");
+    showToast(t("error_prefix") + e.message, "error");
   }
 }
 
@@ -83,9 +83,9 @@ async function saveDownloadSettings() {
       speed_limit: speedLimit,
       default_destination: dest,
     });
-    showToast("Paramètres téléchargements sauvegardés", "ok");
+    showToast(t("settings_downloads_saved"), "ok");
   } catch (e) {
-    showToast("Erreur : " + e.message, "error");
+    showToast(t("error_prefix") + e.message, "error");
   }
 }
 
@@ -108,50 +108,28 @@ const WEBHOOK_PRESETS = {
   },
   discord: {
     placeholder: "https://discord.com/api/webhooks/...",
-    badge: "Gratuit",
-    info: `<strong>Comment configurer :</strong><br>
-1. Ouvrir les <em>Paramètres du serveur</em> Discord<br>
-2. Aller dans <em>Intégrations</em> &rarr; <em>Webhooks</em><br>
-3. Cliquer <em>Nouveau webhook</em>, choisir le salon<br>
-4. Copier l'URL du webhook et la coller ici`,
+    badgeKey: "webhook_badge_free",
+    infoKey: "webhook_discord_info",
   },
   slack: {
     placeholder: "https://hooks.slack.com/services/T.../B.../...",
-    badge: "Gratuit",
-    info: `<strong>Comment configurer :</strong><br>
-1. Aller sur <a href="https://api.slack.com/apps" target="_blank" style="color:var(--accent)">api.slack.com/apps</a><br>
-2. Créer une app &rarr; <em>Incoming Webhooks</em> &rarr; Activer<br>
-3. <em>Add New Webhook to Workspace</em>, choisir le channel<br>
-4. Copier l'URL du webhook`,
+    badgeKey: "webhook_badge_free",
+    infoKey: "webhook_slack_info",
   },
   telegram: {
     placeholder: "https://api.telegram.org/bot<TOKEN>/sendMessage",
-    badge: "Gratuit",
-    info: `<strong>Comment configurer :</strong><br>
-1. Parler à <a href="https://t.me/BotFather" target="_blank" style="color:var(--accent)">@BotFather</a> sur Telegram<br>
-2. Envoyer <code>/newbot</code> et suivre les étapes pour obtenir le <em>token</em><br>
-3. Obtenir votre <em>chat_id</em> via <a href="https://t.me/userinfobot" target="_blank" style="color:var(--accent)">@userinfobot</a><br>
-4. URL : <code>https://api.telegram.org/bot&lt;TOKEN&gt;/sendMessage</code><br>
-<em>Le chat_id est envoyé automatiquement dans le payload.</em>`,
+    badgeKey: "webhook_badge_free",
+    infoKey: "webhook_telegram_info",
   },
   gotify: {
     placeholder: "https://gotify.example.com/message?token=...",
-    badge: "Gratuit (self-hosted)",
-    info: `<strong>Comment configurer :</strong><br>
-1. Installer <a href="https://gotify.net" target="_blank" style="color:var(--accent)">Gotify</a> sur votre serveur<br>
-2. Aller dans <em>Apps</em> &rarr; <em>Créer une application</em><br>
-3. Copier le token de l'app<br>
-4. URL : <code>https://votre-gotify/message?token=VOTRE_TOKEN</code>`,
+    badgeKey: "webhook_badge_free_self",
+    infoKey: "webhook_gotify_info",
   },
   ntfy: {
-    placeholder: "https://ntfy.sh/votre-topic",
-    badge: "Gratuit",
-    info: `<strong>Comment configurer :</strong><br>
-1. Aller sur <a href="https://ntfy.sh" target="_blank" style="color:var(--accent)">ntfy.sh</a> (ou votre instance)<br>
-2. Choisir un nom de topic unique<br>
-3. S'abonner au topic dans l'app ntfy (Android/iOS/Web)<br>
-4. URL : <code>https://ntfy.sh/votre-topic</code><br>
-<em>Aucune inscription requise !</em>`,
+    placeholder: "https://ntfy.sh/your-topic",
+    badgeKey: "webhook_badge_free",
+    infoKey: "webhook_ntfy_info",
   },
 };
 
@@ -165,7 +143,7 @@ function updateWebhookPreset() {
     urlInput.placeholder = preset.placeholder;
   }
 
-  if (!preset || !preset.info) {
+  if (!preset || !preset.infoKey) {
     infoDiv.classList.add("hidden");
     return;
   }
@@ -173,9 +151,9 @@ function updateWebhookPreset() {
   infoDiv.classList.remove("hidden");
   infoDiv.innerHTML = `
     <div class="preset-header">
-      ${preset.badge ? `<span class="preset-badge">${preset.badge}</span>` : ""}
+      ${preset.badgeKey ? `<span class="preset-badge">${t(preset.badgeKey)}</span>` : ""}
     </div>
-    <div class="preset-guide">${preset.info}</div>`;
+    <div class="preset-guide">${t(preset.infoKey)}</div>`;
 }
 
 // ---- Webhook test ----
@@ -186,12 +164,12 @@ async function testWebhook() {
     await saveWebhookSettings();
     const res = await API.post("/api/settings/test-webhook", {});
     if (res.success) {
-      showToast("Webhook envoyé avec succès !", "ok");
+      showToast(t("webhook_sent"), "ok");
     } else {
-      showToast("Échec : " + res.message, "error");
+      showToast(t("webhook_fail") + res.message, "error");
     }
   } catch (e) {
-    showToast("Erreur : " + e.message, "error");
+    showToast(t("error_prefix") + e.message, "error");
   }
 }
 
@@ -213,7 +191,7 @@ async function saveWebhookSettings() {
 
 async function saveSettings() {
   const resultEl = document.getElementById("save-result");
-  resultEl.textContent = "Sauvegarde...";
+  resultEl.textContent = t("settings_saving");
   resultEl.className = "inline-result";
 
   // Collect webhook events
@@ -239,15 +217,15 @@ async function saveSettings() {
 
   try {
     await API.put("/api/settings/", payload);
-    resultEl.textContent = "Sauvegardé";
+    resultEl.textContent = t("settings_saved");
     resultEl.className = "inline-result ok";
-    showToast("Paramètres sauvegardés", "ok");
+    showToast(t("settings_all_saved"), "ok");
   } catch (e) {
-    resultEl.textContent = "Erreur";
+    resultEl.textContent = t("settings_error");
     resultEl.className = "inline-result error";
     let msg = e.message;
     try { msg = JSON.parse(e.message).detail; } catch {}
-    showToast("Erreur : " + msg, "error");
+    showToast(t("error_prefix") + msg, "error");
   }
 }
 
@@ -323,7 +301,7 @@ async function doSettingsLogin() {
     });
     if (!resp.ok) {
       const data = await resp.json();
-      errEl.textContent = data.detail || "Identifiants invalides";
+      errEl.textContent = data.detail || t("settings_login_invalid");
       errEl.classList.remove("hidden");
       if (_settingsOtpRequired) {
         document.getElementById("login-otp").value = "";
@@ -347,7 +325,7 @@ async function doSettingsLogin() {
     document.getElementById("login-modal").classList.add("hidden");
     bootSettings();
   } catch {
-    errEl.textContent = "Erreur de connexion au serveur";
+    errEl.textContent = t("settings_login_server_error");
     errEl.classList.remove("hidden");
   }
 }
@@ -394,7 +372,7 @@ async function bootSettings() {
     // Show account button if auth is enabled
     if (typeof initAccountButton === "function") initAccountButton();
   } catch {
-    showToast("Impossible de charger les paramètres", "error");
+    showToast(t("settings_load_error"), "error");
   }
 }
 
@@ -423,38 +401,38 @@ function renderChangelog(md) {
 async function checkForUpdate() {
   const btn = document.getElementById("btn-check-update");
   btn.disabled = true;
-  btn.textContent = "Vérification...";
-  setUpdateBadge("checking", "Vérification...");
+  btn.textContent = t("update_checking");
+  setUpdateBadge("checking", t("update_checking"));
 
   try {
     const res = await API.get("/api/settings/check-update");
     document.getElementById("current-version").textContent = "v" + res.current;
 
     if (res.update_available) {
-      setUpdateBadge("error", `v${res.latest} disponible`);
+      setUpdateBadge("error", t("update_available", { v: res.latest }));
       document.getElementById("btn-do-update").classList.remove("hidden");
-      document.getElementById("btn-do-update").textContent = `Mettre à jour vers v${res.latest}`;
+      document.getElementById("btn-do-update").textContent = t("update_btn_prefix") + res.latest;
 
       // Show changelog
       if (res.changelog) {
         document.getElementById("update-info").classList.remove("hidden");
         document.getElementById("update-changelog").innerHTML =
-          '<p style="font-size:12px;color:var(--text-3);margin-bottom:6px;font-weight:600;text-transform:uppercase;letter-spacing:.5px">Notes de version v' + escHtml(res.latest) + '</p>' +
+          '<p style="font-size:12px;color:var(--text-3);margin-bottom:6px;font-weight:600;text-transform:uppercase;letter-spacing:.5px">' + t("update_release_notes") + escHtml(res.latest) + '</p>' +
           '<div style="font-size:13px;color:var(--text-2);line-height:1.5">' + renderChangelog(res.changelog) + '</div>';
       }
-      showToast("Mise à jour disponible : v" + res.latest, "ok");
+      showToast(t("update_available_toast") + res.latest, "ok");
     } else {
-      setUpdateBadge("ok", "À jour");
+      setUpdateBadge("ok", t("update_uptodate"));
       document.getElementById("btn-do-update").classList.add("hidden");
       document.getElementById("update-info").classList.add("hidden");
-      showToast(res.message || "Vous êtes à jour", "ok");
+      showToast(res.message || t("update_uptodate"), "ok");
     }
   } catch (e) {
-    setUpdateBadge("error", "Erreur");
-    showToast("Erreur : " + e.message, "error");
+    setUpdateBadge("error", t("settings_error"));
+    showToast(t("error_prefix") + e.message, "error");
   } finally {
     btn.disabled = false;
-    btn.textContent = "Vérifier les mises à jour";
+    btn.textContent = t("update_check_btn");
   }
 }
 
@@ -462,15 +440,15 @@ async function performUpdate() {
   const btn = document.getElementById("btn-do-update");
   btn.disabled = true;
   const origText = btn.textContent;
-  btn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="animation:spin 1s linear infinite"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg> Mise à jour en cours...';
-  setUpdateBadge("checking", "Mise à jour...");
+  btn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="animation:spin 1s linear infinite"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg> ' + t("update_updating");
+  setUpdateBadge("checking", t("update_updating"));
 
   try {
     const res = await API.post("/api/settings/update", {});
     if (res.success) {
       setUpdateBadge("ok", "v" + res.version);
       showToast(res.message, "ok");
-      btn.textContent = "Redémarrage...";
+      btn.textContent = t("update_restarting");
 
       // Wait for the service to restart, then reload
       setTimeout(() => {
@@ -489,14 +467,14 @@ async function performUpdate() {
         setTimeout(() => clearInterval(poll), 30000);
       }, 2000);
     } else {
-      setUpdateBadge("error", "Échec");
-      showToast(res.message || "Mise à jour échouée", "error");
+      setUpdateBadge("error", t("update_failed"));
+      showToast(res.message || t("update_failed"), "error");
       btn.disabled = false;
       btn.textContent = origText;
     }
   } catch (e) {
-    setUpdateBadge("error", "Échec");
-    showToast("Erreur : " + e.message, "error");
+    setUpdateBadge("error", t("update_failed"));
+    showToast(t("error_prefix") + e.message, "error");
     btn.disabled = false;
     btn.textContent = origText;
   }

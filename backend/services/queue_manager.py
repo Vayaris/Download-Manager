@@ -408,6 +408,10 @@ class QueueManager:
                 "UPDATE packages SET status = ?, updated_at = ? WHERE id = ?",
                 (pkg_status, now, package_id),
             )
+            # Remove completed/failed package downloads from active table
+            await db.execute(
+                "DELETE FROM downloads WHERE package_id = ?", (package_id,)
+            )
             await db.commit()
 
             # Webhook

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # ============================================================
-#  Download Manager — Script d'installation
-#  Compatible : Ubuntu 20.04+, Debian 11+ (VM / LXC Proxmox)
+#  Download Manager — Installation Script
+#  Compatible: Ubuntu 20.04+, Debian 11+ (VM / LXC Proxmox)
 # ============================================================
 set -eo pipefail
 
@@ -15,7 +15,7 @@ error()   { echo -e "${RED}[ERR]${NC}   $*"; }
 die()     { error "$*"; exit 1; }
 
 # ---- Root check ----
-[[ $EUID -eq 0 ]] || die "Ce script doit etre execute en tant que root. Utilisez : sudo bash install.sh"
+[[ $EUID -eq 0 ]] || die "This script must be run as root. Use: sudo bash install.sh"
 
 # ---- Banner ----
 echo ""
@@ -41,34 +41,34 @@ fi
 
 # If SCRIPT_DIR is empty or doesn't contain project files, clone from GitHub
 if [ -z "${SCRIPT_DIR}" ] || [ ! -f "${SCRIPT_DIR}/requirements.txt" ]; then
-    info "Telechargement du projet depuis GitHub..."
+    info "Downloading project from GitHub..."
     apt-get update -qq > /dev/null 2>&1
     apt-get install -y -qq git > /dev/null 2>&1
     CLONED_TEMP="$(mktemp -d)"
     git clone --depth 1 https://github.com/Vayaris/Download-Manager.git "${CLONED_TEMP}/download-manager"
     SCRIPT_DIR="${CLONED_TEMP}/download-manager"
-    success "Projet telecharge"
+    success "Project downloaded"
     echo ""
 fi
 
 # ---- Port selection ----
 DEFAULT_PORT=40320
-read -rp "Sur quel port exposer l'interface web ? [${DEFAULT_PORT}] : " INPUT_PORT
+read -rp "Which port should the web interface listen on? [${DEFAULT_PORT}] : " INPUT_PORT
 PORT="${INPUT_PORT:-$DEFAULT_PORT}"
 
 if ! [[ "$PORT" =~ ^[0-9]+$ ]] || [ "$PORT" -lt 1 ] || [ "$PORT" -gt 65535 ]; then
-    warn "Port invalide, utilisation du port par defaut : ${DEFAULT_PORT}"
+    warn "Invalid port, using default: ${DEFAULT_PORT}"
     PORT=$DEFAULT_PORT
 fi
 
-info "Port selectionne : ${PORT}"
+info "Selected port: ${PORT}"
 echo ""
 
 # ---- System dependencies ----
-info "Mise a jour des paquets..."
+info "Updating packages..."
 apt-get update -qq
 
-info "Installation des dependances systeme..."
+info "Installing system dependencies..."
 apt-get install -y -qq \
     python3 \
     python3-pip \
@@ -86,26 +86,26 @@ PYTHON_MAJOR=$(echo "$PYTHON_VERSION" | cut -d. -f1)
 PYTHON_MINOR=$(echo "$PYTHON_VERSION" | cut -d. -f2)
 
 if [ "$PYTHON_MAJOR" -lt 3 ] || ([ "$PYTHON_MAJOR" -eq 3 ] && [ "$PYTHON_MINOR" -lt 8 ]); then
-    die "Python 3.8+ requis. Version trouvee : ${PYTHON_VERSION}"
+    die "Python 3.8+ required. Found: ${PYTHON_VERSION}"
 fi
 
-success "Python ${PYTHON_VERSION} detecte"
+success "Python ${PYTHON_VERSION} detected"
 
 # Verify aria2c is actually installed
 if ! command -v aria2c &> /dev/null; then
-    die "aria2c n'a pas ete installe correctement. Verifiez votre gestionnaire de paquets."
+    die "aria2c was not installed correctly. Check your package manager."
 fi
-success "aria2c $(aria2c --version | head -1 | awk '{print $3}') installe"
+success "aria2c $(aria2c --version | head -1 | awk '{print $3}') installed"
 
 # Check if the selected port is already in use (warning only)
 if command -v ss &> /dev/null; then
     if ss -tlnp | grep -q ":${PORT} " 2>/dev/null; then
-        warn "Le port ${PORT} est deja utilise. Le service pourrait ne pas demarrer."
+        warn "Port ${PORT} is already in use. The service may fail to start."
     fi
 fi
 
 # ---- Create directories ----
-info "Creation de la structure de repertoires..."
+info "Creating directory structure..."
 mkdir -p "${INSTALL_DIR}"/{backend,frontend,downloads,config}
 mkdir -p "${INSTALL_DIR}/backend"/{routers,services}
 mkdir -p "${INSTALL_DIR}/frontend/static"/{css,js}
@@ -113,21 +113,21 @@ mkdir -p "${CONFIG_DIR}"
 mkdir -p "${LOG_DIR}"
 
 # ---- Copy project files ----
-info "Copie des fichiers du projet..."
+info "Copying project files..."
 cp -r "${SCRIPT_DIR}/backend/"* "${INSTALL_DIR}/backend/"
 cp -r "${SCRIPT_DIR}/frontend/"* "${INSTALL_DIR}/frontend/"
 cp "${SCRIPT_DIR}/requirements.txt" "${INSTALL_DIR}/"
 cp "${SCRIPT_DIR}/start.sh" "${INSTALL_DIR}/start.sh"
 chmod +x "${INSTALL_DIR}/start.sh"
 [ -f "${SCRIPT_DIR}/VERSION" ] && cp "${SCRIPT_DIR}/VERSION" "${INSTALL_DIR}/VERSION"
-success "Fichiers copies"
+success "Files copied"
 
 # ---- Generate aria2 secret ----
 ARIA2_SECRET=$(tr -dc 'a-zA-Z0-9' < /dev/urandom | fold -w 32 | head -n 1)
 
 # ---- Config file ----
 if [ -f "${CONFIG_DIR}/config.yml" ]; then
-    info "Configuration existante detectee, mise a jour du port uniquement."
+    info "Existing configuration detected, updating port only."
     sed -i "s/^\(\s*port:\s*\).*/\1${PORT}/" "${CONFIG_DIR}/config.yml"
 
     # Add webhooks section if missing
@@ -143,10 +143,10 @@ webhooks:
     - "download_failed"
     - "package_complete"
 EOF
-        info "Section webhooks ajoutee a la configuration"
+        info "Webhooks section added to configuration"
     fi
 else
-    info "Creation du fichier de configuration..."
+    info "Creating configuration file..."
     cat > "${CONFIG_DIR}/config.yml" <<EOF
 server:
   host: "0.0.0.0"
@@ -180,25 +180,25 @@ webhooks:
     - "download_failed"
     - "package_complete"
 EOF
-    success "Configuration creee : ${CONFIG_DIR}/config.yml"
+    success "Configuration created: ${CONFIG_DIR}/config.yml"
 fi
 
 # ---- Python virtual environment ----
 if [ -d "${INSTALL_DIR}/venv" ]; then
-    info "Virtualenv existant, mise a jour..."
+    info "Existing virtualenv found, updating..."
 else
-    info "Creation du virtualenv Python..."
+    info "Creating Python virtualenv..."
     python3 -m venv "${INSTALL_DIR}/venv" > /dev/null 2>&1
-    success "Virtualenv cree"
+    success "Virtualenv created"
 fi
 
-info "Installation des dependances Python..."
+info "Installing Python dependencies..."
 "${INSTALL_DIR}/venv/bin/pip" install --quiet --upgrade pip
 "${INSTALL_DIR}/venv/bin/pip" install --quiet -r "${INSTALL_DIR}/requirements.txt"
-success "Dependances Python installees"
+success "Python dependencies installed"
 
 # ---- systemd service ----
-info "Configuration du service systemd..."
+info "Configuring systemd service..."
 cat > /etc/systemd/system/download-manager.service <<EOF
 [Unit]
 Description=Download Manager
@@ -231,28 +231,28 @@ EOF
 
 systemctl daemon-reload
 systemctl enable download-manager > /dev/null 2>&1
-success "Service systemd configure et active"
+success "Systemd service configured and enabled"
 
 # ---- Git repo for auto-updates ----
 if [ ! -d "${INSTALL_DIR}/.git" ]; then
-    info "Configuration du depot git pour les mises a jour..."
+    info "Setting up git repository for updates..."
     git clone --depth 1 https://github.com/Vayaris/Download-Manager.git "${INSTALL_DIR}/.git-tmp" > /dev/null 2>&1 && \
         mv "${INSTALL_DIR}/.git-tmp/.git" "${INSTALL_DIR}/.git" && \
         rm -rf "${INSTALL_DIR}/.git-tmp" && \
         git -C "${INSTALL_DIR}" reset --hard HEAD > /dev/null 2>&1 && \
-        success "Depot git configure pour les mises a jour" || \
-        warn "Impossible de configurer le depot git (mises a jour manuelles uniquement)"
+        success "Git repository configured for updates" || \
+        warn "Could not set up git repository (manual updates only)"
 fi
 
 # ---- Start ----
-info "Demarrage du service..."
+info "Starting service..."
 systemctl restart download-manager
 
 sleep 3
 if systemctl is-active --quiet download-manager; then
-    success "Service demarre avec succes"
+    success "Service started successfully"
 else
-    warn "Le service n'a pas demarre. Verifiez : journalctl -u download-manager -n 30"
+    warn "Service did not start. Check: journalctl -u download-manager -n 30"
 fi
 
 # ---- Cleanup temp clone ----
@@ -265,22 +265,22 @@ SERVER_IP=$(hostname -I | awk '{print $1}')
 
 echo ""
 echo -e "${BOLD}╔═══════════════════════════════════════════════════╗${NC}"
-echo -e "${BOLD}║         Installation terminee avec succes !       ║${NC}"
+echo -e "${BOLD}║         Installation completed successfully!      ║${NC}"
 echo -e "${BOLD}╚═══════════════════════════════════════════════════╝${NC}"
 echo ""
-echo -e "  Interface web :  ${BOLD}${GREEN}http://${SERVER_IP}:${PORT}${NC}"
+echo -e "  Web interface:  ${BOLD}${GREEN}http://${SERVER_IP}:${PORT}${NC}"
 echo ""
-echo -e "  Commandes utiles :"
-echo -e "    ${YELLOW}systemctl status download-manager${NC}   — statut"
-echo -e "    ${YELLOW}systemctl restart download-manager${NC}  — redemarrer"
+echo -e "  Useful commands:"
+echo -e "    ${YELLOW}systemctl status download-manager${NC}   — status"
+echo -e "    ${YELLOW}systemctl restart download-manager${NC}  — restart"
 echo -e "    ${YELLOW}journalctl -u download-manager -f${NC}   — logs"
 echo -e "    ${YELLOW}nano ${CONFIG_DIR}/config.yml${NC}       — configuration"
 echo ""
-echo -e "  Fonctionnalites :"
-echo -e "    - AllDebrid : configurez votre cle dans ${BOLD}Parametres${NC}"
-echo -e "    - Torrents  : upload .torrent ou magnet via AllDebrid"
-echo -e "    - Paquets   : groupez vos liens en paquets"
+echo -e "  Features:"
+echo -e "    - AllDebrid : configure your API key in ${BOLD}Settings${NC}"
+echo -e "    - Torrents  : upload .torrent or magnet via AllDebrid"
+echo -e "    - Packages  : group your links into packages"
 echo -e "    - Webhooks  : Discord, Slack, Telegram, Gotify, ntfy"
-echo -e "    - 2FA       : activez depuis la page Parametres"
-echo -e "    - Mise a jour : depuis Parametres > Mise a jour"
+echo -e "    - 2FA       : enable from the Settings page"
+echo -e "    - Updates   : from Settings > Updates"
 echo ""
