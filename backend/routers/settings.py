@@ -3,7 +3,7 @@ import socket
 import subprocess
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 
 from models import SettingsUpdate
 from auth import get_current_user, get_password_hash
@@ -202,8 +202,18 @@ async def check_update(_=Depends(get_current_user)):
         return {"update_available": False, "current": current, "message": f"Error: {str(e)[:200]}"}
 
 
+def _do_restart():
+    """Restart the systemd service. Called as a background task after the HTTP response is sent."""
+    import time
+    time.sleep(1)  # Let the response reach the client
+    subprocess.run(["systemctl", "reset-failed", "download-manager"],
+                   capture_output=True, timeout=10)
+    subprocess.run(["systemctl", "restart", "download-manager"],
+                   capture_output=True, timeout=30)
+
+
 @router.post("/update")
-async def perform_update(_=Depends(get_current_user)):
+async def perform_update(background_tasks: BackgroundTasks, _=Depends(get_current_user)):
     import httpx
 
     current = _get_current_version()
@@ -243,12 +253,17 @@ async def perform_update(_=Depends(get_current_user)):
                 capture_output=True, text=True, timeout=30,
             )
             result = subprocess.run(
-                ["git", "reset", "--hard", f"origin/main"],
+                ["git", "reset", "--hard", "origin/main"],
                 cwd=str(git_dir),
                 capture_output=True, text=True, timeout=30,
             )
             if result.returncode != 0:
                 raise HTTPException(status_code=500, detail="Update failed. Check system logs.")
+
+        # Always ensure start.sh is executable (git may strip the bit)
+        start_sh = install_dir / "start.sh"
+        if start_sh.exists():
+            start_sh.chmod(0o755)
 
         # If install_dir != git_dir, sync files
         if git_dir != install_dir:
@@ -268,7 +283,7 @@ async def perform_update(_=Depends(get_current_user)):
                         ["cp", str(src), str(install_dir / fname)],
                         capture_output=True, timeout=10,
                     )
-            # Make start.sh executable
+            # Re-apply executable bit after copy
             start_sh = install_dir / "start.sh"
             if start_sh.exists():
                 start_sh.chmod(0o755)
@@ -282,11 +297,8 @@ async def perform_update(_=Depends(get_current_user)):
                 capture_output=True, timeout=120,
             )
 
-        # Restart the service
-        subprocess.run(
-            ["systemctl", "restart", "download-manager"],
-            capture_output=True, timeout=30,
-        )
+        # Schedule restart AFTER the HTTP response is sent (BackgroundTask)
+        background_tasks.add_task(_do_restart)
 
         return {
             "success": True,
