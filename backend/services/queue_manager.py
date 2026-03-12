@@ -404,19 +404,18 @@ class QueueManager:
             )
             (failed,) = await cursor.fetchone()
             pkg_status = "complete" if failed == 0 else "partial"
-            await db.execute(
-                "UPDATE packages SET status = ?, updated_at = ? WHERE id = ?",
-                (pkg_status, now, package_id),
-            )
-            # Remove completed/failed package downloads from active table
-            await db.execute(
-                "DELETE FROM downloads WHERE package_id = ?", (package_id,)
-            )
+
+            # Fetch package info before deleting (needed for webhook)
+            pcur = await db.execute("SELECT * FROM packages WHERE id = ?", (package_id,))
+            pkg = await pcur.fetchone()
+
+            # Remove all package downloads from active table
+            await db.execute("DELETE FROM downloads WHERE package_id = ?", (package_id,))
+            # Delete the package itself so it disappears from the UI
+            await db.execute("DELETE FROM packages WHERE id = ?", (package_id,))
             await db.commit()
 
             # Webhook
-            pcur = await db.execute("SELECT * FROM packages WHERE id = ?", (package_id,))
-            pkg = await pcur.fetchone()
             if pkg:
                 asyncio.create_task(send_webhook("package_complete", {
                     "name": pkg["name"], "package_name": pkg["name"],
