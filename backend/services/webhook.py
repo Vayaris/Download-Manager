@@ -1,6 +1,7 @@
 import httpx
 import asyncio
 from datetime import datetime, timezone
+from urllib.parse import urlparse, parse_qs
 from config import get_config
 
 
@@ -30,14 +31,16 @@ async def send_webhook(event: str, data: dict):
     url = wh["url"]
 
     try:
-        payload = _build_payload(fmt, event, data)
+        payload = _build_payload(fmt, event, data, url)
+        # For Signal: strip query params (from/to) — they're only for config, not the endpoint
+        target_url = urlparse(url)._replace(query="", fragment="").geturl() if fmt == "signal" else url
         async with httpx.AsyncClient(timeout=10.0) as client:
-            await client.post(url, json=payload)
+            await client.post(target_url, json=payload)
     except Exception:
         pass
 
 
-def _build_payload(fmt: str, event: str, data: dict) -> dict:
+def _build_payload(fmt: str, event: str, data: dict, url: str = "") -> dict:
     name = data.get("name", "Unknown")
     dest = data.get("destination", "")
     size = _fmt_size(data.get("size", 0))
@@ -55,6 +58,8 @@ def _build_payload(fmt: str, event: str, data: dict) -> dict:
         return _gotify_payload(event, name, dest, size, error, pkg_name)
     elif fmt == "ntfy":
         return _ntfy_payload(event, name, dest, size, error, pkg_name)
+    elif fmt == "signal":
+        return _signal_payload(event, name, dest, size, error, pkg_name, url)
     else:
         return _generic_payload(event, name, dest, size, error, status, pkg_name, data)
 
@@ -172,3 +177,24 @@ def _ntfy_payload(event, name, dest, size, error, pkg_name):
         "tags": [tags.get(event, "arrow_down")],
         "priority": 4 if "failed" in event else 3,
     }
+
+
+def _signal_payload(event, name, dest, size, error, pkg_name, url=""):
+    emojis = {
+        "download_complete": "✅",
+        "download_failed": "❌",
+        "package_complete": "📦",
+    }
+    msg = f"{emojis.get(event, '📥')} {event.replace('_', ' ').title()}\n\nFile: {name}\nSize: {size}\nDestination: {dest}"
+    if pkg_name:
+        msg += f"\nPackage: {pkg_name}"
+    if error:
+        msg += f"\nError: {error[:200]}"
+
+    # Extract sender number and recipient(s) from URL query params:
+    # e.g. http://signal-api:8080/v2/send?from=%2B33xxx&to=%2B33yyy
+    params = parse_qs(urlparse(url).query)
+    number = params.get("from", [""])[0]
+    recipients = params.get("to", params.get("recipients", []))
+
+    return {"message": msg, "number": number, "recipients": recipients}

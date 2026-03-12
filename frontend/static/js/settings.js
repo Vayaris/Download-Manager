@@ -131,6 +131,11 @@ const WEBHOOK_PRESETS = {
     badgeKey: "webhook_badge_free",
     infoKey: "webhook_ntfy_info",
   },
+  signal: {
+    placeholder: "http://signal-api:8080/v2/send?from=%2B33xxxxxxxxx&to=%2B33xxxxxxxxx",
+    badgeKey: "webhook_badge_free_self",
+    infoKey: "webhook_signal_info",
+  },
 };
 
 function updateWebhookPreset() {
