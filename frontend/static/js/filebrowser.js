@@ -9,7 +9,7 @@ const FileBrowser = (() => {
     const list = document.getElementById("fb-list");
     const crumbs = document.getElementById("fb-breadcrumbs");
 
-    list.innerHTML = '<div class="fb-loading">Chargement...</div>';
+    list.innerHTML = '<div class="fb-loading">' + t("fb_loading") + '</div>';
 
     try {
       const resp = await API.get(`/api/files/browse?path=${encodeURIComponent(path)}`);
@@ -35,7 +35,7 @@ const FileBrowser = (() => {
       }
 
       if (resp.directories.length === 0) {
-        list.innerHTML = '<div class="fb-empty">Aucun sous-dossier</div>';
+        list.innerHTML = '<div class="fb-empty">' + t("fb_empty") + '</div>';
         return;
       }
 
@@ -50,7 +50,7 @@ const FileBrowser = (() => {
         )
         .join("");
     } catch (e) {
-      list.innerHTML = `<div class="fb-empty">Erreur : ${_esc(String(e))}</div>`;
+      list.innerHTML = `<div class="fb-empty">${t("fb_error")}${_esc(String(e))}</div>`;
     }
   }
 
@@ -128,18 +128,18 @@ function hideMkdirInput() {
 
 async function createFolder() {
   const name = document.getElementById("mkdir-name").value.trim();
-  if (!name) { showToast("Nom du dossier requis", "error"); return; }
+  if (!name) { showToast(t("fb_folder_required"), "error"); return; }
 
   const currentPath = FileBrowser.getCurrentPath();
 
   try {
     const resp = await API.post("/api/files/mkdir", { path: currentPath, name: name });
-    showToast(`Dossier « ${name} » créé`, "ok");
+    showToast(t("fb_folder_created", { name }), "ok");
     hideMkdirInput();
     // Refresh and navigate to new folder
     FileBrowser._browse(resp.path);
   } catch (e) {
-    let msg = "Erreur";
+    let msg = t("settings_error");
     try { msg = JSON.parse(e.message).detail; } catch { msg = e.message; }
     showToast(msg, "error");
   }

@@ -58,8 +58,9 @@ function fmtName(item) {
 function fmtDate(iso) {
   if (!iso) return "\u2014";
   const d = new Date(iso + "Z");
-  return d.toLocaleDateString("fr-FR", { day: "2-digit", month: "2-digit", year: "2-digit" })
-    + " " + d.toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" });
+  const loc = t("date_locale");
+  return d.toLocaleDateString(loc, { day: "2-digit", month: "2-digit", year: "2-digit" })
+    + " " + d.toLocaleTimeString(loc, { hour: "2-digit", minute: "2-digit" });
 }
 
 // escHtml is provided by api.js
@@ -67,17 +68,18 @@ function fmtDate(iso) {
 // ---- Status badge ----
 
 const STATUS_LABELS = {
-  pending:     "En attente",
-  downloading: "En cours",
-  paused:      "En pause",
-  complete:    "Terminé",
-  error:       "Erreur",
-  failed:      "Échoué",
-  debrid:      "Débridage",
+  pending:     function() { return t("status_pending"); },
+  downloading: function() { return t("status_downloading"); },
+  paused:      function() { return t("status_paused"); },
+  complete:    function() { return t("status_complete"); },
+  error:       function() { return t("status_error"); },
+  failed:      function() { return t("status_failed"); },
+  debrid:      function() { return t("status_debrid"); },
 };
 
 function statusBadge(status) {
-  const label = STATUS_LABELS[status] || escHtml(status);
+  const labelFn = STATUS_LABELS[status];
+  const label = labelFn ? labelFn() : escHtml(status);
   const safeClass = escHtml(status);
   return `<span class="badge badge-${safeClass}"><span class="b-dot"></span>${label}</span>`;
 }
@@ -93,9 +95,9 @@ async function copyToClipboard(text, btnEl) {
       btnEl.innerHTML = ICONS.check;
       setTimeout(() => { btnEl.classList.remove("copied"); btnEl.innerHTML = orig; }, 1800);
     }
-    showToast("Chemin copié !", "ok");
+    showToast(t("copy_ok"), "ok");
   } catch {
-    showToast("Impossible de copier", "error");
+    showToast(t("copy_fail"), "error");
   }
 }
 
@@ -108,9 +110,9 @@ async function pasteFromClipboard() {
     const current = textarea.value.trim();
     textarea.value = current ? current + "\n" + text.trim() : text.trim();
     textarea.focus();
-    showToast(text.trim() ? "Lien(s) collé(s) !" : "Presse-papiers vide", text.trim() ? "ok" : "error");
+    showToast(text.trim() ? t("paste_ok") : t("paste_empty"), text.trim() ? "ok" : "error");
   } catch {
-    showToast("Impossible d'accéder au presse-papiers", "error");
+    showToast(t("paste_fail"), "error");
   }
 }
 
@@ -235,11 +237,11 @@ function updateDownloadRow(tr, item) {
   if (actionsDiv) {
     let pauseResumeBtn = "";
     if (item.status === "downloading") {
-      pauseResumeBtn = `<button class="btn-act act-pause" onclick="pauseDownload('${item.id}')" title="Mettre en pause">${ICONS.pause}</button>`;
+      pauseResumeBtn = `<button class="btn-act act-pause" onclick="pauseDownload('${item.id}')" title="${t("btn_pause")}">${ICONS.pause}</button>`;
     } else if (item.status === "paused" || item.status === "error" || item.status === "failed") {
-      pauseResumeBtn = `<button class="btn-act act-resume" onclick="resumeDownload('${item.id}')" title="Reprendre">${ICONS.play}</button>`;
+      pauseResumeBtn = `<button class="btn-act act-resume" onclick="resumeDownload('${item.id}')" title="${t("btn_resume")}">${ICONS.play}</button>`;
     }
-    const newActions = `${pauseResumeBtn}<button class="btn-act act-delete" onclick="removeDownload('${item.id}')" title="Supprimer">${ICONS.trash}</button>`;
+    const newActions = `${pauseResumeBtn}<button class="btn-act act-delete" onclick="removeDownload('${item.id}')" title="${t("btn_delete")}">${ICONS.trash}</button>`;
     if (actionsDiv.innerHTML !== newActions) actionsDiv.innerHTML = newActions;
   }
 }
@@ -257,9 +259,9 @@ function buildDownloadRowInner(item) {
 
   let pauseResumeBtn = "";
   if (item.status === "downloading") {
-    pauseResumeBtn = `<button class="btn-act act-pause" onclick="pauseDownload('${item.id}')" title="Mettre en pause">${ICONS.pause}</button>`;
+    pauseResumeBtn = `<button class="btn-act act-pause" onclick="pauseDownload('${item.id}')" title="${t("btn_pause")}">${ICONS.pause}</button>`;
   } else if (item.status === "paused" || item.status === "error" || item.status === "failed") {
-    pauseResumeBtn = `<button class="btn-act act-resume" onclick="resumeDownload('${item.id}')" title="Reprendre">${ICONS.play}</button>`;
+    pauseResumeBtn = `<button class="btn-act act-resume" onclick="resumeDownload('${item.id}')" title="${t("btn_resume")}">${ICONS.play}</button>`;
   }
 
   let retryInfo = "";
@@ -306,7 +308,7 @@ function buildDownloadRowInner(item) {
       <td class="col-actions">
         <div class="row-actions">
           ${pauseResumeBtn}
-          <button class="btn-act act-delete" onclick="removeDownload('${item.id}')" title="Supprimer">${ICONS.trash}</button>
+          <button class="btn-act act-delete" onclick="removeDownload('${item.id}')" title="${t("btn_delete")}">${ICONS.trash}</button>
         </div>
       </td>`;
 }
@@ -335,9 +337,9 @@ function renderPackages(packages) {
       : pkg.status === "partial" ? "error"
       : "downloading";
 
-    const pkgStatusLabel = pkg.status === "complete" ? "Terminé"
-      : pkg.status === "partial" ? "Partiel"
-      : "En cours";
+    const pkgStatusLabel = pkg.status === "complete" ? t("pkg_status_complete")
+      : pkg.status === "partial" ? t("pkg_status_partial")
+      : t("pkg_status_active");
 
     let downloadsHtml = "";
     if (isExpanded && pkg.downloads) {
@@ -355,7 +357,7 @@ function renderPackages(packages) {
           <div class="pkg-icon">${ICONS.pkg}</div>
           <div class="pkg-info">
             <span class="pkg-name">${escHtml(pkg.name)}</span>
-            <span class="pkg-meta">${pkg.completed_files || 0}/${pkg.total_files || 0} fichiers \u2022 ${escHtml(fmtBytes(pkg.total_size))}</span>
+            <span class="pkg-meta">${pkg.completed_files || 0}/${pkg.total_files || 0} ${t("pkg_files")} \u2022 ${escHtml(fmtBytes(pkg.total_size))}</span>
           </div>
           <div class="pkg-progress-wrap">
             <div class="progress-track" style="width:120px">
@@ -365,7 +367,7 @@ function renderPackages(packages) {
           </div>
           <span class="badge badge-${statusClass}" style="margin-left:8px"><span class="b-dot"></span>${pkgStatusLabel}</span>
           ${totalSpeed > 0 ? `<span class="pkg-speed mono-cell">${escHtml(fmtSpeed(totalSpeed))}</span>` : ''}
-          <button class="btn-act act-delete" onclick="event.stopPropagation();removePackage('${pkg.id}')" title="Supprimer le paquet">${ICONS.trash}</button>
+          <button class="btn-act act-delete" onclick="event.stopPropagation();removePackage('${pkg.id}')" title="${t("btn_delete_pkg")}">${ICONS.trash}</button>
         </div>
         ${downloadsHtml}
       </div>`;
@@ -392,8 +394,8 @@ async function removePackage(id) {
   try {
     await API.del(`/api/downloads/packages/${id}`);
     expandedPackages.delete(id);
-    showToast("Paquet supprimé", "ok");
-  } catch (e) { showToast("Erreur : " + e.message, "error"); }
+    showToast(t("pkg_deleted"), "ok");
+  } catch (e) { showToast(t("error_prefix") + e.message, "error"); }
 }
 
 // ---- Package modal ----
@@ -430,8 +432,8 @@ async function addPackage() {
   const links = document.getElementById("pkg-links").value.trim();
   const dest = document.getElementById("pkg-dest-path").value.trim();
 
-  if (!name) { showToast("Donnez un nom au paquet", "error"); return; }
-  if (!links) { showToast("Ajoutez des liens", "error"); return; }
+  if (!name) { showToast(t("pkg_name_required"), "error"); return; }
+  if (!links) { showToast(t("pkg_links_required"), "error"); return; }
 
   let destination = dest;
   if (!destination) {
@@ -447,13 +449,13 @@ async function addPackage() {
 
   try {
     const result = await API.post("/api/downloads/packages", { name, urls, destination });
-    showToast(`Paquet « ${name} » créé avec ${result.added} lien(s)`, "ok");
+    showToast(t("pkg_created", { name, n: result.added }), "ok");
     document.getElementById("pkg-name").value = "";
     document.getElementById("pkg-links").value = "";
     closePackageModal();
     loadPackages();
   } catch (e) {
-    showToast("Erreur : " + e.message, "error");
+    showToast(t("error_prefix") + e.message, "error");
   }
 }
 
@@ -471,9 +473,9 @@ function updateStats(downloads) {
   if (queue.length === 0) { el.innerHTML = ""; return; }
 
   el.innerHTML = `
-    <div class="stat-chip total"><span class="dot"></span>${queue.length} fichier${queue.length > 1 ? "s" : ""}</div>
-    ${active > 0 ? `<div class="stat-chip active"><span class="dot"></span>${active} actif${active > 1 ? "s" : ""}</div>` : ""}
-    ${pending > 0 ? `<div class="stat-chip"><span class="dot"></span>${pending} en attente</div>` : ""}
+    <div class="stat-chip total"><span class="dot"></span>${t("stats_files", { n: queue.length, s: queue.length > 1 ? "s" : "" })}</div>
+    ${active > 0 ? `<div class="stat-chip active"><span class="dot"></span>${t("stats_active", { n: active, s: active > 1 ? "s" : "" })}</div>` : ""}
+    ${pending > 0 ? `<div class="stat-chip"><span class="dot"></span>${t("stats_pending", { n: pending })}</div>` : ""}
   `;
 }
 
@@ -512,8 +514,8 @@ async function loadHistory() {
         <td class="col-date mono-cell">${fmtDate(item.completed_at)}</td>
         <td class="col-actions">
           <div class="row-actions">
-            <button class="btn-act act-delete" onclick="deleteHistoryItem('${item.id}', false)" title="Supprimer de l'historique">${ICONS.trash}</button>
-            ${item.status === 'complete' ? `<button class="btn-act act-delete" onclick="deleteHistoryItem('${item.id}', true)" title="Supprimer le fichier du disque" style="color:var(--red)">${ICONS.trash}</button>` : ''}
+            <button class="btn-act act-delete" onclick="deleteHistoryItem('${item.id}', false)" title="${t("btn_delete_history")}">${ICONS.trash}</button>
+            ${item.status === 'complete' ? `<button class="btn-act act-delete" onclick="deleteHistoryItem('${item.id}', true)" title="${t("btn_delete_file")}" style="color:var(--red)">${ICONS.trash}</button>` : ''}
           </div>
         </td>
       </tr>
@@ -523,11 +525,11 @@ async function loadHistory() {
     if (totalPages > 1) {
       let paginationHtml = "";
       if (historyPage > 0) {
-        paginationHtml += `<button class="btn btn-sm" onclick="historyPage--;loadHistory()">Précédent</button>`;
+        paginationHtml += `<button class="btn btn-sm" onclick="historyPage--;loadHistory()">${t("history_prev")}</button>`;
       }
       paginationHtml += `<span class="pagination-info">${historyPage + 1} / ${totalPages}</span>`;
       if (historyPage < totalPages - 1) {
-        paginationHtml += `<button class="btn btn-sm" onclick="historyPage++;loadHistory()">Suivant</button>`;
+        paginationHtml += `<button class="btn btn-sm" onclick="historyPage++;loadHistory()">${t("history_next")}</button>`;
       }
       pagination.innerHTML = paginationHtml;
     } else {
@@ -537,26 +539,24 @@ async function loadHistory() {
 }
 
 async function clearHistory() {
-  if (!confirm("Vider tout l'historique ?")) return;
+  if (!confirm(t("history_confirm_clear"))) return;
   try {
     const resp = await API.del("/api/downloads/history");
     historyPage = 0;
     document.getElementById("history-tbody").innerHTML = "";
     document.getElementById("history-section").classList.add("hidden");
-    showToast("Historique vidé", "ok");
-  } catch (e) { showToast("Erreur : " + e.message, "error"); }
+    showToast(t("history_cleared"), "ok");
+  } catch (e) { showToast(t("error_prefix") + e.message, "error"); }
 }
 
 async function deleteHistoryItem(id, deleteFile) {
-  const msg = deleteFile
-    ? "Supprimer cette entrée ET le fichier du disque ?"
-    : "Supprimer cette entrée de l'historique ?";
+  const msg = deleteFile ? t("history_confirm_delete_file") : t("history_confirm_delete");
   if (!confirm(msg)) return;
   try {
     await API.del(`/api/downloads/history/${id}?delete_file=${deleteFile}`);
-    showToast(deleteFile ? "Entrée et fichier supprimés" : "Entrée supprimée", "ok");
+    showToast(deleteFile ? t("history_deleted_file") : t("history_deleted"), "ok");
     loadHistory();
-  } catch (e) { showToast("Erreur : " + e.message, "error"); }
+  } catch (e) { showToast(t("error_prefix") + e.message, "error"); }
 }
 
 // ---- Torrent modal ----
@@ -577,14 +577,7 @@ function closeTorrentModal() {
   document.getElementById("torrent-modal").classList.add("hidden");
   document.getElementById("torrent-magnets").value = "";
   document.getElementById("torrent-file-input").value = "";
-  document.getElementById("torrent-file-label").textContent = "Cliquez ou glissez un fichier .torrent ici";
-}
-
-function switchTorrentTab(tab) {
-  document.getElementById("tab-magnet").classList.toggle("active", tab === "magnet");
-  document.getElementById("tab-file").classList.toggle("active", tab === "file");
-  document.getElementById("torrent-tab-magnet").classList.toggle("hidden", tab !== "magnet");
-  document.getElementById("torrent-tab-file").classList.toggle("hidden", tab !== "file");
+  document.getElementById("torrent-file-label").textContent = t("torrent_dropzone");
 }
 
 function onTorrentFileSelected(input) {
@@ -606,9 +599,16 @@ function openFileBrowserForTorrent() {
 }
 
 async function submitTorrent() {
-  const activeTab = document.getElementById("tab-file").classList.contains("active") ? "file" : "magnet";
-  let destination = document.getElementById("torrent-dest-path").value.trim();
+  const magnetRaw = document.getElementById("torrent-magnets").value.trim();
+  const fileInput = document.getElementById("torrent-file-input");
+  const hasFile = fileInput.files && fileInput.files[0];
 
+  if (!magnetRaw && !hasFile) {
+    showToast(t("torrent_nothing"), "error");
+    return;
+  }
+
+  let destination = document.getElementById("torrent-dest-path").value.trim();
   if (!destination) {
     try {
       const cfg = await API.get("/api/settings/");
@@ -618,25 +618,17 @@ async function submitTorrent() {
     }
   }
 
-  if (activeTab === "magnet") {
-    const raw = document.getElementById("torrent-magnets").value.trim();
-    if (!raw) { showToast("Collez au moins un lien magnet", "error"); return; }
-    const magnets = raw.split("\n").map(u => u.trim()).filter(Boolean);
-
+  // Magnet links take priority if both filled
+  if (magnetRaw) {
+    const magnets = magnetRaw.split("\n").map(u => u.trim()).filter(Boolean);
     try {
       const result = await API.post("/api/torrents/", { magnets, destination });
-      showToast(`${result.added} torrent(s) ajouté(s)`, "ok");
+      showToast(t("torrent_added", { n: result.added }), "ok");
       closeTorrentModal();
     } catch (e) {
-      showToast("Erreur : " + e.message, "error");
+      showToast(t("error_prefix") + e.message, "error");
     }
   } else {
-    const fileInput = document.getElementById("torrent-file-input");
-    if (!fileInput.files || !fileInput.files[0]) {
-      showToast("Sélectionnez un fichier .torrent", "error");
-      return;
-    }
-
     const formData = new FormData();
     formData.append("file", fileInput.files[0]);
     formData.append("destination", destination);
@@ -648,10 +640,10 @@ async function submitTorrent() {
       const resp = await fetch("/api/torrents/upload", { method: "POST", headers, body: formData });
       if (!resp.ok) throw new Error(await resp.text());
       const result = await resp.json();
-      showToast(`${result.added} torrent(s) ajouté(s)`, "ok");
+      showToast(t("torrent_added", { n: result.added }), "ok");
       closeTorrentModal();
     } catch (e) {
-      showToast("Erreur : " + e.message, "error");
+      showToast(t("error_prefix") + e.message, "error");
     }
   }
 }
@@ -690,10 +682,10 @@ function renderTorrents(torrents) {
 
   section.classList.remove("hidden");
 
-  list.innerHTML = torrents.map(t => {
-    const pct = t.progress ? t.progress.toFixed(1) : "0.0";
-    const statusClass = t.status === "error" ? "error" : "downloading";
-    const statusLabel = t.status === "error" ? "Erreur" : "Traitement";
+  list.innerHTML = torrents.map(torr => {
+    const pct = torr.progress ? torr.progress.toFixed(1) : "0.0";
+    const statusClass = torr.status === "error" ? "error" : "downloading";
+    const statusLabel = torr.status === "error" ? t("torrent_status_error") : t("torrent_status_processing");
 
     return `
       <div class="torrent-card">
@@ -702,11 +694,11 @@ function renderTorrents(torrents) {
             <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 14.899A7 7 0 1 1 15.71 8h1.79a4.5 4.5 0 0 1 2.5 8.242"/><path d="M12 12v9"/><path d="m8 17 4 4 4-4"/></svg>
           </div>
           <div class="torrent-info">
-            <span class="torrent-name" title="${escHtml(t.name)}">${escHtml(t.name || 'Torrent')}</span>
+            <span class="torrent-name" title="${escHtml(torr.name)}">${escHtml(torr.name || 'Torrent')}</span>
             <span class="torrent-meta">
-              ${escHtml(fmtBytes(t.size))}
-              ${t.speed > 0 ? ` \u2022 ${escHtml(fmtSpeed(t.speed))}` : ''}
-              ${t.seeders > 0 ? ` \u2022 ${t.seeders} seed${t.seeders > 1 ? 's' : ''}` : ''}
+              ${escHtml(fmtBytes(torr.size))}
+              ${torr.speed > 0 ? ` \u2022 ${escHtml(fmtSpeed(torr.speed))}` : ''}
+              ${torr.seeders > 0 ? ` \u2022 ${torr.seeders} seed${torr.seeders > 1 ? 's' : ''}` : ''}
             </span>
           </div>
           <div class="torrent-progress-wrap">
@@ -716,7 +708,7 @@ function renderTorrents(torrents) {
             <span class="progress-pct">${pct}%</span>
           </div>
           <span class="badge badge-${statusClass}" style="margin-left:8px"><span class="b-dot"></span>${statusLabel}</span>
-          <button class="btn-act act-delete" onclick="removeTorrent('${t.id}')" title="Supprimer">${ICONS.trash}</button>
+          <button class="btn-act act-delete" onclick="removeTorrent('${torr.id}')" title="${t("btn_delete")}">${ICONS.trash}</button>
         </div>
       </div>`;
   }).join("");
@@ -725,8 +717,8 @@ function renderTorrents(torrents) {
 async function removeTorrent(id) {
   try {
     await API.del(`/api/torrents/${id}`);
-    showToast("Torrent supprimé", "ok");
-  } catch (e) { showToast("Erreur : " + e.message, "error"); }
+    showToast(t("torrent_deleted"), "ok");
+  } catch (e) { showToast(t("error_prefix") + e.message, "error"); }
 }
 
 // ---- Actions ----
@@ -736,7 +728,7 @@ async function addLinks() {
   const destInput = document.getElementById("dest-path");
   const rawUrls   = textarea.value.trim();
 
-  if (!rawUrls) { showToast("Collez au moins un lien.", "error"); return; }
+  if (!rawUrls) { showToast(t("links_empty"), "error"); return; }
 
   let destination = destInput.value.trim();
   if (!destination) {
@@ -778,41 +770,41 @@ async function addLinks() {
   }
 
   if (errors.length > 0) {
-    showToast("Erreur : " + errors.join("; "), "error");
+    showToast(t("error_prefix") + errors.join("; "), "error");
   } else {
     textarea.value = "";
-    showToast(`${added} lien${added > 1 ? "s" : ""} ajouté${added > 1 ? "s" : ""} à la file.`, "ok");
+    showToast(t("links_added", { n: added, s: added > 1 ? "s" : "" }), "ok");
   }
 }
 
 async function removeDownload(id) {
   try { await API.del(`/api/downloads/${id}`); }
-  catch (e) { showToast("Erreur : " + e.message, "error"); }
+  catch (e) { showToast(t("error_prefix") + e.message, "error"); }
 }
 
 async function pauseDownload(id) {
   try { await API.post(`/api/downloads/${id}/pause`, {}); }
-  catch (e) { showToast("Erreur : " + e.message, "error"); }
+  catch (e) { showToast(t("error_prefix") + e.message, "error"); }
 }
 
 async function resumeDownload(id) {
   try { await API.post(`/api/downloads/${id}/resume`, {}); }
-  catch (e) { showToast("Erreur : " + e.message, "error"); }
+  catch (e) { showToast(t("error_prefix") + e.message, "error"); }
 }
 
 async function bulkAction(action) {
   try {
     await API.post("/api/downloads/actions", { action });
   }
-  catch (e) { showToast("Erreur : " + e.message, "error"); }
+  catch (e) { showToast(t("error_prefix") + e.message, "error"); }
 }
 
 async function removeAllDownloads() {
-  if (!confirm("Supprimer tous les téléchargements en cours ?")) return;
+  if (!confirm(t("confirm_remove_all"))) return;
   try {
     await API.post("/api/downloads/actions", { action: "remove_all" });
-    showToast("Tous les téléchargements supprimés", "ok");
-  } catch (e) { showToast("Erreur : " + e.message, "error"); }
+    showToast(t("all_removed"), "ok");
+  } catch (e) { showToast(t("error_prefix") + e.message, "error"); }
 }
 
 // ============================================================
@@ -874,7 +866,7 @@ function resetLoginForm() {
   _loginBusy = false;
   showLogin(true);
   const sub = document.querySelector("#login-form .login-sub");
-  if (sub) sub.textContent = "Connectez-vous pour accéder à l'interface";
+  if (sub) sub.textContent = t("login_subtitle");
   document.getElementById("login-username").value = "";
   document.getElementById("login-password").value = "";
   document.getElementById("login-username").focus();
@@ -924,7 +916,7 @@ async function doLogin() {
 
     if (!resp.ok) {
       const data = await resp.json();
-      errEl.textContent = data.detail || "Identifiants invalides";
+      errEl.textContent = data.detail || t("login_invalid");
       errEl.classList.remove("hidden");
       if (_loginOtpRequired) {
         document.getElementById("login-otp").value = "";
@@ -946,7 +938,7 @@ async function doLogin() {
       document.getElementById("login-otp").focus();
       // Update subtitle to indicate OTP step
       const sub = document.querySelector("#login-form .login-sub");
-      if (sub) sub.innerHTML = 'Vérification en deux étapes requise <a href="#" onclick="resetLoginForm();return false" style="display:block;margin-top:6px;font-size:12px">Changer de compte</a>';
+      if (sub) sub.innerHTML = t("login_otp_step") + ' <a href="#" onclick="resetLoginForm();return false" style="display:block;margin-top:6px;font-size:12px">' + t("login_switch_account") + '</a>';
       _loginBusy = false;
       return;
     }
@@ -956,7 +948,7 @@ async function doLogin() {
     _loginBusy = false;
     loginSuccess(data.token);
   } catch {
-    errEl.textContent = "Erreur de connexion au serveur";
+    errEl.textContent = t("login_server_error");
     errEl.classList.remove("hidden");
     _loginBusy = false;
   }
@@ -968,9 +960,9 @@ async function doSetupAdmin() {
   const confirm  = document.getElementById("setup-password-confirm").value;
   const errEl    = document.getElementById("setup-error");
 
-  if (!username) { errEl.textContent = "Nom d'utilisateur requis"; errEl.classList.remove("hidden"); return; }
-  if (password.length < 6) { errEl.textContent = "Mot de passe : 6 caractères minimum"; errEl.classList.remove("hidden"); return; }
-  if (password !== confirm) { errEl.textContent = "Les mots de passe ne correspondent pas"; errEl.classList.remove("hidden"); return; }
+  if (!username) { errEl.textContent = t("setup_username_required"); errEl.classList.remove("hidden"); return; }
+  if (password.length < 6) { errEl.textContent = t("setup_password_min"); errEl.classList.remove("hidden"); return; }
+  if (password !== confirm) { errEl.textContent = t("setup_password_mismatch"); errEl.classList.remove("hidden"); return; }
 
   try {
     const resp = await fetch("/api/auth/setup-admin", {
@@ -980,15 +972,15 @@ async function doSetupAdmin() {
     });
     if (!resp.ok) {
       const data = await resp.json();
-      errEl.textContent = data.detail || "Erreur";
+      errEl.textContent = data.detail || t("settings_error");
       errEl.classList.remove("hidden");
       return;
     }
     const data = await resp.json();
-    showToast("Compte admin créé avec succès !", "ok");
+    showToast(t("setup_success"), "ok");
     loginSuccess(data.token);
   } catch {
-    errEl.textContent = "Erreur de connexion";
+    errEl.textContent = t("login_server_error");
     errEl.classList.remove("hidden");
   }
 }
@@ -1003,7 +995,7 @@ function loginSuccess(token) {
   _loginOtpRequired = false;
   _loginBusy = false;
   const sub = document.querySelector("#login-form .login-sub");
-  if (sub) sub.textContent = "Connectez-vous pour accéder à l'interface";
+  if (sub) sub.textContent = t("login_subtitle");
   startApp();
 }
 

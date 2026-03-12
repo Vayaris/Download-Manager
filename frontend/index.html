@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="fr" data-theme="dark">
+<html lang="en" data-theme="dark">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
@@ -29,39 +29,39 @@
     <div class="login-logo">
       <svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
     </div>
-    <h2>Download Manager</h2>
+    <h2 data-i18n="login_title">Download Manager</h2>
 
     <!-- Login form (username + password + OTP inline) -->
     <div id="login-form">
-      <p class="login-sub">Connectez-vous pour accéder à l'interface</p>
+      <p class="login-sub" data-i18n="login_subtitle">Sign in to access the dashboard</p>
       <div class="form-group">
-        <input type="text" id="login-username" class="form-input" placeholder="Nom d'utilisateur" autocomplete="username">
+        <input type="text" id="login-username" class="form-input" placeholder="Username" data-i18n-placeholder="login_username_placeholder" autocomplete="username">
       </div>
       <div class="form-group">
-        <input type="password" id="login-password" class="form-input" placeholder="Mot de passe" autocomplete="current-password">
+        <input type="password" id="login-password" class="form-input" placeholder="Password" data-i18n-placeholder="login_password_placeholder" autocomplete="current-password">
       </div>
       <div id="otp-group" class="form-group hidden">
-        <input type="text" id="login-otp" class="form-input" placeholder="Code 2FA à 6 chiffres" autocomplete="one-time-code" maxlength="6" inputmode="numeric" pattern="[0-9]{6}" style="text-align:center;font-size:15px;letter-spacing:4px;font-family:var(--font-mono)">
-        <p class="form-hint" style="margin-top:6px;font-size:12px">Entrez le code affiché dans votre application d'authentification</p>
+        <input type="text" id="login-otp" class="form-input" placeholder="6-digit 2FA code" data-i18n-placeholder="login_otp_placeholder" autocomplete="one-time-code" maxlength="6" inputmode="numeric" pattern="[0-9]{6}" style="text-align:center;font-size:15px;letter-spacing:4px;font-family:var(--font-mono)">
+        <p class="form-hint" style="margin-top:6px;font-size:12px" data-i18n="login_otp_hint">Enter the code displayed in your authenticator app</p>
       </div>
       <div id="login-error" class="error-msg hidden"></div>
-      <button class="btn btn-primary full-width" onclick="doLogin()">Se connecter</button>
+      <button class="btn btn-primary full-width" onclick="doLogin()" data-i18n="login_btn">Sign in</button>
     </div>
 
     <!-- Setup admin form (first time) -->
     <div id="setup-form" class="hidden">
-      <p class="login-sub">Créez votre compte administrateur</p>
+      <p class="login-sub" data-i18n="setup_subtitle">Create your admin account</p>
       <div class="form-group">
-        <input type="text" id="setup-username" class="form-input" placeholder="Nom d'utilisateur" autocomplete="username" value="admin">
+        <input type="text" id="setup-username" class="form-input" placeholder="Username" data-i18n-placeholder="setup_username_placeholder" autocomplete="username" value="admin">
       </div>
       <div class="form-group">
-        <input type="password" id="setup-password" class="form-input" placeholder="Mot de passe (min. 6 caractères)" autocomplete="new-password">
+        <input type="password" id="setup-password" class="form-input" placeholder="Password (min. 6 characters)" data-i18n-placeholder="setup_password_placeholder" autocomplete="new-password">
       </div>
       <div class="form-group">
-        <input type="password" id="setup-password-confirm" class="form-input" placeholder="Confirmer le mot de passe" autocomplete="new-password">
+        <input type="password" id="setup-password-confirm" class="form-input" placeholder="Confirm password" data-i18n-placeholder="setup_password_confirm_placeholder" autocomplete="new-password">
       </div>
       <div id="setup-error" class="error-msg hidden"></div>
-      <button class="btn btn-primary full-width" onclick="doSetupAdmin()">Créer le compte</button>
+      <button class="btn btn-primary full-width" onclick="doSetupAdmin()" data-i18n="setup_btn">Create account</button>
     </div>
   </div>
 </div>
@@ -72,7 +72,7 @@
     <div class="modal-header">
       <div class="modal-header-title">
         <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
-        <h3>Dossier de destination</h3>
+        <h3 data-i18n="fb_title">Destination folder</h3>
       </div>
       <button class="btn-close" onclick="closeFilerBrowser()">
         <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
@@ -82,25 +82,25 @@
     <div id="fb-toolbar" class="fb-toolbar">
       <button class="btn btn-sm" onclick="showMkdirInput()">
         <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-        Nouveau dossier
+        <span data-i18n="fb_new_folder">New folder</span>
       </button>
       <div id="mkdir-input-wrap" class="mkdir-wrap hidden">
-        <input type="text" id="mkdir-name" class="form-input form-input-sm" placeholder="Nom du dossier..." onkeydown="if(event.key==='Enter')createFolder()">
-        <button class="btn btn-primary btn-sm" onclick="createFolder()">Créer</button>
-        <button class="btn btn-sm" onclick="hideMkdirInput()">Annuler</button>
+        <input type="text" id="mkdir-name" class="form-input form-input-sm" placeholder="Folder name..." data-i18n-placeholder="fb_folder_name_placeholder" onkeydown="if(event.key==='Enter')createFolder()">
+        <button class="btn btn-primary btn-sm" onclick="createFolder()" data-i18n="fb_create">Create</button>
+        <button class="btn btn-sm" onclick="hideMkdirInput()" data-i18n="btn_cancel">Cancel</button>
       </div>
     </div>
     <div id="fb-list" class="fb-list">
-      <div class="fb-loading">Chargement...</div>
+      <div class="fb-loading" data-i18n="fb_loading">Loading...</div>
     </div>
     <div class="modal-footer">
       <div id="fb-current-path" class="selected-path-display">
         <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="opacity:.5;flex-shrink:0"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
-        <span id="fb-path-text">Naviguez et sélectionnez un dossier</span>
+        <span id="fb-path-text" data-i18n="fb_navigate_hint">Browse and select a folder</span>
       </div>
       <div class="modal-actions">
-        <button class="btn" onclick="closeFilerBrowser()">Annuler</button>
-        <button class="btn btn-primary" onclick="selectCurrentPath()">Sélectionner ce dossier</button>
+        <button class="btn" onclick="closeFilerBrowser()" data-i18n="btn_cancel">Cancel</button>
+        <button class="btn btn-primary" onclick="selectCurrentPath()" data-i18n="fb_select_folder">Select this folder</button>
       </div>
     </div>
   </div>
@@ -112,7 +112,7 @@
     <div class="modal-header">
       <div class="modal-header-title">
         <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16.5 9.4 7.55 4.24"/><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.29 7 12 12 20.71 7"/><line x1="12" y1="22" x2="12" y2="12"/></svg>
-        <h3>Nouveau paquet</h3>
+        <h3 data-i18n="pkg_modal_title">Create a package</h3>
       </div>
       <button class="btn-close" onclick="closePackageModal()">
         <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
@@ -120,11 +120,11 @@
     </div>
     <div style="padding:20px">
       <div class="form-group">
-        <label class="form-label">Nom du paquet</label>
+        <label class="form-label" data-i18n="pkg_name_label">Package name</label>
         <input type="text" id="pkg-name" class="form-input" placeholder="Ex: Breaking Bad S01">
       </div>
       <div class="form-group">
-        <label class="form-label">Liens (un par ligne)</label>
+        <label class="form-label" data-i18n="pkg_links_label">Links (one per line)</label>
         <textarea id="pkg-links" class="links-textarea" rows="6" placeholder="Collez vos liens ici..." spellcheck="false"></textarea>
       </div>
       <div class="form-group">
@@ -133,7 +133,7 @@
           <div class="dest-icon-wrap">
             <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
           </div>
-          <span class="dest-text" id="pkg-dest-label">Choisir le dossier...</span>
+          <span class="dest-text" id="pkg-dest-label" data-i18n="dest_choose">Choose folder...</span>
           <span class="dest-browse-btn">
             <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
           </span>
@@ -142,8 +142,8 @@
       </div>
     </div>
     <div class="modal-footer" style="display:flex;justify-content:flex-end;gap:8px">
-      <button class="btn" onclick="closePackageModal()">Annuler</button>
-      <button class="btn btn-primary" onclick="addPackage()">Créer le paquet</button>
+      <button class="btn" onclick="closePackageModal()" data-i18n="btn_cancel">Cancel</button>
+      <button class="btn btn-primary" onclick="addPackage()" data-i18n="btn_add_package">Create package</button>
     </div>
   </div>
 </div>
@@ -154,32 +154,25 @@
     <div class="modal-header">
       <div class="modal-header-title">
         <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 14.899A7 7 0 1 1 15.71 8h1.79a4.5 4.5 0 0 1 2.5 8.242"/><path d="M12 12v9"/><path d="m8 17 4 4 4-4"/></svg>
-        <h3>Ajouter un torrent</h3>
+        <h3 data-i18n="torrent_modal_title">Add a torrent</h3>
       </div>
       <button class="btn-close" onclick="closeTorrentModal()">
         <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
       </button>
     </div>
     <div style="padding:20px">
-      <div class="torrent-tabs">
-        <button class="torrent-tab active" onclick="switchTorrentTab('magnet')" id="tab-magnet">Lien magnet</button>
-        <button class="torrent-tab" onclick="switchTorrentTab('file')" id="tab-file">Fichier .torrent</button>
+      <div class="form-group">
+        <label class="form-label" data-i18n="torrent_magnet_label">Magnet links (one per line)</label>
+        <textarea id="torrent-magnets" class="links-textarea" rows="4" placeholder="magnet:?xt=urn:btih:..." spellcheck="false"></textarea>
       </div>
-      <div id="torrent-tab-magnet">
-        <div class="form-group">
-          <label class="form-label">Liens magnet (un par ligne)</label>
-          <textarea id="torrent-magnets" class="links-textarea" rows="5" placeholder="magnet:?xt=urn:btih:..." spellcheck="false"></textarea>
+      <div style="text-align:center;color:var(--text-secondary);font-size:13px;margin:8px 0">— ou —</div>
+      <div class="form-group">
+        <label class="form-label" data-i18n="torrent_file_label">.torrent file</label>
+        <div class="torrent-dropzone" id="torrent-dropzone" onclick="document.getElementById('torrent-file-input').click()">
+          <svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="opacity:.4"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+          <span id="torrent-file-label" data-i18n="torrent_dropzone">Click or drag a .torrent file here</span>
         </div>
-      </div>
-      <div id="torrent-tab-file" class="hidden">
-        <div class="form-group">
-          <label class="form-label">Fichier .torrent</label>
-          <div class="torrent-dropzone" id="torrent-dropzone" onclick="document.getElementById('torrent-file-input').click()">
-            <svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="opacity:.4"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
-            <span id="torrent-file-label">Cliquez ou glissez un fichier .torrent ici</span>
-          </div>
-          <input type="file" id="torrent-file-input" accept=".torrent" class="hidden" onchange="onTorrentFileSelected(this)">
-        </div>
+        <input type="file" id="torrent-file-input" accept=".torrent" class="hidden" onchange="onTorrentFileSelected(this)">
       </div>
       <div class="form-group">
         <label class="form-label">Destination</label>
@@ -187,7 +180,7 @@
           <div class="dest-icon-wrap">
             <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
           </div>
-          <span class="dest-text" id="torrent-dest-label">Choisir le dossier...</span>
+          <span class="dest-text" id="torrent-dest-label" data-i18n="dest_choose">Choose folder...</span>
           <span class="dest-browse-btn">
             <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
           </span>
@@ -196,8 +189,8 @@
       </div>
     </div>
     <div class="modal-footer" style="display:flex;justify-content:flex-end;gap:8px">
-      <button class="btn" onclick="closeTorrentModal()">Annuler</button>
-      <button class="btn btn-primary" onclick="submitTorrent()">Ajouter</button>
+      <button class="btn" onclick="closeTorrentModal()" data-i18n="btn_cancel">Cancel</button>
+      <button class="btn btn-primary" onclick="submitTorrent()" data-i18n="btn_add_torrent">Add</button>
     </div>
   </div>
 </div>
@@ -212,17 +205,17 @@
         <div class="logo-icon">
           <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
         </div>
-        <span class="logo-text">Download Manager</span>
+        <span class="logo-text" data-i18n="page_title">Download Manager</span>
       </div>
 
       <nav class="header-nav">
         <a href="/" class="nav-tab active">
           <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-          Téléchargements
+          <span data-i18n="nav_downloads">Downloads</span>
         </a>
         <a href="/settings-page" class="nav-tab">
           <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
-          Paramètres
+          <span data-i18n="nav_settings">Settings</span>
         </a>
       </nav>
 
@@ -247,20 +240,20 @@
         <div class="textarea-header">
           <label class="textarea-label">
             <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
-            Liens à télécharger
+            <span data-i18n="input_links_label">Download links</span>
           </label>
           <div style="display:flex;gap:6px">
-            <button class="btn-paste" onclick="openTorrentModal()" title="Ajouter un torrent / magnet">
+            <button class="btn-paste" onclick="openTorrentModal()" data-i18n-title="btn_torrent_title" title="Add a torrent / magnet">
               <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 14.899A7 7 0 1 1 15.71 8h1.79a4.5 4.5 0 0 1 2.5 8.242"/><path d="M12 12v9"/><path d="m8 17 4 4 4-4"/></svg>
-              Torrent
+              <span data-i18n="btn_torrent">Torrent</span>
             </button>
-            <button class="btn-paste" onclick="openPackageModal()" title="Créer un paquet de liens">
+            <button class="btn-paste" onclick="openPackageModal()" data-i18n-title="btn_package_title" title="Create a link package">
               <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16.5 9.4 7.55 4.24"/><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.29 7 12 12 20.71 7"/><line x1="12" y1="22" x2="12" y2="12"/></svg>
-              Paquet
+              <span data-i18n="btn_package">Package</span>
             </button>
-            <button class="btn-paste" onclick="pasteFromClipboard()" title="Coller depuis le presse-papiers">
+            <button class="btn-paste" onclick="pasteFromClipboard()" data-i18n-title="btn_paste_title" title="Paste from clipboard">
               <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><rect x="8" y="2" width="8" height="4" rx="1" ry="1"/></svg>
-              Coller
+              <span data-i18n="btn_paste">Paste</span>
             </button>
           </div>
         </div>
@@ -268,7 +261,8 @@
         <textarea
           id="links-input"
           class="links-textarea"
-          placeholder="Collez vos liens ici, un par ligne...&#10;Compatible : liens directs, Uptobox, 1fichier, et tous les hébergeurs AllDebrid."
+          data-i18n-placeholder="input_links_placeholder"
+          placeholder="Paste your links here, one per line..."
           rows="4"
           spellcheck="false"
         ></textarea>
@@ -278,7 +272,7 @@
             <div class="dest-icon-wrap">
               <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
             </div>
-            <span class="dest-text" id="dest-label">Choisir le dossier de destination...</span>
+            <span class="dest-text" id="dest-label" data-i18n="dest_choose">Choose folder...</span>
             <span class="dest-browse-btn">
               <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
             </span>
@@ -287,27 +281,27 @@
 
           <button class="btn btn-primary btn-add-links" onclick="addLinks()">
             <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-            Ajouter
+            <span data-i18n="btn_add">Add</span>
           </button>
         </div>
       </div>
     </div>
   </section>
 
-  <!-- Barre de contrôle -->
+  <!-- Control bar -->
   <section class="controls-bar">
     <div class="controls-left">
-      <button class="btn-ctrl play" onclick="bulkAction('resume_all')" title="Reprendre tout">
+      <button class="btn-ctrl play" onclick="bulkAction('resume_all')" data-i18n-title="btn_resume_all" title="Resume all">
         <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>
-        <span class="btn-ctrl-label">Reprendre</span>
+        <span class="btn-ctrl-label" data-i18n="ctrl_resume">Resume</span>
       </button>
-      <button class="btn-ctrl pause" onclick="bulkAction('pause_all')" title="Mettre tout en pause">
+      <button class="btn-ctrl pause" onclick="bulkAction('pause_all')" data-i18n-title="btn_pause_all" title="Pause all">
         <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>
-        <span class="btn-ctrl-label">Pause</span>
+        <span class="btn-ctrl-label" data-i18n="ctrl_pause">Pause</span>
       </button>
-      <button class="btn-ctrl clear" onclick="removeAllDownloads()" title="Tout supprimer">
+      <button class="btn-ctrl clear" onclick="removeAllDownloads()" data-i18n-title="btn_remove_all" title="Remove all">
         <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>
-        <span class="btn-ctrl-label">Supprimer</span>
+        <span class="btn-ctrl-label" data-i18n="ctrl_delete">Delete</span>
       </button>
     </div>
     <div class="controls-right">
@@ -315,58 +309,58 @@
     </div>
   </section>
 
-  <!-- Torrents en cours -->
+  <!-- Active torrents -->
   <section id="torrents-section" class="hidden">
     <h2 class="section-title">
       <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 14.899A7 7 0 1 1 15.71 8h1.79a4.5 4.5 0 0 1 2.5 8.242"/><path d="M12 12v9"/><path d="m8 17 4 4 4-4"/></svg>
-      Torrents en cours
+      <span data-i18n="section_torrents">Active torrents</span>
     </h2>
     <div id="torrents-list"></div>
   </section>
 
-  <!-- Paquets -->
+  <!-- Packages -->
   <section id="packages-section" class="hidden">
-    <h2 class="section-title">Paquets</h2>
+    <h2 class="section-title" data-i18n="section_packages">Packages</h2>
     <div id="packages-list"></div>
   </section>
 
-  <!-- Liste des téléchargements en cours -->
+  <!-- Active downloads -->
   <section class="table-wrap dl-empty">
     <table class="dl-table">
       <thead>
         <tr>
-          <th class="col-name">Fichier</th>
-          <th class="col-status">Statut</th>
-          <th class="col-progress">Progression</th>
-          <th class="col-speed">Vitesse</th>
-          <th class="col-size">Taille</th>
-          <th class="col-dest">Destination</th>
-          <th class="col-actions">Actions</th>
+          <th class="col-name" data-i18n="col_name">Name</th>
+          <th class="col-status" data-i18n="col_status">Status</th>
+          <th class="col-progress" data-i18n="col_progress">Progress</th>
+          <th class="col-speed" data-i18n="col_speed">Speed</th>
+          <th class="col-size" data-i18n="col_size">Size</th>
+          <th class="col-dest" data-i18n="col_dest">Destination</th>
+          <th class="col-actions" data-i18n="col_actions">Actions</th>
         </tr>
       </thead>
       <tbody id="dl-tbody"></tbody>
     </table>
   </section>
 
-  <!-- Terminés / Échoués -->
+  <!-- Completed / Failed -->
   <section id="history-section" class="history-section hidden" style="margin-top:24px">
     <div class="section-header">
       <h2 class="section-title">
         <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
-        Terminés
+        <span data-i18n="section_completed">Completed</span>
       </h2>
-      <button class="btn btn-sm btn-ghost" onclick="clearHistory()">Vider</button>
+      <button class="btn btn-sm btn-ghost" onclick="clearHistory()" data-i18n="btn_clear_history">Clear</button>
     </div>
     <div class="table-wrap">
       <table class="dl-table history-table">
         <thead>
           <tr>
-            <th class="col-name">Fichier</th>
-            <th class="col-status">Statut</th>
-            <th class="col-size">Taille</th>
-            <th class="col-dest">Destination</th>
-            <th class="col-date">Date</th>
-            <th class="col-actions">Actions</th>
+            <th class="col-name" data-i18n="col_name">Name</th>
+            <th class="col-status" data-i18n="col_status">Status</th>
+            <th class="col-size" data-i18n="col_size">Size</th>
+            <th class="col-dest" data-i18n="col_dest">Destination</th>
+            <th class="col-date" data-i18n="col_date">Date</th>
+            <th class="col-actions" data-i18n="col_actions">Actions</th>
           </tr>
         </thead>
         <tbody id="history-tbody"></tbody>
@@ -382,15 +376,15 @@
 <nav class="mobile-nav">
   <a href="/" class="active">
     <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-    Téléchargements
+    <span data-i18n="nav_downloads">Downloads</span>
   </a>
   <button id="pwa-install-btn" class="install-btn hidden" onclick="pwaInstall()">
     <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="5" y="2" width="14" height="20" rx="2" ry="2"/><line x1="12" y1="18" x2="12.01" y2="18"/></svg>
-    Installer
+    <span data-i18n="btn_install">Install</span>
   </button>
   <a href="/settings-page">
     <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
-    Paramètres
+    <span data-i18n="nav_settings">Settings</span>
   </a>
 </nav>
 <script>
@@ -400,6 +394,7 @@ function pwaInstall(){if(pwaDeferred){pwaDeferred.prompt();pwaDeferred.userChoic
 </script>
 
 <script src="/static/js/theme.js?v=28"></script>
+<script src="/static/js/i18n.js?v=29"></script>
 <script src="/static/js/api.js?v=28"></script>
 <script src="/static/js/websocket.js?v=28"></script>
 <script src="/static/js/filebrowser.js?v=28"></script>

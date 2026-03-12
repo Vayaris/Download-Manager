@@ -1,5 +1,6 @@
 import httpx
 from typing import Optional
+from urllib.parse import urlparse
 from config import get_config
 
 ALLDEBRID_API = "https://api.alldebrid.com"
@@ -14,7 +15,7 @@ class AllDebridService:
         return config["alldebrid"]["api_key"]
 
     async def unrestrict(self, url: str, api_key: str) -> Optional[str]:
-        async with httpx.AsyncClient(timeout=30.0) as client:
+        async with httpx.AsyncClient(timeout=15.0) as client:
             resp = await client.get(
                 f"{ALLDEBRID_API}/v4/link/unlock",
                 params={"agent": AGENT, "apikey": api_key, "link": url},
@@ -128,6 +129,16 @@ class AllDebridService:
         # Already-debrided links from AllDebrid CDN — use directly
         if "debrid.it/" in url or "debrid.link/" in url:
             return url
+
+        # Skip unrestricting for direct download URLs (no debrid needed)
+        host = urlparse(url).hostname or ""
+        direct_hosts = (".cdn.", "download.", "dl.", "files.", "media.")
+        if any(host.startswith(p.lstrip(".")) or p in host for p in direct_hosts):
+            if url.split("?")[0].rsplit(".", 1)[-1].lower() in (
+                "zip", "rar", "7z", "tar", "gz", "iso", "exe", "msi",
+                "mp4", "mkv", "avi", "mov", "mp3", "flac", "pdf",
+            ):
+                return url
 
         try:
             direct = await self.unrestrict(url, config["alldebrid"]["api_key"])
