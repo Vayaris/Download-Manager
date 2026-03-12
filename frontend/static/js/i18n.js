@@ -272,6 +272,7 @@ const TRANSLATIONS = {
     fb_loading: "Loading...",
     fb_navigate_hint: "Browse and select a folder",
     fb_select_folder: "Select this folder",
+    fb_recent_paths: "Recent",
   },
 
   fr: {
@@ -543,6 +544,7 @@ const TRANSLATIONS = {
     fb_loading: "Chargement...",
     fb_navigate_hint: "Naviguez et sélectionnez un dossier",
     fb_select_folder: "Sélectionner ce dossier",
+    fb_recent_paths: "Récents",
   },
 };
 

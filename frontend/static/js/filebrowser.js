@@ -4,6 +4,41 @@ const FileBrowser = (() => {
   let selectedPath = "";
   let onSelectCallback = null;
 
+  // ---- Path history (localStorage, max 10) ----
+  const HISTORY_KEY = "dm_path_history";
+  const HISTORY_MAX = 10;
+
+  function _saveHistory(path) {
+    if (!path || path === "/") return;
+    try {
+      let h = _getHistory();
+      h = [path, ...h.filter(p => p !== path)].slice(0, HISTORY_MAX);
+      localStorage.setItem(HISTORY_KEY, JSON.stringify(h));
+    } catch {}
+  }
+
+  function _getHistory() {
+    try { return JSON.parse(localStorage.getItem(HISTORY_KEY) || "[]"); } catch { return []; }
+  }
+
+  function _renderHistory() {
+    const container = document.getElementById("fb-history");
+    const list = document.getElementById("fb-history-list");
+    if (!container || !list) return;
+    const h = _getHistory();
+    if (h.length === 0) { container.classList.add("hidden"); return; }
+    container.classList.remove("hidden");
+    list.innerHTML = h.map(p =>
+      `<div class="fb-history-item" onclick="FileBrowser._browse('${_esc(p)}')" title="${_esc(p)}">
+        <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
+        <span class="fb-history-path">${_esc(p)}</span>
+      </div>`
+    ).join("");
+    if (typeof applyTranslations === "function") {
+      container.querySelectorAll("[data-i18n]").forEach(el => { el.textContent = t(el.dataset.i18n); });
+    }
+  }
+
   async function browse(path) {
     currentPath = path;
     const list = document.getElementById("fb-list");
@@ -69,6 +104,7 @@ const FileBrowser = (() => {
       const modal = document.getElementById("filebrowser-modal");
       modal.classList.remove("hidden");
       hideMkdirInput();
+      _renderHistory();
       // Determine starting path
       const initial = startPath || _getDefaultDest() || "/";
       browse(initial);
@@ -80,6 +116,7 @@ const FileBrowser = (() => {
       modal.style.zIndex = "";
     },
     confirm() {
+      _saveHistory(selectedPath);
       if (onSelectCallback) onSelectCallback(selectedPath);
       this.close();
     },
