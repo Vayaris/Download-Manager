@@ -25,18 +25,18 @@ const FileBrowser = (() => {
     const container = document.getElementById("fb-history");
     const list = document.getElementById("fb-history-list");
     if (!container || !list) return;
-    const h = _getHistory();
-    if (h.length === 0) { container.classList.add("hidden"); return; }
     container.classList.remove("hidden");
+    const h = _getHistory();
+    if (h.length === 0) {
+      list.innerHTML = `<div class="fb-history-empty">${_esc(t("fb_recent_empty"))}</div>`;
+      return;
+    }
     list.innerHTML = h.map(p =>
       `<div class="fb-history-item" onclick="FileBrowser._browse('${_esc(p)}')" title="${_esc(p)}">
         <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
         <span class="fb-history-path">${_esc(p)}</span>
       </div>`
     ).join("");
-    if (typeof applyTranslations === "function") {
-      container.querySelectorAll("[data-i18n]").forEach(el => { el.textContent = t(el.dataset.i18n); });
-    }
   }
 
   async function browse(path) {

@@ -273,6 +273,7 @@ const TRANSLATIONS = {
     fb_navigate_hint: "Browse and select a folder",
     fb_select_folder: "Select this folder",
     fb_recent_paths: "Recent",
+    fb_recent_empty: "No recent paths yet — select a folder to save it here",
   },
 
   fr: {
@@ -545,6 +546,7 @@ const TRANSLATIONS = {
     fb_navigate_hint: "Naviguez et sélectionnez un dossier",
     fb_select_folder: "Sélectionner ce dossier",
     fb_recent_paths: "Récents",
+    fb_recent_empty: "Aucun chemin récent — sélectionnez un dossier pour le sauvegarder ici",
   },
 };
 
