@@ -128,14 +128,18 @@ async def test_webhook(_=Depends(get_current_user)):
         # Direct test call bypassing event filter
         import httpx
         from services.webhook import _build_payload
-        payload = _build_payload(wh.get("format", "generic"), "download_complete", {
+        wh_url = wh["url"]
+        wh_fmt = wh.get("format", "generic")
+        payload = _build_payload(wh_fmt, "download_complete", {
             "name": "test-file.mkv",
             "destination": "/mnt/media/test",
             "size": 1073741824,
             "status": "complete",
-        })
+        }, wh_url)
+        from urllib.parse import urlparse as _urlparse
+        target_url = _urlparse(wh_url)._replace(query="", fragment="").geturl() if wh_fmt == "signal" else wh_url
         async with httpx.AsyncClient(timeout=10.0) as client:
-            resp = await client.post(wh["url"], json=payload)
+            resp = await client.post(target_url, json=payload)
             if resp.status_code < 400:
                 return {"success": True, "message": f"Webhook sent (HTTP {resp.status_code})"}
             else:
