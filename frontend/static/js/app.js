@@ -57,7 +57,10 @@ function fmtName(item) {
 
 function fmtDate(iso) {
   if (!iso) return "\u2014";
-  const d = new Date(iso + "Z");
+  // Append "Z" only if the string has no timezone info already
+  const hasTz = /[Zz]$/.test(iso) || /[+-]\d{2}:\d{2}$/.test(iso);
+  const d = new Date(hasTz ? iso : iso + "Z");
+  if (isNaN(d.getTime())) return "\u2014";
   const loc = t("date_locale");
   return d.toLocaleDateString(loc, { day: "2-digit", month: "2-digit", year: "2-digit" })
     + " " + d.toLocaleTimeString(loc, { hour: "2-digit", minute: "2-digit" });

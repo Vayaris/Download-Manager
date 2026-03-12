@@ -21,4 +21,4 @@ def validate_destination(dest: str):
             return
         except ValueError:
             continue
-    raise HTTPException(status_code=403, detail="Destination non autorisée")
+    raise HTTPException(status_code=403, detail="Destination not allowed")

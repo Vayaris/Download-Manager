@@ -346,7 +346,7 @@ class QueueManager:
                     # Error
                     await db.execute(
                         "UPDATE torrents SET status = 'error', status_message = ?, updated_at = ? WHERE id = ?",
-                        (status_data.get("filename", "Erreur torrent"), now, row["id"]),
+                        (status_data.get("filename", "Torrent error"), now, row["id"]),
                     )
                     await db.commit()
                 else:

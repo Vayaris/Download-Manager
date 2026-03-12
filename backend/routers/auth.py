@@ -53,7 +53,7 @@ async def _check_ip_blocked(ip: str):
     if row:
         raise HTTPException(
             status_code=403,
-            detail="Trop de tentatives. Reessayez plus tard.",
+            detail="Too many attempts. Try again later.",
         )
 
 
@@ -81,7 +81,7 @@ async def _record_failed_attempt(ip: str):
             expires = (now + timedelta(hours=BLOCK_DURATION_HOURS)).isoformat()
             await db.execute(
                 "INSERT OR REPLACE INTO blocked_ips (ip, blocked_at, expires_at, reason) VALUES (?, ?, ?, ?)",
-                (ip, now.isoformat(), expires, f"{count} echecs en {ATTEMPT_WINDOW_MINUTES}min"),
+                (ip, now.isoformat(), expires, f"{count} failures in {ATTEMPT_WINDOW_MINUTES}min"),
             )
             # Clear attempts for this IP (already blocked)
             await db.execute("DELETE FROM login_attempts WHERE ip = ?", (ip,))
@@ -91,7 +91,7 @@ async def _record_failed_attempt(ip: str):
     if count >= MAX_ATTEMPTS:
         raise HTTPException(
             status_code=403,
-            detail="Trop de tentatives. Reessayez plus tard.",
+            detail="Too many attempts. Try again later.",
         )
 
 
@@ -116,11 +116,11 @@ async def login(body: LoginRequest, request: Request):
 
     if not user:
         await _record_failed_attempt(client_ip)
-        raise HTTPException(status_code=401, detail="Identifiants invalides")
+        raise HTTPException(status_code=401, detail="Invalid credentials")
 
     if not verify_password(body.password, user["password_hash"]):
         await _record_failed_attempt(client_ip)
-        raise HTTPException(status_code=401, detail="Identifiants invalides")
+        raise HTTPException(status_code=401, detail="Invalid credentials")
 
     # Check 2FA
     if user["otp_enabled"]:
@@ -135,15 +135,15 @@ async def login(body: LoginRequest, request: Request):
 
         # Verify OTP code
         if not body.otp_code or not (len(body.otp_code) == 6 and body.otp_code.isdigit()):
-            raise HTTPException(status_code=400, detail="Le code OTP doit être exactement 6 chiffres")
+            raise HTTPException(status_code=400, detail="OTP code must be exactly 6 digits")
         try:
             import pyotp
             totp = pyotp.TOTP(user["otp_secret"])
             if not totp.verify(body.otp_code, valid_window=1):
                 await _record_failed_attempt(client_ip)
-                raise HTTPException(status_code=401, detail="Code OTP invalide")
+                raise HTTPException(status_code=401, detail="Invalid OTP code")
         except ImportError:
-            raise HTTPException(status_code=500, detail="Module pyotp non installe")
+            raise HTTPException(status_code=500, detail="pyotp module not installed")
 
     # Success — clear failed attempts
     await _clear_attempts(client_ip)
@@ -176,13 +176,13 @@ async def setup_admin(body: SetupAdminRequest):
         (count,) = await cursor.fetchone()
 
         if count > 0:
-            raise HTTPException(status_code=400, detail="Un compte admin existe deja")
+            raise HTTPException(status_code=400, detail="An admin account already exists")
 
         if not body.username.strip() or not body.password:
-            raise HTTPException(status_code=400, detail="Nom d'utilisateur et mot de passe requis")
+            raise HTTPException(status_code=400, detail="Username and password required")
 
         if len(body.password) < 6:
-            raise HTTPException(status_code=400, detail="Le mot de passe doit faire au moins 6 caracteres")
+            raise HTTPException(status_code=400, detail="Password must be at least 6 characters")
 
         user_id = str(uuid.uuid4())
         now = datetime.now(timezone.utc).isoformat()
@@ -202,10 +202,10 @@ async def setup_admin(body: SetupAdminRequest):
 async def change_password(body: SetupAdminRequest, user=Depends(get_current_user)):
     """Change password for current user."""
     if user["username"] == "anonymous":
-        raise HTTPException(status_code=403, detail="Auth non activee")
+        raise HTTPException(status_code=403, detail="Auth not enabled")
 
     if len(body.password) < 6:
-        raise HTTPException(status_code=400, detail="Le mot de passe doit faire au moins 6 caracteres")
+        raise HTTPException(status_code=400, detail="Password must be at least 6 characters")
 
     pw_hash = get_password_hash(body.password)
     async with aiosqlite.connect(str(DB_PATH)) as db:
@@ -222,13 +222,13 @@ async def change_password(body: SetupAdminRequest, user=Depends(get_current_user
 async def setup_otp(user=Depends(get_current_user)):
     """Generate OTP secret and QR code for 2FA setup."""
     if user["username"] == "anonymous":
-        raise HTTPException(status_code=403, detail="Auth non activee")
+        raise HTTPException(status_code=403, detail="Auth not enabled")
 
     try:
         import pyotp
         import qrcode
     except ImportError:
-        raise HTTPException(status_code=500, detail="Modules pyotp/qrcode non installes")
+        raise HTTPException(status_code=500, detail="pyotp/qrcode modules not installed")
 
     secret = pyotp.random_base32()
 
@@ -256,12 +256,12 @@ async def setup_otp(user=Depends(get_current_user)):
 async def verify_otp(body: VerifyOTPRequest, user=Depends(get_current_user)):
     """Verify OTP code and enable 2FA."""
     if user["username"] == "anonymous":
-        raise HTTPException(status_code=403, detail="Auth non activee")
+        raise HTTPException(status_code=403, detail="Auth not enabled")
 
     try:
         import pyotp
     except ImportError:
-        raise HTTPException(status_code=500, detail="Module pyotp non installe")
+        raise HTTPException(status_code=500, detail="pyotp module not installed")
 
     async with aiosqlite.connect(str(DB_PATH)) as db:
         db.row_factory = aiosqlite.Row
@@ -271,13 +271,13 @@ async def verify_otp(body: VerifyOTPRequest, user=Depends(get_current_user)):
         row = await cursor.fetchone()
 
     if not row or not row["otp_secret"]:
-        raise HTTPException(status_code=400, detail="OTP non configure. Appelez /setup-otp d'abord")
+        raise HTTPException(status_code=400, detail="OTP not configured. Call /setup-otp first")
 
     if not body.code or not (len(body.code) == 6 and body.code.isdigit()):
-        raise HTTPException(status_code=400, detail="Le code OTP doit être exactement 6 chiffres")
+        raise HTTPException(status_code=400, detail="OTP code must be exactly 6 digits")
     totp = pyotp.TOTP(row["otp_secret"])
     if not totp.verify(body.code, valid_window=1):
-        raise HTTPException(status_code=400, detail="Code OTP invalide")
+        raise HTTPException(status_code=400, detail="Invalid OTP code")
 
     # Enable 2FA
     async with aiosqlite.connect(str(DB_PATH)) as db:
@@ -287,19 +287,19 @@ async def verify_otp(body: VerifyOTPRequest, user=Depends(get_current_user)):
         )
         await db.commit()
 
-    return {"status": "enabled", "message": "2FA activee avec succes"}
+    return {"status": "enabled", "message": "2FA enabled successfully"}
 
 
 @router.post("/disable-otp")
 async def disable_otp(body: VerifyOTPRequest, user=Depends(get_current_user)):
     """Disable 2FA (requires current OTP code)."""
     if user["username"] == "anonymous":
-        raise HTTPException(status_code=403, detail="Auth non activee")
+        raise HTTPException(status_code=403, detail="Auth not enabled")
 
     try:
         import pyotp
     except ImportError:
-        raise HTTPException(status_code=500, detail="Module pyotp non installe")
+        raise HTTPException(status_code=500, detail="pyotp module not installed")
 
     async with aiosqlite.connect(str(DB_PATH)) as db:
         db.row_factory = aiosqlite.Row
@@ -309,13 +309,13 @@ async def disable_otp(body: VerifyOTPRequest, user=Depends(get_current_user)):
         row = await cursor.fetchone()
 
     if not row or not row["otp_enabled"]:
-        raise HTTPException(status_code=400, detail="2FA n'est pas activee")
+        raise HTTPException(status_code=400, detail="2FA is not enabled")
 
     if not body.code or not (len(body.code) == 6 and body.code.isdigit()):
-        raise HTTPException(status_code=400, detail="Le code OTP doit être exactement 6 chiffres")
+        raise HTTPException(status_code=400, detail="OTP code must be exactly 6 digits")
     totp = pyotp.TOTP(row["otp_secret"])
     if not totp.verify(body.code, valid_window=1):
-        raise HTTPException(status_code=400, detail="Code OTP invalide")
+        raise HTTPException(status_code=400, detail="Invalid OTP code")
 
     async with aiosqlite.connect(str(DB_PATH)) as db:
         await db.execute(
@@ -324,7 +324,7 @@ async def disable_otp(body: VerifyOTPRequest, user=Depends(get_current_user)):
         )
         await db.commit()
 
-    return {"status": "disabled", "message": "2FA desactivee"}
+    return {"status": "disabled", "message": "2FA disabled"}
 
 
 @router.get("/user-info")

@@ -22,7 +22,7 @@ async def _process_ready_magnet(magnet_id: int, name: str, destination: str, qm)
     """Magnet is ready: get files, create package, clean up."""
     links = await alldebrid.magnet_files(magnet_id)
     if not links:
-        raise Exception("Aucun fichier trouvé dans le torrent")
+        raise Exception("No files found in torrent")
     await qm.add_package(name or "Torrent", links, destination)
     try:
         await alldebrid.magnet_delete(magnet_id)
@@ -34,7 +34,7 @@ async def _process_ready_magnet(magnet_id: int, name: str, destination: str, qm)
 async def submit_magnets(body: MagnetUploadRequest, request: Request, _=Depends(get_current_user)):
     magnets = [m.strip() for m in body.magnets if m.strip()]
     if not magnets:
-        raise HTTPException(status_code=400, detail="Aucun lien magnet fourni")
+        raise HTTPException(status_code=400, detail="No magnet links provided")
     _validate_destination(body.destination)
 
     try:
@@ -92,12 +92,12 @@ async def upload_torrent(
     _=Depends(get_current_user),
 ):
     if not file.filename or not file.filename.endswith(".torrent"):
-        raise HTTPException(status_code=400, detail="Fichier .torrent requis")
+        raise HTTPException(status_code=400, detail=".torrent file required")
     _validate_destination(destination)
 
     file_bytes = await file.read()
     if len(file_bytes) > 10 * 1024 * 1024:
-        raise HTTPException(status_code=400, detail="Fichier trop volumineux (max 10MB)")
+        raise HTTPException(status_code=400, detail="File too large (max 10MB)")
 
     try:
         results = await alldebrid.magnet_upload_file(file_bytes, file.filename)
@@ -162,7 +162,7 @@ async def delete_torrent(torrent_id: str, _=Depends(get_current_user)):
         cursor = await db.execute("SELECT * FROM torrents WHERE id = ?", (torrent_id,))
         row = await cursor.fetchone()
         if not row:
-            raise HTTPException(status_code=404, detail="Torrent introuvable")
+            raise HTTPException(status_code=404, detail="Torrent not found")
 
         try:
             await alldebrid.magnet_delete(row["alldebrid_id"])

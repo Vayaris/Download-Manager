@@ -76,7 +76,7 @@ async def update_settings(body: SettingsUpdate, _=Depends(get_current_user)):
         if body.webhook_url:
             parsed = urlparse(body.webhook_url)
             if parsed.scheme not in ("http", "https"):
-                raise HTTPException(status_code=400, detail="L'URL du webhook doit utiliser http ou https")
+                raise HTTPException(status_code=400, detail="Webhook URL must use http or https")
             # Block private/reserved IPs (SSRF protection)
             host = parsed.hostname or ""
             try:
@@ -84,7 +84,7 @@ async def update_settings(body: SettingsUpdate, _=Depends(get_current_user)):
                 for info in infos:
                     addr = ipaddress.ip_address(info[4][0])
                     if addr.is_private or addr.is_reserved or addr.is_loopback or addr.is_link_local:
-                        raise HTTPException(status_code=400, detail="L'URL du webhook ne peut pas cibler une adresse privée ou locale")
+                        raise HTTPException(status_code=400, detail="Webhook URL cannot target a private or local address")
             except socket.gaierror:
                 pass  # DNS resolution failed, allow (will fail on actual webhook call anyway)
         cfg["webhooks"]["url"] = body.webhook_url
@@ -102,9 +102,9 @@ async def test_alldebrid(_=Depends(get_current_user)):
     cfg = get_config()
     api_key = cfg["alldebrid"]["api_key"]
     if not api_key:
-        return {"valid": False, "message": "Aucune cle API configuree"}
+        return {"valid": False, "message": "No API key configured"}
     valid = await alldebrid.test_key(api_key)
-    return {"valid": valid, "message": "Cle API valide" if valid else "Cle API invalide"}
+    return {"valid": valid, "message": "API key valid" if valid else "API key invalid"}
 
 
 @router.post("/test-webhook")
@@ -112,7 +112,7 @@ async def test_webhook(_=Depends(get_current_user)):
     cfg = get_config()
     wh = cfg.get("webhooks", {})
     if not wh.get("url"):
-        return {"success": False, "message": "Aucune URL configuree"}
+        return {"success": False, "message": "No URL configured"}
 
     try:
         await send_webhook.__wrapped__(
@@ -137,9 +137,9 @@ async def test_webhook(_=Depends(get_current_user)):
         async with httpx.AsyncClient(timeout=10.0) as client:
             resp = await client.post(wh["url"], json=payload)
             if resp.status_code < 400:
-                return {"success": True, "message": f"Webhook envoye (HTTP {resp.status_code})"}
+                return {"success": True, "message": f"Webhook sent (HTTP {resp.status_code})"}
             else:
-                return {"success": False, "message": f"Erreur HTTP {resp.status_code}"}
+                return {"success": False, "message": f"HTTP error {resp.status_code}"}
     except Exception as e:
         return {"success": False, "message": str(e)[:200]}
 
@@ -179,16 +179,16 @@ async def check_update(_=Depends(get_current_user)):
                 headers={"Accept": "application/vnd.github+json"},
             )
             if resp.status_code == 404:
-                return {"update_available": False, "current": current, "message": "Aucune release trouvée"}
+                return {"update_available": False, "current": current, "message": "No release found"}
             if resp.status_code != 200:
-                return {"update_available": False, "current": current, "message": f"Erreur GitHub ({resp.status_code})"}
+                return {"update_available": False, "current": current, "message": f"GitHub error ({resp.status_code})"}
 
             data = resp.json()
             latest = data.get("tag_name", "").lstrip("v")
             body = data.get("body", "")
 
             if not latest:
-                return {"update_available": False, "current": current, "message": "Tag introuvable"}
+                return {"update_available": False, "current": current, "message": "Tag not found"}
 
             update_available = latest != current
             return {
@@ -196,10 +196,10 @@ async def check_update(_=Depends(get_current_user)):
                 "current": current,
                 "latest": latest,
                 "changelog": body,
-                "message": "Mise à jour disponible" if update_available else "Vous êtes à jour",
+                "message": "Update available" if update_available else "Up to date",
             }
     except Exception as e:
-        return {"update_available": False, "current": current, "message": f"Erreur : {str(e)[:200]}"}
+        return {"update_available": False, "current": current, "message": f"Error: {str(e)[:200]}"}
 
 
 @router.post("/update")
@@ -216,14 +216,14 @@ async def perform_update(_=Depends(get_current_user)):
                 headers={"Accept": "application/vnd.github+json"},
             )
             if resp.status_code != 200:
-                raise HTTPException(status_code=502, detail="Impossible de contacter GitHub")
+                raise HTTPException(status_code=502, detail="Unable to reach GitHub")
 
             data = resp.json()
             latest = data.get("tag_name", "").lstrip("v")
             changelog = data.get("body", "")
 
             if latest == current:
-                return {"success": True, "message": "Déjà à jour", "version": current, "changelog": ""}
+                return {"success": True, "message": "Already up to date", "version": current, "changelog": ""}
 
         # Perform git pull from the project root
         install_dir = INSTALL_DIR
@@ -248,7 +248,7 @@ async def perform_update(_=Depends(get_current_user)):
                 capture_output=True, text=True, timeout=30,
             )
             if result.returncode != 0:
-                raise HTTPException(status_code=500, detail="Échec de la mise à jour. Consultez les logs système.")
+                raise HTTPException(status_code=500, detail="Update failed. Check system logs.")
 
         # If install_dir != git_dir, sync files
         if git_dir != install_dir:
@@ -260,13 +260,27 @@ async def perform_update(_=Depends(get_current_user)):
                 ["cp", "-r", f"{git_dir}/frontend/.", f"{install_dir}/frontend/"],
                 capture_output=True, timeout=30,
             )
-            # Also copy VERSION file
-            version_src = git_dir / "VERSION"
-            if version_src.exists():
-                subprocess.run(
-                    ["cp", str(version_src), str(install_dir / "VERSION")],
-                    capture_output=True, timeout=10,
-                )
+            # Copy root-level files (VERSION, start.sh, requirements.txt)
+            for fname in ["VERSION", "start.sh", "requirements.txt"]:
+                src = git_dir / fname
+                if src.exists():
+                    subprocess.run(
+                        ["cp", str(src), str(install_dir / fname)],
+                        capture_output=True, timeout=10,
+                    )
+            # Make start.sh executable
+            start_sh = install_dir / "start.sh"
+            if start_sh.exists():
+                start_sh.chmod(0o755)
+
+        # Update pip dependencies if requirements.txt exists
+        pip_bin = install_dir / "venv" / "bin" / "pip"
+        req_file = install_dir / "requirements.txt"
+        if pip_bin.exists() and req_file.exists():
+            subprocess.run(
+                [str(pip_bin), "install", "--quiet", "-r", str(req_file)],
+                capture_output=True, timeout=120,
+            )
 
         # Restart the service
         subprocess.run(
@@ -276,7 +290,7 @@ async def perform_update(_=Depends(get_current_user)):
 
         return {
             "success": True,
-            "message": f"Mis à jour vers v{latest}",
+            "message": f"Updated to v{latest}",
             "version": latest,
             "changelog": changelog,
         }
@@ -284,4 +298,4 @@ async def perform_update(_=Depends(get_current_user)):
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail="Erreur interne lors de la mise à jour")
+        raise HTTPException(status_code=500, detail="Internal error during update")
