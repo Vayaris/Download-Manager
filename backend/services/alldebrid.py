@@ -11,7 +11,7 @@ class AllDebridService:
     def _get_api_key(self) -> str:
         config = get_config()
         if not config["alldebrid"]["enabled"] or not config["alldebrid"]["api_key"]:
-            raise Exception("AllDebrid non configuré")
+            raise Exception("AllDebrid not configured")
         return config["alldebrid"]["api_key"]
 
     async def unrestrict(self, url: str, api_key: str) -> Optional[str]:

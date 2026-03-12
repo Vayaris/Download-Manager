@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
-"""CLI d'administration pour Download Manager.
+"""Administration CLI for Download Manager.
 
 Usage:
-    python3 dm-cli.py reset-admin                — Supprime tous les comptes (retour a l'ecran de creation)
-    python3 dm-cli.py reset-admin <user> <pass>   — Reset et cree un nouveau compte admin
-    python3 dm-cli.py list-ips                    — Liste les IPs bloquees
-    python3 dm-cli.py unblock <IP>                — Debloque une IP
-    python3 dm-cli.py unblock-all                 — Debloque toutes les IPs
+    python3 dm-cli.py reset-admin                — Delete all accounts (returns to setup screen)
+    python3 dm-cli.py reset-admin <user> <pass>   — Reset and create a new admin account
+    python3 dm-cli.py list-ips                    — List blocked IPs
+    python3 dm-cli.py unblock <IP>                — Unblock an IP
+    python3 dm-cli.py unblock-all                 — Unblock all IPs
 """
 import sys
 import os
@@ -19,7 +19,7 @@ DB_PATH = Path(os.environ.get("DM_DB", "/opt/download-manager/config/downloads.d
 
 def get_db():
     if not DB_PATH.exists():
-        print(f"Erreur: base de donnees introuvable: {DB_PATH}")
+        print(f"Error: database not found: {DB_PATH}")
         sys.exit(1)
     return sqlite3.connect(str(DB_PATH))
 
@@ -30,15 +30,15 @@ def cmd_reset_admin(username=None, password=None):
     db = get_db()
 
     count = db.execute("SELECT COUNT(*) FROM users").fetchone()[0]
-    print(f"Comptes existants: {count}")
+    print(f"Existing accounts: {count}")
 
     db.execute("DELETE FROM users")
     db.commit()
-    print("Tous les comptes ont ete supprimes.")
+    print("All accounts have been deleted.")
 
     if username and password:
         if len(password) < 6:
-            print("Erreur: le mot de passe doit faire au moins 6 caracteres.")
+            print("Error: password must be at least 6 characters.")
             db.close()
             sys.exit(1)
 
@@ -52,7 +52,7 @@ def cmd_reset_admin(username=None, password=None):
                 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
                 pw_hash = pwd_context.hash(password)
             except ImportError:
-                print("Erreur: ni bcrypt ni passlib n'est installe. Installez: pip install bcrypt")
+                print("Error: neither bcrypt nor passlib is installed. Install with: pip install bcrypt")
                 db.close()
                 sys.exit(1)
 
@@ -64,9 +64,9 @@ def cmd_reset_admin(username=None, password=None):
             (user_id, username, pw_hash, now),
         )
         db.commit()
-        print(f"Compte admin cree: {username}")
+        print(f"Admin account created: {username}")
     else:
-        print("Au prochain login, l'ecran de creation de compte apparaitra.")
+        print("On next login, the account creation screen will appear.")
 
     # Invalidate existing tokens by regenerating JWT secret
     config_path = Path(os.environ.get("DM_CONFIG", "/etc/download-manager/config.yml"))
@@ -81,9 +81,9 @@ def cmd_reset_admin(username=None, password=None):
             cfg["auth"]["jwt_secret"] = secrets.token_hex(32)
             with open(config_path, "w") as f:
                 yaml.dump(cfg, f, default_flow_style=False, allow_unicode=True)
-            print("Secret JWT regenere (tous les tokens existants sont invalides).")
+            print("JWT secret regenerated (all existing tokens are now invalid).")
         except Exception as e:
-            print(f"Attention: impossible de regenerer le secret JWT: {e}")
+            print(f"Warning: could not regenerate JWT secret: {e}")
 
     db.close()
 
@@ -100,16 +100,16 @@ def cmd_list_ips():
     db.close()
 
     if not rows:
-        print("Aucune IP bloquee actuellement.")
+        print("No IPs currently blocked.")
         return
 
-    print(f"{'IP':<40} {'Bloque le':<22} {'Expire le':<22} {'Raison'}")
+    print(f"{'IP':<40} {'Blocked at':<22} {'Expires at':<22} {'Reason'}")
     print("-" * 110)
     for ip, blocked_at, expires_at, reason in rows:
         b = blocked_at[:19].replace("T", " ")
         e = expires_at[:19].replace("T", " ")
         print(f"{ip:<40} {b:<22} {e:<22} {reason or ''}")
-    print(f"\nTotal: {len(rows)} IP(s) bloquee(s)")
+    print(f"\nTotal: {len(rows)} blocked IP(s)")
 
 
 def cmd_unblock(ip):
@@ -118,9 +118,9 @@ def cmd_unblock(ip):
     db.execute("DELETE FROM login_attempts WHERE ip = ?", (ip,))
     db.commit()
     if cursor.rowcount:
-        print(f"IP {ip} debloquee.")
+        print(f"IP {ip} unblocked.")
     else:
-        print(f"IP {ip} non trouvee.")
+        print(f"IP {ip} not found.")
     db.close()
 
 
@@ -129,7 +129,7 @@ def cmd_unblock_all():
     cursor = db.execute("DELETE FROM blocked_ips")
     db.execute("DELETE FROM login_attempts")
     db.commit()
-    print(f"{cursor.rowcount} IP(s) debloquee(s).")
+    print(f"{cursor.rowcount} IP(s) unblocked.")
     db.close()
 
 
@@ -159,7 +159,7 @@ def main():
     elif cmd == "unblock-all":
         cmd_unblock_all()
     else:
-        print(f"Commande inconnue: {cmd}")
+        print(f"Unknown command: {cmd}")
         print(__doc__)
         sys.exit(1)
 

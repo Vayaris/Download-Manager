@@ -7,13 +7,13 @@ VENV_PYTHON="/opt/download-manager/venv/bin/python"
 
 # Verify config file exists
 if [ ! -f "$CONFIG_FILE" ]; then
-    echo "[start.sh] ERREUR: Fichier de configuration introuvable: $CONFIG_FILE" >&2
+    echo "[start.sh] ERROR: Configuration file not found: $CONFIG_FILE" >&2
     exit 1
 fi
 
 # Verify aria2c is available
 if ! command -v aria2c &> /dev/null; then
-    echo "[start.sh] ERREUR: aria2c n'est pas installe ou pas dans le PATH" >&2
+    echo "[start.sh] ERROR: aria2c is not installed or not in PATH" >&2
     exit 1
 fi
 

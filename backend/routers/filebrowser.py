@@ -49,11 +49,11 @@ async def browse(path: str = Query(default="/"), _=Depends(get_current_user)):
 
         if not _is_path_allowed(target, allowed_roots):
             return {"path": str(target), "directories": [], "breadcrumbs": [], "parent": None,
-                    "error": "Accès non autorisé à ce chemin"}
+                    "error": "Access denied for this path"}
 
         if not target.exists() or not target.is_dir():
             return {"path": str(target), "directories": [], "breadcrumbs": [], "parent": None,
-                    "error": "Dossier introuvable"}
+                    "error": "Folder not found"}
 
         dirs = []
         try:
@@ -93,30 +93,30 @@ async def mkdir(body: MkdirRequest, _=Depends(get_current_user)):
     # Validate folder name
     name = body.name.strip()
     if not name:
-        raise HTTPException(status_code=400, detail="Le nom du dossier ne peut pas etre vide")
+        raise HTTPException(status_code=400, detail="Folder name cannot be empty")
 
     # Block dangerous characters
     if re.search(r'[/\\<>:"|?*\x00-\x1f]', name):
-        raise HTTPException(status_code=400, detail="Le nom contient des caracteres invalides")
+        raise HTTPException(status_code=400, detail="Name contains invalid characters")
 
     if name in (".", ".."):
-        raise HTTPException(status_code=400, detail="Nom de dossier invalide")
+        raise HTTPException(status_code=400, detail="Invalid folder name")
 
     parent = Path(body.path).resolve()
     allowed_roots = _get_allowed_roots()
     if not _is_path_allowed(parent, allowed_roots):
-        raise HTTPException(status_code=403, detail="Accès non autorisé à ce chemin")
+        raise HTTPException(status_code=403, detail="Access denied for this path")
     if not parent.exists() or not parent.is_dir():
-        raise HTTPException(status_code=400, detail="Le dossier parent n'existe pas")
+        raise HTTPException(status_code=400, detail="Parent folder does not exist")
 
     new_dir = parent / name
     if new_dir.exists():
-        raise HTTPException(status_code=400, detail="Ce dossier existe deja")
+        raise HTTPException(status_code=400, detail="Folder already exists")
 
     try:
         new_dir.mkdir(parents=False, exist_ok=False)
     except PermissionError:
-        raise HTTPException(status_code=403, detail="Permission refusee")
+        raise HTTPException(status_code=403, detail="Permission denied")
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

@@ -160,7 +160,7 @@ async def delete_history_item(
         item = await cursor.fetchone()
 
     if not item:
-        raise HTTPException(status_code=404, detail="Entrée introuvable")
+        raise HTTPException(status_code=404, detail="Entry not found")
 
     if delete_file:
         cfg = get_config()
@@ -185,7 +185,7 @@ async def delete_history_item(
                 except ValueError:
                     continue
             if not path_allowed:
-                raise HTTPException(status_code=403, detail="Chemin non autorisé")
+                raise HTTPException(status_code=403, detail="Path not allowed")
 
             if resolved.is_file():
                 resolved.unlink()
