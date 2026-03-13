@@ -342,6 +342,107 @@ document.addEventListener("keydown", (e) => {
   }
 });
 
+// ============================================================
+//  SMB / Network Shares
+// ============================================================
+
+async function smbLoad() {
+  try {
+    const shares = await API.get("/api/smb/");
+    smbRender(shares);
+  } catch {
+    document.getElementById("smb-list").innerHTML =
+      `<p style="color:var(--text-3);font-size:13px">${t("smb_load_error")}</p>`;
+  }
+}
+
+function smbRender(shares) {
+  const el = document.getElementById("smb-list");
+  if (!shares || shares.length === 0) {
+    el.innerHTML = `<p class="form-hint" style="margin-bottom:0">${t("smb_empty")}</p>`;
+    return;
+  }
+  el.innerHTML = shares.map(s => {
+    const mounted = s.mounted;
+    const badgeCls = mounted ? "conn-badge ok" : "conn-badge unknown";
+    const badgeTxt = mounted ? t("smb_mounted") : t("smb_unmounted");
+    const mountBtn = mounted
+      ? `<button class="btn btn-sm" onclick="smbToggle('${s.name}','unmount')">${t("smb_btn_unmount")}</button>`
+      : `<button class="btn btn-sm btn-primary" onclick="smbToggle('${s.name}','mount')">${t("smb_btn_mount")}</button>`;
+    return `
+      <div class="smb-share-row" id="smb-row-${s.name}">
+        <div class="smb-share-info">
+          <span class="smb-share-name">${_esc(s.name)}</span>
+          <span class="smb-share-path">//${_esc(s.host)}/${_esc(s.share)}</span>
+          <span class="smb-share-mp">${_esc(s.mount_point)}</span>
+          <span class="${badgeCls}"><span class="b-dot"></span>${badgeTxt}</span>
+        </div>
+        <div class="smb-share-actions">
+          ${mountBtn}
+          <button class="btn btn-sm btn-danger" onclick="smbDelete('${s.name}')">${t("smb_btn_delete")}</button>
+        </div>
+      </div>`;
+  }).join("");
+}
+
+function _esc(s) {
+  return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
+}
+
+async function smbAddShare() {
+  const name  = document.getElementById("smb-new-name").value.trim();
+  const host  = document.getElementById("smb-new-host").value.trim();
+  const share = document.getElementById("smb-new-share").value.trim();
+  const user  = document.getElementById("smb-new-user").value.trim();
+  const pass  = document.getElementById("smb-new-pass").value;
+  const auto  = document.getElementById("smb-new-auto").checked;
+
+  if (!name || !host || !share) {
+    showToast(t("smb_fields_required"), "error");
+    return;
+  }
+  try {
+    await API.post("/api/smb/", { name, host, share, username: user, password: pass, auto_mount: auto });
+    showToast(t("smb_added"), "ok");
+    // Reset form and close details
+    ["smb-new-name","smb-new-host","smb-new-share","smb-new-user","smb-new-pass"].forEach(id => {
+      document.getElementById(id).value = "";
+    });
+    document.getElementById("smb-new-auto").checked = true;
+    document.getElementById("smb-add-details").removeAttribute("open");
+    await smbLoad();
+  } catch (e) {
+    let msg = e.message;
+    try { msg = JSON.parse(e.message).detail; } catch {}
+    showToast(t("error_prefix") + msg, "error");
+  }
+}
+
+async function smbToggle(name, action) {
+  try {
+    const res = await API.post(`/api/smb/${name}/${action}`, {});
+    if (res.success) {
+      showToast(action === "mount" ? t("smb_mount_ok") : t("smb_unmount_ok"), "ok");
+    } else {
+      showToast(t("smb_mount_fail") + ": " + res.message, "error");
+    }
+    await smbLoad();
+  } catch (e) {
+    showToast(t("error_prefix") + e.message, "error");
+  }
+}
+
+async function smbDelete(name) {
+  if (!confirm(t("smb_confirm_delete") + " \"" + name + "\"?")) return;
+  try {
+    await API.del(`/api/smb/${name}`);
+    showToast(t("smb_deleted"), "ok");
+    await smbLoad();
+  } catch (e) {
+    showToast(t("error_prefix") + e.message, "error");
+  }
+}
+
 // ---- Boot ----
 
 async function bootSettings() {
@@ -376,6 +477,9 @@ async function bootSettings() {
 
     // Show account button if auth is enabled
     if (typeof initAccountButton === "function") initAccountButton();
+
+    // Load SMB shares
+    await smbLoad();
   } catch {
     showToast(t("settings_load_error"), "error");
   }

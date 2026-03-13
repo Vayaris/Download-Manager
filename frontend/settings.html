@@ -238,6 +238,62 @@
       </div>
     </div>
 
+    <!-- SMB / Network Shares -->
+    <div class="settings-card">
+      <h2 class="card-title">
+        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+        <span data-i18n="smb_title">SMB / Network Shares</span>
+      </h2>
+      <p class="form-hint" style="margin-bottom:16px" data-i18n="smb_subtitle">Mount network shares (CIFS/SMB) to use as download destinations.</p>
+
+      <div id="smb-list"></div>
+
+      <!-- Add share form -->
+      <details id="smb-add-details" style="margin-top:12px">
+        <summary class="btn" style="cursor:pointer;display:inline-flex;align-items:center;gap:6px;list-style:none">
+          <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+          <span data-i18n="smb_btn_add">Add share</span>
+        </summary>
+        <div class="smb-form" style="margin-top:14px;display:flex;flex-direction:column;gap:10px">
+          <div class="form-group" style="margin:0">
+            <label class="form-label" data-i18n="smb_name">Name</label>
+            <input type="text" id="smb-new-name" class="form-input" placeholder="media" data-i18n-placeholder="smb_name_placeholder">
+            <p class="form-hint" data-i18n="smb_name_hint">Identifier used as mount point path (/mnt/smb/&lt;name&gt;)</p>
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+            <div class="form-group" style="margin:0">
+              <label class="form-label" data-i18n="smb_host">Host / IP</label>
+              <input type="text" id="smb-new-host" class="form-input" placeholder="192.168.1.10">
+            </div>
+            <div class="form-group" style="margin:0">
+              <label class="form-label" data-i18n="smb_share_name">Share name</label>
+              <input type="text" id="smb-new-share" class="form-input" placeholder="media">
+            </div>
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+            <div class="form-group" style="margin:0">
+              <label class="form-label" data-i18n="smb_username">Username</label>
+              <input type="text" id="smb-new-user" class="form-input" placeholder="guest" autocomplete="off">
+            </div>
+            <div class="form-group" style="margin:0">
+              <label class="form-label" data-i18n="smb_password">Password</label>
+              <input type="password" id="smb-new-pass" class="form-input" placeholder="••••••" autocomplete="new-password">
+            </div>
+          </div>
+          <div class="form-group toggle-group" style="margin:0">
+            <label class="form-label" data-i18n="smb_auto_mount">Mount automatically on startup</label>
+            <label class="toggle">
+              <input type="checkbox" id="smb-new-auto" checked>
+              <span class="toggle-slider"></span>
+            </label>
+          </div>
+          <div class="key-actions" style="margin-top:4px">
+            <button class="btn btn-primary" onclick="smbAddShare()" data-i18n="smb_btn_add">Add share</button>
+          </div>
+        </div>
+      </details>
+    </div>
+
     <!-- Updates -->
     <div class="settings-card">
       <h2 class="card-title">

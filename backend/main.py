@@ -12,7 +12,7 @@ from starlette.requests import Request
 from config import get_config
 from database import init_db
 from services.queue_manager import QueueManager
-from routers import downloads, settings, filebrowser, torrents
+from routers import downloads, settings, filebrowser, torrents, smb as smb_router
 from routers import auth as auth_router
 
 BASE_DIR = Path(__file__).parent
@@ -52,6 +52,12 @@ ws_manager = ConnectionManager()
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     await init_db()
+    # Mount SMB shares marked as auto_mount
+    try:
+        from services.smb import mount_all_auto
+        mount_all_auto()
+    except Exception:
+        pass
     qm = QueueManager()
     qm.register_ws_manager(ws_manager)
     await qm.start()
@@ -95,6 +101,7 @@ app.include_router(settings.router,  prefix="/api/settings",  tags=["settings"])
 app.include_router(filebrowser.router, prefix="/api/files",   tags=["files"])
 app.include_router(auth_router.router, prefix="/api/auth",    tags=["auth"])
 app.include_router(torrents.router,    prefix="/api/torrents", tags=["torrents"])
+app.include_router(smb_router.router,  prefix="/api/smb",      tags=["smb"])
 
 app.mount("/static", StaticFiles(directory=str(FRONTEND_DIR / "static")), name="static")
 

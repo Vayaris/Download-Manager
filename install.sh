@@ -78,6 +78,7 @@ apt-get install -y \
     build-essential \
     gcc \
     aria2 \
+    cifs-utils \
     curl \
     wget \
     git \

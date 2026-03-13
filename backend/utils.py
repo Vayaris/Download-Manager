@@ -13,6 +13,13 @@ def validate_destination(dest: str):
     default_dest = cfg["downloads"].get("default_destination", "")
     if default_dest:
         allowed.append(Path(default_dest).resolve())
+    # Also allow SMB mount points as valid destinations
+    try:
+        from services.smb import get_all_mount_points
+        for mp in get_all_mount_points():
+            allowed.append(Path(mp).resolve())
+    except Exception:
+        pass
     if not allowed:
         return  # No restrictions configured
     for a in allowed:
