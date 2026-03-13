@@ -3,7 +3,8 @@
 #  Download Manager — Installation Script
 #  Compatible: Ubuntu 20.04+, Debian 11+ (VM / LXC Proxmox)
 # ============================================================
-set -eo pipefail
+# NOTE: No "set -eo pipefail" — we handle errors explicitly
+# so the script never exits silently mid-way.
 
 RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'
 BLUE='\033[0;34m'; NC='\033[0m'; BOLD='\033[1m'
@@ -15,7 +16,7 @@ error()   { echo -e "${RED}[ERR]${NC}   $*"; }
 die()     { error "$*"; exit 1; }
 
 # ---- Root check ----
-[[ $EUID -eq 0 ]] || die "This script must be run as root. Use: sudo bash install.sh"
+[ "$(id -u)" -eq 0 ] || die "This script must be run as root. Use: sudo bash install.sh"
 
 # ---- Banner ----
 echo ""
@@ -24,28 +25,28 @@ echo -e "${BOLD}║       Download Manager — Install      ║${NC}"
 echo -e "${BOLD}╚═══════════════════════════════════════╝${NC}"
 echo ""
 
-# ---- Detect execution context (local clone vs bash <(curl ...)) ----
+# ---- Paths ----
 INSTALL_DIR="/opt/download-manager"
 CONFIG_DIR="/etc/download-manager"
 LOG_DIR="/var/log/download-manager"
 CLONED_TEMP=""
 
-# Try to resolve SCRIPT_DIR from BASH_SOURCE
-_raw_source="${BASH_SOURCE[0]}"
+# ---- Detect execution context (local clone vs bash <(curl ...)) ----
+_raw_source="${BASH_SOURCE[0]:-}"
 if [[ "$_raw_source" == /dev/fd/* ]] || [[ "$_raw_source" == /proc/* ]] || [ -z "$_raw_source" ]; then
-    # Running via bash <(curl ...) or pipe — must clone the repo
     SCRIPT_DIR=""
 else
-    SCRIPT_DIR="$(cd "$(dirname "$_raw_source")" && pwd)"
+    SCRIPT_DIR="$(cd "$(dirname "$_raw_source")" 2>/dev/null && pwd)" || SCRIPT_DIR=""
 fi
 
-# If SCRIPT_DIR is empty or doesn't contain project files, clone from GitHub
+# ---- Clone from GitHub if needed ----
 if [ -z "${SCRIPT_DIR}" ] || [ ! -f "${SCRIPT_DIR}/requirements.txt" ]; then
     info "Downloading project from GitHub..."
-    apt-get update -qq > /dev/null 2>&1
-    apt-get install -y -qq git > /dev/null 2>&1
+    apt-get update -qq 2>/dev/null || true
+    apt-get install -y -qq git 2>/dev/null || apt-get install -y git || die "Failed to install git"
     CLONED_TEMP="$(mktemp -d)"
-    git clone --depth 1 https://github.com/Vayaris/Download-Manager.git "${CLONED_TEMP}/download-manager"
+    git clone --depth 1 https://github.com/Vayaris/Download-Manager.git "${CLONED_TEMP}/download-manager" \
+        || die "Failed to clone repository from GitHub"
     SCRIPT_DIR="${CLONED_TEMP}/download-manager"
     success "Project downloaded"
     echo ""
@@ -56,7 +57,7 @@ DEFAULT_PORT=40320
 read -rp "Which port should the web interface listen on? [${DEFAULT_PORT}] : " INPUT_PORT
 PORT="${INPUT_PORT:-$DEFAULT_PORT}"
 
-if ! [[ "$PORT" =~ ^[0-9]+$ ]] || [ "$PORT" -lt 1 ] || [ "$PORT" -gt 65535 ]; then
+if ! echo "$PORT" | grep -qE '^[0-9]+$' || [ "$PORT" -lt 1 ] || [ "$PORT" -gt 65535 ]; then
     warn "Invalid port, using default: ${DEFAULT_PORT}"
     PORT=$DEFAULT_PORT
 fi
@@ -65,41 +66,45 @@ info "Selected port: ${PORT}"
 echo ""
 
 # ---- System dependencies ----
-info "Updating packages..."
-apt-get update -qq
+info "Updating package list..."
+apt-get update -q || warn "apt-get update had warnings (continuing)"
 
-info "Installing system dependencies..."
-apt-get install -y -qq \
+info "Installing system dependencies (this may take a minute)..."
+apt-get install -y \
     python3 \
     python3-pip \
     python3-venv \
+    python3-dev \
+    build-essential \
+    gcc \
     aria2 \
     curl \
     wget \
     git \
     ca-certificates \
-    > /dev/null 2>&1
+    2>&1 | grep -v "^Reading\|^Building\|^Fetching\|^Selecting\|^Preparing\|^Unpacking\|^Setting up\|^Processing" || true
+
+# Verify critical tools installed
+if ! command -v python3 >/dev/null 2>&1; then
+    die "python3 could not be installed. Check your package manager."
+fi
+if ! command -v aria2c >/dev/null 2>&1; then
+    die "aria2c could not be installed. Check your package manager."
+fi
 
 # Check Python version
 PYTHON_VERSION=$(python3 -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')")
 PYTHON_MAJOR=$(echo "$PYTHON_VERSION" | cut -d. -f1)
 PYTHON_MINOR=$(echo "$PYTHON_VERSION" | cut -d. -f2)
-
-if [ "$PYTHON_MAJOR" -lt 3 ] || ([ "$PYTHON_MAJOR" -eq 3 ] && [ "$PYTHON_MINOR" -lt 8 ]); then
+if [ "$PYTHON_MAJOR" -lt 3 ] || ( [ "$PYTHON_MAJOR" -eq 3 ] && [ "$PYTHON_MINOR" -lt 8 ] ); then
     die "Python 3.8+ required. Found: ${PYTHON_VERSION}"
 fi
-
 success "Python ${PYTHON_VERSION} detected"
-
-# Verify aria2c is actually installed
-if ! command -v aria2c &> /dev/null; then
-    die "aria2c was not installed correctly. Check your package manager."
-fi
 success "aria2c $(aria2c --version | head -1 | awk '{print $3}') installed"
 
-# Check if the selected port is already in use (warning only)
-if command -v ss &> /dev/null; then
-    if ss -tlnp | grep -q ":${PORT} " 2>/dev/null; then
+# Check port usage (warning only)
+if command -v ss >/dev/null 2>&1; then
+    if ss -tlnp 2>/dev/null | grep -q ":${PORT} "; then
         warn "Port ${PORT} is already in use. The service may fail to start."
     fi
 fi
@@ -114,23 +119,21 @@ mkdir -p "${LOG_DIR}"
 
 # ---- Copy project files ----
 info "Copying project files..."
-cp -r "${SCRIPT_DIR}/backend/"* "${INSTALL_DIR}/backend/"
-cp -r "${SCRIPT_DIR}/frontend/"* "${INSTALL_DIR}/frontend/"
-cp "${SCRIPT_DIR}/requirements.txt" "${INSTALL_DIR}/"
-cp "${SCRIPT_DIR}/start.sh" "${INSTALL_DIR}/start.sh"
+cp -r "${SCRIPT_DIR}/backend/"*   "${INSTALL_DIR}/backend/"
+cp -r "${SCRIPT_DIR}/frontend/"*  "${INSTALL_DIR}/frontend/"
+cp    "${SCRIPT_DIR}/requirements.txt" "${INSTALL_DIR}/"
+cp    "${SCRIPT_DIR}/start.sh"    "${INSTALL_DIR}/start.sh"
 chmod +x "${INSTALL_DIR}/start.sh"
 [ -f "${SCRIPT_DIR}/VERSION" ] && cp "${SCRIPT_DIR}/VERSION" "${INSTALL_DIR}/VERSION"
 success "Files copied"
 
 # ---- Generate aria2 secret ----
-ARIA2_SECRET=$(tr -dc 'a-zA-Z0-9' < /dev/urandom | fold -w 32 | head -n 1)
+ARIA2_SECRET=$(tr -dc 'a-zA-Z0-9' < /dev/urandom | head -c 32)
 
 # ---- Config file ----
 if [ -f "${CONFIG_DIR}/config.yml" ]; then
     info "Existing configuration detected, updating port only."
     sed -i "s/^\(\s*port:\s*\).*/\1${PORT}/" "${CONFIG_DIR}/config.yml"
-
-    # Add webhooks section if missing
     if ! grep -q "webhooks:" "${CONFIG_DIR}/config.yml" 2>/dev/null; then
         cat >> "${CONFIG_DIR}/config.yml" <<EOF
 
@@ -183,21 +186,7 @@ EOF
     success "Configuration created: ${CONFIG_DIR}/config.yml"
 fi
 
-# ---- Python virtual environment ----
-if [ -d "${INSTALL_DIR}/venv" ]; then
-    info "Existing virtualenv found, updating..."
-else
-    info "Creating Python virtualenv..."
-    python3 -m venv "${INSTALL_DIR}/venv" > /dev/null 2>&1
-    success "Virtualenv created"
-fi
-
-info "Installing Python dependencies..."
-"${INSTALL_DIR}/venv/bin/pip" install --quiet --upgrade pip
-"${INSTALL_DIR}/venv/bin/pip" install --quiet -r "${INSTALL_DIR}/requirements.txt"
-success "Python dependencies installed"
-
-# ---- systemd service ----
+# ---- systemd service (created BEFORE pip install) ----
 info "Configuring systemd service..."
 cat > /etc/systemd/system/download-manager.service <<EOF
 [Unit]
@@ -229,30 +218,82 @@ SyslogIdentifier=download-manager
 WantedBy=multi-user.target
 EOF
 
-systemctl daemon-reload
-systemctl enable download-manager > /dev/null 2>&1
-success "Systemd service configured and enabled"
+# Reload systemd (works on both VM and LXC)
+if command -v systemctl >/dev/null 2>&1 && systemctl --version >/dev/null 2>&1; then
+    systemctl daemon-reload
+    systemctl enable download-manager 2>/dev/null || true
+    success "Systemd service configured and enabled"
+    HAVE_SYSTEMD=1
+else
+    warn "systemctl not available — service file written but could not be enabled automatically"
+    HAVE_SYSTEMD=0
+fi
+
+# ---- Python virtual environment ----
+if [ -d "${INSTALL_DIR}/venv" ]; then
+    info "Existing virtualenv found, updating..."
+else
+    info "Creating Python virtualenv..."
+    if ! python3 -m venv "${INSTALL_DIR}/venv"; then
+        warn "python3 -m venv failed, trying python3-venv package..."
+        apt-get install -y python3-venv python3-full 2>/dev/null || true
+        if ! python3 -m venv "${INSTALL_DIR}/venv"; then
+            die "Failed to create Python virtualenv. Try: apt-get install python3-venv"
+        fi
+    fi
+    success "Virtualenv created"
+fi
+
+info "Upgrading pip..."
+"${INSTALL_DIR}/venv/bin/pip" install --upgrade pip --quiet || true
+
+info "Installing Python dependencies (this may take several minutes due to native compilation)..."
+if ! "${INSTALL_DIR}/venv/bin/pip" install -r "${INSTALL_DIR}/requirements.txt"; then
+    error "pip install failed. Trying with verbose output..."
+    "${INSTALL_DIR}/venv/bin/pip" install -r "${INSTALL_DIR}/requirements.txt" --no-cache-dir \
+        || die "Failed to install Python dependencies. Check the errors above."
+fi
+success "Python dependencies installed"
 
 # ---- Git repo for auto-updates ----
 if [ ! -d "${INSTALL_DIR}/.git" ]; then
-    info "Setting up git repository for updates..."
-    git clone --depth 1 https://github.com/Vayaris/Download-Manager.git "${INSTALL_DIR}/.git-tmp" > /dev/null 2>&1 && \
-        mv "${INSTALL_DIR}/.git-tmp/.git" "${INSTALL_DIR}/.git" && \
-        rm -rf "${INSTALL_DIR}/.git-tmp" && \
-        git -C "${INSTALL_DIR}" reset --hard HEAD > /dev/null 2>&1 && \
-        success "Git repository configured for updates" || \
-        warn "Could not set up git repository (manual updates only)"
+    info "Setting up git repository for future updates..."
+    GITTMP="$(mktemp -d)"
+    if git clone --depth 1 https://github.com/Vayaris/Download-Manager.git "${GITTMP}/repo" >/dev/null 2>&1; then
+        mv "${GITTMP}/repo/.git" "${INSTALL_DIR}/.git"
+        rm -rf "${GITTMP}"
+        git -C "${INSTALL_DIR}" reset --hard HEAD >/dev/null 2>&1 || true
+        success "Git repository configured for future updates"
+    else
+        warn "Could not set up git repository (in-app updates will not be available)"
+        rm -rf "${GITTMP}" 2>/dev/null || true
+    fi
 fi
 
-# ---- Start ----
-info "Starting service..."
-systemctl restart download-manager
-
-sleep 3
-if systemctl is-active --quiet download-manager; then
-    success "Service started successfully"
+# ---- Start service ----
+if [ "${HAVE_SYSTEMD:-0}" -eq 1 ]; then
+    info "Starting Download Manager service..."
+    systemctl reset-failed download-manager 2>/dev/null || true
+    if systemctl restart download-manager; then
+        # Wait up to 10 seconds for service to become active
+        for i in 1 2 3 4 5 6 7 8 9 10; do
+            sleep 1
+            if systemctl is-active --quiet download-manager; then
+                success "Service started successfully"
+                break
+            fi
+            if [ "$i" -eq 10 ]; then
+                warn "Service did not start within 10s. Check: journalctl -u download-manager -n 50"
+            fi
+        done
+    else
+        warn "Failed to start service. Check: journalctl -u download-manager -n 50"
+    fi
 else
-    warn "Service did not start. Check: journalctl -u download-manager -n 30"
+    info "Starting Download Manager manually..."
+    nohup "${INSTALL_DIR}/start.sh" >> "${LOG_DIR}/download-manager.log" 2>&1 &
+    sleep 3
+    warn "systemd not available — service started in background (PID: $!). It will NOT restart automatically."
 fi
 
 # ---- Cleanup temp clone ----
@@ -261,26 +302,28 @@ if [ -n "${CLONED_TEMP}" ] && [ -d "${CLONED_TEMP}" ]; then
 fi
 
 # ---- Summary ----
-SERVER_IP=$(hostname -I | awk '{print $1}')
+SERVER_IP=$(hostname -I 2>/dev/null | awk '{print $1}')
+[ -z "$SERVER_IP" ] && SERVER_IP="<your-server-ip>"
 
 echo ""
 echo -e "${BOLD}╔═══════════════════════════════════════════════════╗${NC}"
 echo -e "${BOLD}║         Installation completed successfully!      ║${NC}"
 echo -e "${BOLD}╚═══════════════════════════════════════════════════╝${NC}"
 echo ""
-echo -e "  Web interface:  ${BOLD}${GREEN}http://${SERVER_IP}:${PORT}${NC}"
+echo -e "  ${BOLD}Access the web interface:${NC}"
+echo -e "    ${BOLD}${GREEN}http://${SERVER_IP}:${PORT}${NC}"
 echo ""
-echo -e "  Useful commands:"
+echo -e "  ${BOLD}Useful commands:${NC}"
 echo -e "    ${YELLOW}systemctl status download-manager${NC}   — status"
 echo -e "    ${YELLOW}systemctl restart download-manager${NC}  — restart"
-echo -e "    ${YELLOW}journalctl -u download-manager -f${NC}   — logs"
+echo -e "    ${YELLOW}journalctl -u download-manager -f${NC}   — live logs"
 echo -e "    ${YELLOW}nano ${CONFIG_DIR}/config.yml${NC}       — configuration"
 echo ""
-echo -e "  Features:"
-echo -e "    - AllDebrid : configure your API key in ${BOLD}Settings${NC}"
+echo -e "  ${BOLD}Features:${NC}"
+echo -e "    - AllDebrid : configure your API key in Settings"
 echo -e "    - Torrents  : upload .torrent or magnet via AllDebrid"
 echo -e "    - Packages  : group your links into packages"
-echo -e "    - Webhooks  : Discord, Slack, Telegram, Gotify, ntfy"
+echo -e "    - Webhooks  : Discord, Slack, Telegram, Gotify, ntfy, Signal"
 echo -e "    - 2FA       : enable from the Settings page"
 echo -e "    - Updates   : from Settings > Updates"
 echo ""
