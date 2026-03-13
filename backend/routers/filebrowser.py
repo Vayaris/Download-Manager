@@ -16,7 +16,13 @@ def _get_allowed_roots() -> list:
     default_dest = cfg["downloads"].get("default_destination", "")
     if default_dest:
         allowed.append(Path(default_dest).resolve())
-    # Also allow parent dirs of allowed paths for navigation
+    # Also include SMB mount points (mounted or not, so user can navigate to them)
+    try:
+        from services.smb import get_all_mount_points
+        for mp in get_all_mount_points():
+            allowed.append(Path(mp).resolve())
+    except Exception:
+        pass
     if not allowed:
         allowed.append(Path("/").resolve())
     return allowed
