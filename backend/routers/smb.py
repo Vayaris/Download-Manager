@@ -19,6 +19,8 @@ class SmbShareIn(BaseModel):
     share: str
     username: Optional[str] = ""
     password: Optional[str] = ""
+    domain: Optional[str] = ""
+    vers: Optional[str] = ""       # SMB version: "", "1.0", "2.0", "2.1", "3.0", "3.1.1"
     auto_mount: bool = True
 
 
@@ -44,6 +46,8 @@ def _share_view(s: dict) -> dict:
         "host": s["host"],
         "share": s["share"],
         "username": s.get("username", ""),
+        "domain": s.get("domain", ""),
+        "vers": s.get("vers", ""),
         "auto_mount": s.get("auto_mount", False),
         "mount_point": s.get("mount_point", ""),
         "mounted": is_mounted(s.get("mount_point", "")),
@@ -73,6 +77,8 @@ async def add_share(body: SmbShareIn, _=Depends(get_current_user)):
         "share": body.share.strip(),
         "username": (body.username or "").strip(),
         "password": (body.password or "").strip(),
+        "domain": (body.domain or "").strip(),
+        "vers": (body.vers or "").strip(),
         "mount_point": _mount_point_for(name),
         "auto_mount": body.auto_mount,
     }
@@ -113,8 +119,9 @@ async def update_share(name: str, body: SmbShareIn, _=Depends(get_current_user))
                 "host": body.host.strip(),
                 "share": body.share.strip(),
                 "username": (body.username or "").strip(),
-                # Keep existing password if field left blank
                 "password": (body.password or "").strip() or s.get("password", ""),
+                "domain": (body.domain or "").strip(),
+                "vers": (body.vers or "").strip(),
                 "mount_point": _mount_point_for(new_name),
                 "auto_mount": body.auto_mount,
             }

@@ -34,12 +34,25 @@ def mount_share(share: dict) -> tuple:
     if is_mounted(mp):
         return True, "Already mounted"
 
-    host = share.get("host", "")
-    share_name = share.get("share", "")
-    username = share.get("username", "")
-    password = share.get("password", "")
+    host      = share.get("host", "").strip()
+    share_name = share.get("share", "").strip()
+    username  = share.get("username", "").strip()
+    password  = share.get("password", "").strip()
+    domain    = share.get("domain", "").strip()
+    vers      = share.get("vers", "").strip()   # e.g. "3.0", "2.1", "" = auto
 
-    opts = ["uid=0", "gid=0", "iocharset=utf8", "vers=3.0,2.1,2.0"]
+    if not host or not share_name:
+        return False, "Host and share name are required"
+
+    # Build mount options
+    opts = [
+        "uid=0",
+        "gid=0",
+        "file_mode=0755",
+        "dir_mode=0755",
+        "_netdev",
+    ]
+
     if username:
         opts.append(f"username={username}")
         if password:
@@ -47,15 +60,34 @@ def mount_share(share: dict) -> tuple:
     else:
         opts.append("guest")
 
+    if domain:
+        opts.append(f"domain={domain}")
+
+    # Only set vers if explicitly chosen — no vers = kernel auto-negotiates
+    if vers:
+        opts.append(f"vers={vers}")
+
     cmd = ["mount", "-t", "cifs", f"//{host}/{share_name}", mp, "-o", ",".join(opts)]
     try:
         result = subprocess.run(cmd, capture_output=True, text=True, timeout=20)
         if result.returncode == 0:
             return True, "Mounted successfully"
         err = (result.stderr or result.stdout or "").strip()
-        return False, err or "Mount failed (unknown error)"
+        # Provide helpful hint for common error codes
+        hint = ""
+        if "error(13)" in err:
+            hint = " — Check username/password or enable guest access on the server"
+        elif "error(2)" in err:
+            hint = " — Share not found, check the share name"
+        elif "error(111)" in err or "error(113)" in err:
+            hint = " — Host unreachable, check IP address and network"
+        elif "error(22)" in err:
+            hint = " — Invalid argument: try setting SMB Version explicitly (e.g. 3.0 or 2.1)"
+        return False, (err or "Mount failed") + hint
     except subprocess.TimeoutExpired:
-        return False, "Mount timed out (20s)"
+        return False, "Mount timed out (20s) — check host IP and network connectivity"
+    except FileNotFoundError:
+        return False, "mount.cifs not found — install cifs-utils: apt-get install cifs-utils"
     except Exception as e:
         return False, str(e)
 

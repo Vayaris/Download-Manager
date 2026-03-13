@@ -390,24 +390,26 @@ function _esc(s) {
 }
 
 async function smbAddShare() {
-  const name  = document.getElementById("smb-new-name").value.trim();
-  const host  = document.getElementById("smb-new-host").value.trim();
-  const share = document.getElementById("smb-new-share").value.trim();
-  const user  = document.getElementById("smb-new-user").value.trim();
-  const pass  = document.getElementById("smb-new-pass").value;
-  const auto  = document.getElementById("smb-new-auto").checked;
+  const name   = document.getElementById("smb-new-name").value.trim();
+  const host   = document.getElementById("smb-new-host").value.trim();
+  const share  = document.getElementById("smb-new-share").value.trim();
+  const user   = document.getElementById("smb-new-user").value.trim();
+  const pass   = document.getElementById("smb-new-pass").value;
+  const domain = document.getElementById("smb-new-domain").value.trim();
+  const vers   = document.getElementById("smb-new-vers").value;
+  const auto   = document.getElementById("smb-new-auto").checked;
 
   if (!name || !host || !share) {
     showToast(t("smb_fields_required"), "error");
     return;
   }
   try {
-    await API.post("/api/smb/", { name, host, share, username: user, password: pass, auto_mount: auto });
+    await API.post("/api/smb/", { name, host, share, username: user, password: pass, domain, vers, auto_mount: auto });
     showToast(t("smb_added"), "ok");
-    // Reset form and close details
-    ["smb-new-name","smb-new-host","smb-new-share","smb-new-user","smb-new-pass"].forEach(id => {
+    ["smb-new-name","smb-new-host","smb-new-share","smb-new-user","smb-new-pass","smb-new-domain"].forEach(id => {
       document.getElementById(id).value = "";
     });
+    document.getElementById("smb-new-vers").value = "";
     document.getElementById("smb-new-auto").checked = true;
     document.getElementById("smb-add-details").removeAttribute("open");
     await smbLoad();

@@ -254,32 +254,60 @@
           <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
           <span data-i18n="smb_btn_add">Add share</span>
         </summary>
-        <div class="smb-form" style="margin-top:14px;display:flex;flex-direction:column;gap:10px">
+        <div class="smb-form" style="margin-top:14px;display:flex;flex-direction:column;gap:12px">
+
           <div class="form-group" style="margin:0">
             <label class="form-label" data-i18n="smb_name">Name</label>
-            <input type="text" id="smb-new-name" class="form-input" placeholder="media" data-i18n-placeholder="smb_name_placeholder">
-            <p class="form-hint" data-i18n="smb_name_hint">Identifier used as mount point path (/mnt/smb/&lt;name&gt;)</p>
+            <input type="text" id="smb-new-name" class="form-input" placeholder="nas-media" data-i18n-placeholder="smb_name_placeholder" style="max-width:220px">
+            <p class="form-hint" data-i18n="smb_name_hint">Local identifier — sets the mount path: /mnt/smb/&lt;name&gt;</p>
           </div>
+
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
             <div class="form-group" style="margin:0">
               <label class="form-label" data-i18n="smb_host">Host / IP</label>
               <input type="text" id="smb-new-host" class="form-input" placeholder="192.168.1.10">
+              <p class="form-hint" data-i18n="smb_host_hint">IP or hostname of your NAS / server</p>
             </div>
             <div class="form-group" style="margin:0">
               <label class="form-label" data-i18n="smb_share_name">Share name</label>
               <input type="text" id="smb-new-share" class="form-input" placeholder="media">
+              <p class="form-hint" data-i18n="smb_share_hint">Name shown in \\server\<strong>sharename</strong></p>
             </div>
           </div>
+
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
             <div class="form-group" style="margin:0">
               <label class="form-label" data-i18n="smb_username">Username</label>
-              <input type="text" id="smb-new-user" class="form-input" placeholder="guest" autocomplete="off">
+              <input type="text" id="smb-new-user" class="form-input" placeholder="admin" autocomplete="off">
+              <p class="form-hint" data-i18n="smb_username_hint">Leave empty for guest / anonymous</p>
             </div>
             <div class="form-group" style="margin:0">
               <label class="form-label" data-i18n="smb_password">Password</label>
               <input type="password" id="smb-new-pass" class="form-input" placeholder="••••••" autocomplete="new-password">
+              <p class="form-hint" data-i18n="smb_password_hint">Leave empty if no password required</p>
             </div>
           </div>
+
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+            <div class="form-group" style="margin:0">
+              <label class="form-label" data-i18n="smb_vers">SMB Version</label>
+              <select id="smb-new-vers" class="form-input">
+                <option value="" data-i18n="smb_vers_auto">Auto (recommended)</option>
+                <option value="3.1.1">SMB 3.1.1 (Windows 10+)</option>
+                <option value="3.0">SMB 3.0 (Windows 8, NAS modern)</option>
+                <option value="2.1">SMB 2.1 (Windows 7)</option>
+                <option value="2.0">SMB 2.0</option>
+                <option value="1.0">SMB 1.0 (very old NAS ⚠️)</option>
+              </select>
+              <p class="form-hint" data-i18n="smb_vers_hint">If mount fails with error(22), try 3.0 or 2.1</p>
+            </div>
+            <div class="form-group" style="margin:0">
+              <label class="form-label" data-i18n="smb_domain">Domain <span style="color:var(--text-3);font-weight:400">(optional)</span></label>
+              <input type="text" id="smb-new-domain" class="form-input" placeholder="WORKGROUP" autocomplete="off">
+              <p class="form-hint" data-i18n="smb_domain_hint">Windows domain or workgroup (usually not needed)</p>
+            </div>
+          </div>
+
           <div class="form-group toggle-group" style="margin:0">
             <label class="form-label" data-i18n="smb_auto_mount">Mount automatically on startup</label>
             <label class="toggle">
@@ -287,6 +315,7 @@
               <span class="toggle-slider"></span>
             </label>
           </div>
+
           <div class="key-actions" style="margin-top:4px">
             <button class="btn btn-primary" onclick="smbAddShare()" data-i18n="smb_btn_add">Add share</button>
           </div>
