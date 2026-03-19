@@ -1679,37 +1679,39 @@ select.form-input {
 /* ---- Storage rows ---- */
 .storage-row {
   display: grid;
-  grid-template-columns: 1fr auto;
+  grid-template-columns: 1fr auto auto;
   grid-template-rows: auto auto;
-  gap: 4px 12px;
+  gap: 5px 10px;
   padding: 10px 0;
   border-bottom: 1px solid var(--border);
+  align-items: center;
 }
 .storage-row:last-child { border-bottom: none; }
-.storage-label {
-  display: flex; align-items: center; gap: 8px; grid-column: 1; grid-row: 1;
-}
 .storage-path {
+  grid-column: 1; grid-row: 1;
   font-family: var(--font-mono); font-size: 12px; color: var(--text-2);
-  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 320px;
-}
-.storage-badge {
-  font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: .5px;
-  padding: 2px 6px; border-radius: var(--radius-full);
-  background: var(--surface-2); color: var(--text-3); border: 1px solid var(--border);
-  flex-shrink: 0;
-}
-.storage-bar-wrap {
-  grid-column: 1 / -1; grid-row: 2;
-  height: 6px; background: var(--surface-2); border-radius: var(--radius-full); overflow: hidden;
-}
-.storage-bar {
-  height: 100%; border-radius: var(--radius-full); transition: width .3s ease;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 .storage-numbers {
   grid-column: 2; grid-row: 1;
   font-family: var(--font-mono); font-size: 12px; color: var(--text-3);
-  white-space: nowrap; align-self: center;
+  white-space: nowrap;
+}
+.storage-delete {
+  grid-column: 3; grid-row: 1;
+  display: flex; align-items: center; justify-content: center;
+  width: 24px; height: 24px; border-radius: var(--radius-sm);
+  background: transparent; border: none; cursor: pointer;
+  color: var(--text-3); opacity: 0.4; transition: opacity .15s, color .15s;
+  flex-shrink: 0; padding: 0;
+}
+.storage-delete:hover { opacity: 1; color: var(--red); }
+.storage-bar-wrap {
+  grid-column: 1 / -1; grid-row: 2;
+  height: 5px; background: var(--surface-2); border-radius: var(--radius-full); overflow: hidden;
+}
+.storage-bar {
+  height: 100%; border-radius: var(--radius-full); transition: width .3s ease;
 }
 
 .btn-danger {

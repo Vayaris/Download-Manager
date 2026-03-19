@@ -461,18 +461,16 @@ async function loadStorage() {
     }
     el.innerHTML = items.map(item => {
       const pathEsc = _esc(item.path);
-      const deleteBtn = `<button class="btn btn-sm btn-danger" onclick="storageRemove('${pathEsc}')" title="${t('storage_btn_remove')}" style="flex-shrink:0">
-        <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+      const deleteBtn = `<button class="storage-delete" onclick="storageRemove('${pathEsc}')" title="${t('storage_btn_remove')}">
+        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
       </button>`;
       if (!item.available) {
         return `
           <div class="storage-row">
-            <div class="storage-label">
-              <span class="storage-path" title="${pathEsc}">${pathEsc}</span>
-              ${deleteBtn}
-            </div>
+            <span class="storage-path" title="${pathEsc}">${pathEsc}</span>
+            <span class="storage-numbers" style="color:var(--text-3)">${t("storage_unavailable")}</span>
+            ${deleteBtn}
             <div class="storage-bar-wrap"><div class="storage-bar" style="width:0%"></div></div>
-            <div class="storage-numbers" style="color:var(--text-3)">${t("storage_unavailable")}</div>
           </div>`;
       }
       const pct = item.percent;
@@ -481,14 +479,10 @@ async function loadStorage() {
       const totalGb = (item.total / 1e9).toFixed(1);
       return `
         <div class="storage-row">
-          <div class="storage-label">
-            <span class="storage-path" title="${pathEsc}">${pathEsc}</span>
-            ${deleteBtn}
-          </div>
-          <div class="storage-bar-wrap">
-            <div class="storage-bar" style="width:${pct}%;background:${color}"></div>
-          </div>
-          <div class="storage-numbers">${usedGb} GB / ${totalGb} GB (${pct}%)</div>
+          <span class="storage-path" title="${pathEsc}">${pathEsc}</span>
+          <span class="storage-numbers">${usedGb} GB / ${totalGb} GB (${pct}%)</span>
+          ${deleteBtn}
+          <div class="storage-bar-wrap"><div class="storage-bar" style="width:${pct}%;background:${color}"></div></div>
         </div>`;
     }).join("");
   } catch {
