@@ -11,7 +11,7 @@
   <link rel="apple-touch-icon" href="/static/icons/icon-192.svg">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link rel="stylesheet" href="/static/css/style.css?v=28">
+  <link rel="stylesheet" href="/static/css/style.css?v=29">
   <script>
     (function() {
       var t = localStorage.getItem('dm_theme');
@@ -323,6 +323,17 @@
       </details>
     </div>
 
+    <!-- Storage -->
+    <div class="settings-card">
+      <h2 class="card-title">
+        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"/><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/></svg>
+        <span data-i18n="storage_title">Storage</span>
+        <button class="btn btn-sm" onclick="loadStorage()" style="margin-left:auto" data-i18n="storage_btn_refresh">Refresh</button>
+      </h2>
+      <p class="form-hint" data-i18n="storage_subtitle">Disk usage for configured download destinations.</p>
+      <div id="storage-list" style="margin-top:12px"></div>
+    </div>
+
     <!-- Updates -->
     <div class="settings-card">
       <h2 class="card-title">
@@ -386,9 +397,9 @@ function pwaInstall(){if(pwaDeferred){pwaDeferred.prompt();pwaDeferred.userChoic
 </script>
 
 <script src="/static/js/theme.js?v=28"></script>
-<script src="/static/js/i18n.js?v=29"></script>
+<script src="/static/js/i18n.js?v=30"></script>
 <script src="/static/js/api.js?v=28"></script>
-<script src="/static/js/settings.js?v=28"></script>
+<script src="/static/js/settings.js?v=29"></script>
 <script src="/static/js/account.js?v=28"></script>
 <script>if("serviceWorker"in navigator)navigator.serviceWorker.register("/sw.js").catch(()=>{})</script>
 </body>

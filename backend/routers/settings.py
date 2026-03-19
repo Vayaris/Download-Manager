@@ -1,4 +1,6 @@
 import ipaddress
+import os
+import shutil
 import socket
 import subprocess
 from pathlib import Path
@@ -146,6 +148,57 @@ async def test_webhook(_=Depends(get_current_user)):
                 return {"success": False, "message": f"HTTP error {resp.status_code}"}
     except Exception as e:
         return {"success": False, "message": str(e)[:200]}
+
+
+@router.get("/storage")
+async def get_storage(_=Depends(get_current_user)):
+    cfg = get_config()
+
+    paths_to_check = []
+
+    # Default destination
+    default_dest = cfg["downloads"].get("default_destination", "")
+    if default_dest:
+        paths_to_check.append((default_dest, "downloads", False))
+
+    # Allowed paths
+    for p in cfg["downloads"].get("allowed_paths", []):
+        if p:
+            paths_to_check.append((p, p, False))
+
+    # SMB shares
+    for s in cfg.get("smb_shares", []):
+        mp = s.get("mount_point", "")
+        name = s.get("name", mp)
+        if mp:
+            paths_to_check.append((mp, f"SMB: {name}", True))
+
+    # Deduplicate by device ID
+    seen_devs = {}
+    result = []
+    for path, label, is_smb in paths_to_check:
+        entry = {"path": path, "label": label, "is_smb": is_smb}
+        try:
+            dev = os.stat(path).st_dev
+            if dev in seen_devs:
+                continue
+            seen_devs[dev] = path
+            usage = shutil.disk_usage(path)
+            entry["total"] = usage.total
+            entry["used"] = usage.used
+            entry["free"] = usage.free
+            entry["percent"] = round(usage.used / usage.total * 100, 1) if usage.total > 0 else 0.0
+            entry["available"] = True
+        except Exception:
+            entry["total"] = 0
+            entry["used"] = 0
+            entry["free"] = 0
+            entry["percent"] = 0.0
+            entry["available"] = False
+        result.append(entry)
+
+    result.sort(key=lambda x: x["path"])
+    return result
 
 
 def _get_current_version() -> str:

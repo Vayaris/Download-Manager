@@ -445,6 +445,53 @@ async function smbDelete(name) {
   }
 }
 
+// ============================================================
+//  Storage
+// ============================================================
+
+async function loadStorage() {
+  const el = document.getElementById("storage-list");
+  if (!el) return;
+  el.innerHTML = `<p class="form-hint">${t("settings_checking")}</p>`;
+  try {
+    const items = await API.get("/api/settings/storage");
+    if (!items || items.length === 0) {
+      el.innerHTML = `<p class="form-hint">${t("storage_unavailable")}</p>`;
+      return;
+    }
+    el.innerHTML = items.map(item => {
+      if (!item.available) {
+        return `
+          <div class="storage-row">
+            <div class="storage-label">
+              <span class="storage-path">${_esc(item.path)}</span>
+              <span class="storage-badge">${item.is_smb ? t("storage_label_smb") : t("storage_label_local")}</span>
+            </div>
+            <div class="storage-bar-wrap"><div class="storage-bar" style="width:0%"></div></div>
+            <div class="storage-numbers" style="color:var(--text-3)">${t("storage_unavailable")}</div>
+          </div>`;
+      }
+      const pct = item.percent;
+      const color = pct >= 90 ? "var(--red)" : pct >= 70 ? "var(--orange, #f97316)" : "var(--green)";
+      const usedGb = (item.used / 1e9).toFixed(1);
+      const totalGb = (item.total / 1e9).toFixed(1);
+      return `
+        <div class="storage-row">
+          <div class="storage-label">
+            <span class="storage-path">${_esc(item.path)}</span>
+            <span class="storage-badge">${item.is_smb ? t("storage_label_smb") : t("storage_label_local")}</span>
+          </div>
+          <div class="storage-bar-wrap">
+            <div class="storage-bar" style="width:${pct}%;background:${color}"></div>
+          </div>
+          <div class="storage-numbers">${usedGb} GB / ${totalGb} GB (${pct}%)</div>
+        </div>`;
+    }).join("");
+  } catch {
+    el.innerHTML = `<p class="form-hint" style="color:var(--red)">${t("settings_error")}</p>`;
+  }
+}
+
 // ---- Boot ----
 
 async function bootSettings() {
@@ -482,6 +529,9 @@ async function bootSettings() {
 
     // Load SMB shares
     await smbLoad();
+
+    // Load storage info
+    await loadStorage();
   } catch {
     showToast(t("settings_load_error"), "error");
   }

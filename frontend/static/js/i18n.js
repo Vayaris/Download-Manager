@@ -276,6 +276,14 @@ const TRANSLATIONS = {
     fb_recent_paths: "Recent",
     fb_recent_empty: "No recent paths yet — select a folder to save it here",
 
+    // ---- Storage ----
+    storage_title: "Storage",
+    storage_subtitle: "Disk usage for configured download destinations.",
+    storage_btn_refresh: "Refresh",
+    storage_unavailable: "Not mounted",
+    storage_label_smb: "SMB",
+    storage_label_local: "Local",
+
     // ---- SMB / Network Shares ----
     smb_title: "SMB / Network Shares",
     smb_subtitle: "Mount network shares (CIFS/SMB) as download destinations. Requires cifs-utils: apt-get install cifs-utils",
@@ -585,6 +593,14 @@ const TRANSLATIONS = {
     fb_select_folder: "Sélectionner ce dossier",
     fb_recent_paths: "Récents",
     fb_recent_empty: "Aucun chemin récent — sélectionnez un dossier pour le sauvegarder ici",
+
+    // ---- Storage ----
+    storage_title: "Stockage",
+    storage_subtitle: "Utilisation du disque pour les destinations de téléchargement configurées.",
+    storage_btn_refresh: "Actualiser",
+    storage_unavailable: "Non monté",
+    storage_label_smb: "SMB",
+    storage_label_local: "Local",
 
     // ---- SMB / Network Shares ----
     smb_title: "Partages réseau SMB",
