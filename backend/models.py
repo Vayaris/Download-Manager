@@ -68,3 +68,7 @@ class MkdirRequest(BaseModel):
 class MagnetUploadRequest(BaseModel):
     magnets: List[str]
     destination: str
+
+
+class StoragePathRequest(BaseModel):
+    path: str

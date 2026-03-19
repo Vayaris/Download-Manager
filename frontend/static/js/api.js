@@ -72,7 +72,9 @@ const apiFetch = {
     return this._request(url, { method: "PUT", headers: this._headers(), body: JSON.stringify(body) });
   },
 
-  async del(url) {
-    return this._request(url, { method: "DELETE", headers: this._headers() });
+  async del(url, body) {
+    const opts = { method: "DELETE", headers: this._headers() };
+    if (body !== undefined) opts.body = JSON.stringify(body);
+    return this._request(url, opts);
   },
 };

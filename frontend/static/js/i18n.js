@@ -278,11 +278,14 @@ const TRANSLATIONS = {
 
     // ---- Storage ----
     storage_title: "Storage",
-    storage_subtitle: "Disk usage for configured download destinations.",
+    storage_subtitle: "Monitor disk usage for any folder on this server.",
     storage_btn_refresh: "Refresh",
-    storage_unavailable: "Not mounted",
-    storage_label_smb: "SMB",
-    storage_label_local: "Local",
+    storage_btn_add: "Add a folder",
+    storage_btn_remove: "Remove",
+    storage_unavailable: "Unavailable",
+    storage_empty: "No folders monitored — click \"Add a folder\" to start.",
+    storage_added: "Folder added",
+    storage_removed: "Folder removed",
 
     // ---- SMB / Network Shares ----
     smb_title: "SMB / Network Shares",
@@ -596,11 +599,14 @@ const TRANSLATIONS = {
 
     // ---- Storage ----
     storage_title: "Stockage",
-    storage_subtitle: "Utilisation du disque pour les destinations de téléchargement configurées.",
+    storage_subtitle: "Surveillez l'espace disque de n'importe quel dossier du serveur.",
     storage_btn_refresh: "Actualiser",
-    storage_unavailable: "Non monté",
-    storage_label_smb: "SMB",
-    storage_label_local: "Local",
+    storage_btn_add: "Ajouter un dossier",
+    storage_btn_remove: "Supprimer",
+    storage_unavailable: "Inaccessible",
+    storage_empty: "Aucun dossier surveillé — cliquez sur « Ajouter un dossier » pour commencer.",
+    storage_added: "Dossier ajouté",
+    storage_removed: "Dossier supprimé",
 
     // ---- SMB / Network Shares ----
     smb_title: "Partages réseau SMB",

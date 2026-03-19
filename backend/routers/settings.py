@@ -7,7 +7,7 @@ from pathlib import Path
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 
-from models import SettingsUpdate
+from models import SettingsUpdate, StoragePathRequest
 from auth import get_current_user, get_password_hash
 from config import get_config, save_config
 from services.alldebrid import alldebrid
@@ -153,36 +153,14 @@ async def test_webhook(_=Depends(get_current_user)):
 @router.get("/storage")
 async def get_storage(_=Depends(get_current_user)):
     cfg = get_config()
+    paths = cfg.get("storage_extra_paths", [])
 
-    paths_to_check = []
-
-    # Default destination
-    default_dest = cfg["downloads"].get("default_destination", "")
-    if default_dest:
-        paths_to_check.append((default_dest, "downloads", False))
-
-    # Allowed paths
-    for p in cfg["downloads"].get("allowed_paths", []):
-        if p:
-            paths_to_check.append((p, p, False))
-
-    # SMB shares
-    for s in cfg.get("smb_shares", []):
-        mp = s.get("mount_point", "")
-        name = s.get("name", mp)
-        if mp:
-            paths_to_check.append((mp, f"SMB: {name}", True))
-
-    # Deduplicate by device ID
-    seen_devs = {}
     result = []
-    for path, label, is_smb in paths_to_check:
-        entry = {"path": path, "label": label, "is_smb": is_smb}
+    for path in paths:
+        if not path:
+            continue
+        entry: dict = {"path": path}
         try:
-            dev = os.stat(path).st_dev
-            if dev in seen_devs:
-                continue
-            seen_devs[dev] = path
             usage = shutil.disk_usage(path)
             entry["total"] = usage.total
             entry["used"] = usage.used
@@ -197,8 +175,31 @@ async def get_storage(_=Depends(get_current_user)):
             entry["available"] = False
         result.append(entry)
 
-    result.sort(key=lambda x: x["path"])
     return result
+
+
+@router.post("/storage/paths")
+async def add_storage_path(body: StoragePathRequest, _=Depends(get_current_user)):
+    path = body.path.strip()
+    if not path:
+        raise HTTPException(status_code=400, detail="Path required")
+    cfg = get_config()
+    extra = cfg.get("storage_extra_paths", [])
+    if path not in extra:
+        extra.append(path)
+        cfg["storage_extra_paths"] = extra
+        save_config(cfg)
+    return {"status": "added"}
+
+
+@router.delete("/storage/paths")
+async def remove_storage_path(body: StoragePathRequest, _=Depends(get_current_user)):
+    path = body.path.strip()
+    cfg = get_config()
+    extra = cfg.get("storage_extra_paths", [])
+    cfg["storage_extra_paths"] = [p for p in extra if p != path]
+    save_config(cfg)
+    return {"status": "removed"}
 
 
 def _get_current_version() -> str:

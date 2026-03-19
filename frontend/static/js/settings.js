@@ -456,16 +456,20 @@ async function loadStorage() {
   try {
     const items = await API.get("/api/settings/storage");
     if (!items || items.length === 0) {
-      el.innerHTML = `<p class="form-hint">${t("storage_unavailable")}</p>`;
+      el.innerHTML = `<p class="form-hint" style="margin-bottom:0">${t("storage_empty")}</p>`;
       return;
     }
     el.innerHTML = items.map(item => {
+      const pathEsc = _esc(item.path);
+      const deleteBtn = `<button class="btn btn-sm btn-danger" onclick="storageRemove('${pathEsc}')" title="${t('storage_btn_remove')}" style="flex-shrink:0">
+        <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+      </button>`;
       if (!item.available) {
         return `
           <div class="storage-row">
             <div class="storage-label">
-              <span class="storage-path">${_esc(item.path)}</span>
-              <span class="storage-badge">${item.is_smb ? t("storage_label_smb") : t("storage_label_local")}</span>
+              <span class="storage-path" title="${pathEsc}">${pathEsc}</span>
+              ${deleteBtn}
             </div>
             <div class="storage-bar-wrap"><div class="storage-bar" style="width:0%"></div></div>
             <div class="storage-numbers" style="color:var(--text-3)">${t("storage_unavailable")}</div>
@@ -478,8 +482,8 @@ async function loadStorage() {
       return `
         <div class="storage-row">
           <div class="storage-label">
-            <span class="storage-path">${_esc(item.path)}</span>
-            <span class="storage-badge">${item.is_smb ? t("storage_label_smb") : t("storage_label_local")}</span>
+            <span class="storage-path" title="${pathEsc}">${pathEsc}</span>
+            ${deleteBtn}
           </div>
           <div class="storage-bar-wrap">
             <div class="storage-bar" style="width:${pct}%;background:${color}"></div>
@@ -489,6 +493,29 @@ async function loadStorage() {
     }).join("");
   } catch {
     el.innerHTML = `<p class="form-hint" style="color:var(--red)">${t("settings_error")}</p>`;
+  }
+}
+
+function storageOpenBrowser() {
+  FileBrowser.open(async (path) => {
+    if (!path) return;
+    try {
+      await API.post("/api/settings/storage/paths", { path });
+      showToast(t("storage_added"), "ok");
+      await loadStorage();
+    } catch (e) {
+      showToast(t("error_prefix") + e.message, "error");
+    }
+  });
+}
+
+async function storageRemove(path) {
+  try {
+    await API.del("/api/settings/storage/paths", { path });
+    showToast(t("storage_removed"), "ok");
+    await loadStorage();
+  } catch (e) {
+    showToast(t("error_prefix") + e.message, "error");
   }
 }
 
