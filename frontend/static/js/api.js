@@ -56,7 +56,22 @@ const apiFetch = {
       this._handleUnauth();
       throw new Error("Unauthorized");
     }
-    if (!r.ok) throw new Error(await r.text());
+    if (!r.ok) {
+      const text = await r.text();
+      let msg = text;
+      try {
+        const json = JSON.parse(text);
+        if (typeof json.detail === "string") {
+          msg = json.detail;
+        } else if (Array.isArray(json.detail)) {
+          // Pydantic validation errors
+          msg = json.detail.map(e => e.msg || e.message || JSON.stringify(e)).join(", ");
+        }
+      } catch {}
+      // Truncate very long messages (e.g. magnet URIs echoed back)
+      if (msg.length > 200) msg = msg.slice(0, 197) + "…";
+      throw new Error(msg);
+    }
     return r.json();
   },
 
