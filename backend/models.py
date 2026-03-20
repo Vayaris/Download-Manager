@@ -95,3 +95,9 @@ class SignalVerifyRequest(BaseModel):
     port: int
     number: str
     code: str
+
+
+class SignalResetRequest(BaseModel):
+    host: str = "localhost"
+    port: int = 8080
+    number: str = ""

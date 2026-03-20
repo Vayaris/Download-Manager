@@ -7,7 +7,7 @@ from pathlib import Path
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 
-from models import SettingsUpdate, StoragePathRequest, SignalCheckRequest, SignalDeployRequest, SignalRegisterRequest, SignalVerifyRequest
+from models import SettingsUpdate, StoragePathRequest, SignalCheckRequest, SignalDeployRequest, SignalRegisterRequest, SignalVerifyRequest, SignalResetRequest
 from auth import get_current_user, get_password_hash
 from config import get_config, save_config
 from services.alldebrid import alldebrid
@@ -329,24 +329,50 @@ async def signal_verify(body: SignalVerifyRequest, _=Depends(get_current_user)):
 
 
 @router.post("/signal-reset")
-async def signal_reset(_=Depends(get_current_user)):
+async def signal_reset(body: SignalResetRequest, _=Depends(get_current_user)):
+    import httpx
+    import re
+    steps = []
+
+    # ── 1. Unregister number from Signal's servers (best effort) ──────────
+    number = body.number.strip()
+    if number and re.match(r'^\+[0-9]{7,15}$', number):
+        host = body.host.strip() or "localhost"
+        port = body.port if 1 <= body.port <= 65535 else 8080
+        number_encoded = number.replace("+", "%2B")
+        try:
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                resp = await client.delete(
+                    f"http://{host}:{port}/v1/accounts/{number_encoded}",
+                    params={"delete_local_data": "true"},
+                )
+                if resp.status_code in (200, 201, 204):
+                    steps.append("number unregistered from Signal")
+                else:
+                    steps.append(f"unregister returned HTTP {resp.status_code}")
+        except Exception as e:
+            steps.append(f"unregister skipped ({str(e)[:80]})")
+
+    # ── 2. Clear local config ─────────────────────────────────────────────
     cfg = get_config()
-    # Clear signal_registered flag
     cfg.pop("signal_registered", None)
-    # Clear webhook config if it's currently set to signal
     wh = cfg.get("webhooks", {})
     if wh.get("format") == "signal":
         wh["url"] = ""
         wh["format"] = "generic"
         wh["enabled"] = False
     save_config(cfg)
-    # Attempt to stop and remove Docker container (best effort)
+    steps.append("local config cleared")
+
+    # ── 3. Stop and remove Docker container (best effort) ────────────────
     try:
         subprocess.run(["docker", "stop", "signal-cli-rest-api"], capture_output=True, timeout=15)
         subprocess.run(["docker", "rm", "signal-cli-rest-api"], capture_output=True, timeout=10)
+        steps.append("container stopped and removed")
     except Exception:
-        pass
-    return {"success": True, "message": "Signal configuration reset"}
+        steps.append("container cleanup skipped (Docker not found)")
+
+    return {"success": True, "message": " — ".join(steps)}
 
 
 @router.get("/storage")

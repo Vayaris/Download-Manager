@@ -272,9 +272,9 @@
             <span id="signal-status" class="signal-status"></span>
           </div>
           <!-- Persistent registered badge -->
-          <div id="signal-reg-status" class="hidden" style="margin-top:8px">
+          <div id="signal-reg-status" class="hidden" style="margin-top:8px;display:flex;align-items:center;flex-wrap:wrap;gap:8px">
             <span class="signal-status ok" data-i18n="signal_registered">Number registered</span>
-            <button class="btn btn-sm" style="margin-left:10px;color:var(--danger)" onclick="signalReset()" data-i18n="signal_btn_reset">Reset Signal</button>
+            <button class="btn btn-sm" style="color:var(--danger)" onclick="signalReset()" data-i18n="signal_btn_reset">Unregister &amp; reset all</button>
           </div>
           <!-- Local deploy hint -->
           <p id="signal-deploy-hint" class="form-hint" style="margin-top:6px" data-i18n="signal_deploy_hint">Installs Java + signal-cli + systemd service on this machine.</p>

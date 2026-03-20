@@ -378,8 +378,11 @@ async function signalVerify() {
 
 async function signalReset() {
   if (!confirm(t("signal_reset_confirm"))) return;
+  const host   = document.getElementById("signal-host")?.value.trim() || "localhost";
+  const port   = parseInt(document.getElementById("signal-port")?.value.trim()) || 8080;
+  const number = document.getElementById("signal-from")?.value.trim() || "";
   try {
-    const res = await API.post("/api/settings/signal-reset", {});
+    const res = await API.post("/api/settings/signal-reset", { host, port, number });
     if (res.success) {
       showToast(t("signal_reset_done"), "ok");
       // Clear fields and hide badge
