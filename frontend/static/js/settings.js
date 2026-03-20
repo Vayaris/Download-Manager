@@ -200,7 +200,7 @@ function signalBuildUrl() {
   const url  = `http://${host}:${port}/v2/send?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`;
   document.getElementById("webhook-url").value = url;
 
-  // Update registration guide commands with current host/port/from
+  // Update registration guide commands
   const fromNum = from || "+33...";
   const el1 = document.getElementById("signal-cmd-about");
   if (el1) el1.textContent = `curl http://${host}:${port}/v1/about`;
@@ -208,6 +208,53 @@ function signalBuildUrl() {
   if (el2) el2.textContent = `curl -X POST http://${host}:${port}/v1/register -H 'Content-Type: application/json' -d '{"number": "${fromNum}"}'`;
   const el3 = document.getElementById("signal-cmd-verify");
   if (el3) el3.textContent = `curl -X POST http://${host}:${port}/v1/verify/${fromNum} -d '{"token": "123456"}'`;
+
+  // Show/hide deploy button vs remote install instructions
+  const isLocal = !host || host === "localhost" || host === "127.0.0.1" || host === "::1";
+  const deployBtn   = document.getElementById("signal-btn-deploy");
+  const deployHint  = document.getElementById("signal-deploy-hint");
+  const remoteBlock = document.getElementById("signal-remote-install");
+  if (deployBtn)   deployBtn.style.display  = isLocal ? "" : "none";
+  if (deployHint)  deployHint.style.display = isLocal ? "" : "none";
+  if (remoteBlock) remoteBlock.classList.toggle("hidden", isLocal);
+
+  if (!isLocal) {
+    // Update remote host label and install command
+    const hostSpan = document.getElementById("signal-remote-host");
+    if (hostSpan) hostSpan.textContent = host;
+    const cmdEl = document.getElementById("signal-cmd-remote");
+    if (cmdEl) cmdEl.textContent = [
+      `apt-get install -y default-jre`,
+      ``,
+      `# Install signal-cli`,
+      `VER=$(curl -s https://api.github.com/repos/AsamK/signal-cli/releases/latest | grep -oP '"tag_name": "\\K[^"]+')`,
+      `wget -q "https://github.com/AsamK/signal-cli/releases/download/$VER/signal-cli-${"{VER#v}"}.tar.gz" -O /tmp/signal-cli.tar.gz`,
+      `tar -xf /tmp/signal-cli.tar.gz -C /opt && ln -sf /opt/signal-cli-*/bin/signal-cli /usr/local/bin/signal-cli`,
+      ``,
+      `# Install signal-cli-rest-api`,
+      `APIVER=$(curl -s https://api.github.com/repos/bbernhard/signal-cli-rest-api/releases/latest | grep -oP '"tag_name": "\\K[^"]+')`,
+      `wget -q "https://github.com/bbernhard/signal-cli-rest-api/releases/download/$APIVER/signal-cli-rest-api-amd64" -O /usr/local/bin/signal-cli-rest-api`,
+      `chmod +x /usr/local/bin/signal-cli-rest-api`,
+      ``,
+      `# Create and start the service`,
+      `mkdir -p /opt/signal`,
+      `cat > /etc/systemd/system/signal-cli-rest-api.service << 'EOF'`,
+      `[Unit]`,
+      `Description=signal-cli REST API`,
+      `After=network.target`,
+      `[Service]`,
+      `Type=simple`,
+      `ExecStart=/usr/local/bin/signal-cli-rest-api -p ${port}`,
+      `Environment=PATH=/usr/local/bin:/usr/bin:/bin`,
+      `Environment=SIGNAL_CLI_CONFIG_DIR=/opt/signal`,
+      `WorkingDirectory=/opt/signal`,
+      `Restart=on-failure`,
+      `[Install]`,
+      `WantedBy=multi-user.target`,
+      `EOF`,
+      `systemctl daemon-reload && systemctl enable --now signal-cli-rest-api`,
+    ].join("\n");
+  }
 }
 
 function signalCopyCmd(id) {
@@ -243,25 +290,26 @@ async function signalCheck() {
 async function signalDeploy() {
   const port = parseInt(document.getElementById("signal-port").value.trim()) || 8080;
   const statusEl = document.getElementById("signal-status");
+  const btn = document.getElementById("signal-btn-deploy");
   statusEl.textContent = t("signal_deploying");
   statusEl.className = "signal-status checking";
+  if (btn) { btn.disabled = true; btn.textContent = t("signal_deploying"); }
   try {
     const res = await API.post("/api/settings/deploy-signal", { port });
     if (res.success) {
       const msgKey = res.action === "already_running" ? "signal_already_running" : "signal_deployed";
       statusEl.textContent = t(msgKey);
       statusEl.className = "signal-status ok";
-      // Auto-check connection after deploy
-      setTimeout(signalCheck, 1500);
+      setTimeout(signalCheck, 2000);
     } else {
-      const msg = (res.message || "").toLowerCase().includes("docker")
-        ? t("signal_docker_missing") : res.message;
-      statusEl.textContent = msg;
+      statusEl.textContent = res.message || t("settings_error");
       statusEl.className = "signal-status error";
     }
   } catch {
     statusEl.textContent = t("settings_error");
     statusEl.className = "signal-status error";
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = t("signal_btn_deploy"); }
   }
 }
 

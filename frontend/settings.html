@@ -11,7 +11,7 @@
   <link rel="apple-touch-icon" href="/static/icons/icon-192.svg">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link rel="stylesheet" href="/static/css/style.css?v=32">
+  <link rel="stylesheet" href="/static/css/style.css?v=33">
   <script>
     (function() {
       var t = localStorage.getItem('dm_theme');
@@ -268,10 +268,26 @@
           </div>
           <div class="key-actions" style="flex-wrap:wrap">
             <button class="btn" onclick="signalCheck()" data-i18n="signal_btn_check">Check connection</button>
-            <button class="btn" onclick="signalDeploy()" data-i18n="signal_btn_deploy">Deploy on this server</button>
+            <button id="signal-btn-deploy" class="btn" onclick="signalDeploy()" data-i18n="signal_btn_deploy">Deploy on this server</button>
             <span id="signal-status" class="signal-status"></span>
           </div>
-          <p class="form-hint" style="margin-top:6px" data-i18n="signal_deploy_hint">Requires Docker. Runs signal-cli-rest-api on this machine.</p>
+          <!-- Local deploy hint -->
+          <p id="signal-deploy-hint" class="form-hint" style="margin-top:6px" data-i18n="signal_deploy_hint">Installs Java + signal-cli + systemd service on this machine.</p>
+          <!-- Remote machine hint (shown when host != localhost) -->
+          <div id="signal-remote-install" class="hidden" style="margin-top:10px">
+            <p class="form-hint" style="margin-bottom:8px">
+              <span data-i18n="signal_remote_intro">Auto-install only works locally. To install on</span>
+              <strong id="signal-remote-host" style="color:var(--text);font-family:var(--font-mono)">...</strong>,
+              <span data-i18n="signal_remote_intro2">SSH into that machine and run:</span>
+            </p>
+            <div class="signal-copy-cmd">
+              <code id="signal-cmd-remote" style="white-space:pre-wrap"></code>
+              <button class="btn btn-sm btn-icon" onclick="signalCopyCmd('signal-cmd-remote')" title="Copy" style="align-self:flex-start;flex-shrink:0">
+                <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+              </button>
+            </div>
+          </div>
+          <!-- Registration guide -->
           <details class="signal-register" style="margin-top:16px">
             <summary style="cursor:pointer;display:inline-flex;align-items:center;gap:6px;list-style:none;color:var(--text-2);font-size:13px">
               <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
@@ -507,10 +523,10 @@ function pwaInstall(){if(pwaDeferred){pwaDeferred.prompt();pwaDeferred.userChoic
 </script>
 
 <script src="/static/js/theme.js?v=28"></script>
-<script src="/static/js/i18n.js?v=32"></script>
+<script src="/static/js/i18n.js?v=33"></script>
 <script src="/static/js/api.js?v=30"></script>
 <script src="/static/js/filebrowser.js?v=28"></script>
-<script src="/static/js/settings.js?v=32"></script>
+<script src="/static/js/settings.js?v=33"></script>
 <script src="/static/js/account.js?v=28"></script>
 <script>if("serviceWorker"in navigator)navigator.serviceWorker.register("/sw.js").catch(()=>{})</script>
 </body>
