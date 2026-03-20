@@ -81,3 +81,17 @@ class SignalCheckRequest(BaseModel):
 
 class SignalDeployRequest(BaseModel):
     port: int
+
+
+class SignalRegisterRequest(BaseModel):
+    host: str
+    port: int
+    number: str
+    captcha: str
+
+
+class SignalVerifyRequest(BaseModel):
+    host: str
+    port: int
+    number: str
+    code: str

@@ -7,7 +7,7 @@ from pathlib import Path
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 
-from models import SettingsUpdate, StoragePathRequest, SignalCheckRequest, SignalDeployRequest
+from models import SettingsUpdate, StoragePathRequest, SignalCheckRequest, SignalDeployRequest, SignalRegisterRequest, SignalVerifyRequest
 from auth import get_current_user, get_password_hash
 from config import get_config, save_config
 from services.alldebrid import alldebrid
@@ -39,6 +39,7 @@ async def get_settings(_=Depends(get_current_user)):
         "webhook_url": wh.get("url", ""),
         "webhook_format": wh.get("format", "generic"),
         "webhook_events": wh.get("events", []),
+        "signal_registered": cfg.get("signal_registered", False),
     }
 
 
@@ -255,6 +256,97 @@ async def deploy_signal(body: SignalDeployRequest, _=Depends(get_current_user)):
 
     except Exception as e:
         return {"success": False, "message": str(e)[:300], "action": None}
+
+
+@router.post("/signal-register")
+async def signal_register(body: SignalRegisterRequest, _=Depends(get_current_user)):
+    import httpx
+    import re
+    host = body.host.strip()
+    port = body.port
+    number = body.number.strip()
+    captcha = body.captcha.strip()
+    if not re.match(r'^[a-zA-Z0-9._-]+$', host) or port < 1 or port > 65535:
+        raise HTTPException(status_code=400, detail="Invalid host or port")
+    if not re.match(r'^\+[0-9]{7,15}$', number):
+        raise HTTPException(status_code=400, detail="Invalid phone number format")
+    number_encoded = number.replace("+", "%2B")
+    try:
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            resp = await client.post(
+                f"http://{host}:{port}/v1/register/{number_encoded}",
+                json={"captcha": captcha},
+                headers={"Content-Type": "application/json"},
+            )
+            if resp.status_code in (200, 201, 204):
+                return {"success": True, "message": "Registration request sent — check your SMS"}
+            else:
+                try:
+                    detail = resp.json()
+                    msg = detail.get("error", str(detail))[:200]
+                except Exception:
+                    msg = resp.text[:200]
+                return {"success": False, "message": f"HTTP {resp.status_code}: {msg}"}
+    except Exception as e:
+        return {"success": False, "message": str(e)[:200]}
+
+
+@router.post("/signal-verify")
+async def signal_verify(body: SignalVerifyRequest, _=Depends(get_current_user)):
+    import httpx
+    import re
+    host = body.host.strip()
+    port = body.port
+    number = body.number.strip()
+    code = body.code.strip()
+    if not re.match(r'^[a-zA-Z0-9._-]+$', host) or port < 1 or port > 65535:
+        raise HTTPException(status_code=400, detail="Invalid host or port")
+    if not re.match(r'^\+[0-9]{7,15}$', number):
+        raise HTTPException(status_code=400, detail="Invalid phone number format")
+    if not re.match(r'^[0-9]{3,8}$', code):
+        raise HTTPException(status_code=400, detail="Invalid verification code")
+    number_encoded = number.replace("+", "%2B")
+    try:
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            resp = await client.post(
+                f"http://{host}:{port}/v1/register/{number_encoded}/verify/{code}",
+            )
+            if resp.status_code in (200, 201, 204):
+                # Store registration status in config
+                cfg = get_config()
+                cfg["signal_registered"] = True
+                save_config(cfg)
+                return {"success": True, "message": "Number verified and registered"}
+            else:
+                try:
+                    detail = resp.json()
+                    msg = detail.get("error", str(detail))[:200]
+                except Exception:
+                    msg = resp.text[:200]
+                return {"success": False, "message": f"HTTP {resp.status_code}: {msg}"}
+    except Exception as e:
+        return {"success": False, "message": str(e)[:200]}
+
+
+@router.post("/signal-reset")
+async def signal_reset(_=Depends(get_current_user)):
+    cfg = get_config()
+    # Clear signal_registered flag
+    cfg.pop("signal_registered", None)
+    # Clear webhook config if it's currently set to signal
+    wh = cfg.get("webhooks", {})
+    if wh.get("format") == "signal":
+        wh["url"] = ""
+        wh["format"] = "generic"
+        wh["enabled"] = False
+    save_config(cfg)
+    # Attempt to stop and remove Docker container (best effort)
+    try:
+        subprocess.run(["docker", "stop", "signal-cli-rest-api"], capture_output=True, timeout=15)
+        subprocess.run(["docker", "rm", "signal-cli-rest-api"], capture_output=True, timeout=10)
+    except Exception:
+        pass
+    return {"success": True, "message": "Signal configuration reset"}
 
 
 @router.get("/storage")

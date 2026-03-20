@@ -11,7 +11,7 @@
   <link rel="apple-touch-icon" href="/static/icons/icon-192.svg">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link rel="stylesheet" href="/static/css/style.css?v=33">
+  <link rel="stylesheet" href="/static/css/style.css?v=34">
   <script>
     (function() {
       var t = localStorage.getItem('dm_theme');
@@ -271,6 +271,11 @@
             <button id="signal-btn-deploy" class="btn" onclick="signalDeploy()" data-i18n="signal_btn_deploy">Deploy on this server</button>
             <span id="signal-status" class="signal-status"></span>
           </div>
+          <!-- Persistent registered badge -->
+          <div id="signal-reg-status" class="hidden" style="margin-top:8px">
+            <span class="signal-status ok" data-i18n="signal_registered">Number registered</span>
+            <button class="btn btn-sm" style="margin-left:10px;color:var(--danger)" onclick="signalReset()" data-i18n="signal_btn_reset">Reset Signal</button>
+          </div>
           <!-- Local deploy hint -->
           <p id="signal-deploy-hint" class="form-hint" style="margin-top:6px" data-i18n="signal_deploy_hint">Installs Java + signal-cli + systemd service on this machine.</p>
           <!-- Remote machine hint (shown when host != localhost) -->
@@ -293,28 +298,65 @@
               <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
               <span data-i18n="signal_register_title">Register your Signal number</span>
             </summary>
-            <div style="margin-top:12px;display:flex;flex-direction:column;gap:10px">
-              <p class="form-hint" style="margin-bottom:0" data-i18n="signal_register_step1">1. Check the service is up:</p>
-              <div class="signal-copy-cmd">
-                <code id="signal-cmd-about">curl http://localhost:8080/v1/about</code>
-                <button class="btn btn-sm btn-icon" onclick="signalCopyCmd('signal-cmd-about')" title="Copy">
-                  <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
-                </button>
+            <div style="margin-top:14px;display:flex;flex-direction:column;gap:16px">
+
+              <!-- Step 1 -->
+              <div class="signal-step">
+                <p class="signal-step-label"><span class="signal-step-num">1</span><span data-i18n="signal_register_step1">Check the service is up:</span></p>
+                <div class="signal-copy-cmd">
+                  <code id="signal-cmd-about">curl http://localhost:8080/v1/about</code>
+                  <button class="btn btn-sm btn-icon" onclick="signalCopyCmd('signal-cmd-about')" title="Copy">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+                  </button>
+                </div>
               </div>
-              <p class="form-hint" style="margin-bottom:0" data-i18n="signal_register_step2">2. Register your number:</p>
-              <div class="signal-copy-cmd">
-                <code id="signal-cmd-register">curl -X POST http://localhost:8080/v1/register -H 'Content-Type: application/json' -d '{"number": "+33..."}'</code>
-                <button class="btn btn-sm btn-icon" onclick="signalCopyCmd('signal-cmd-register')" title="Copy">
-                  <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
-                </button>
+
+              <!-- Step 2: captcha -->
+              <div class="signal-step">
+                <p class="signal-step-label"><span class="signal-step-num">2</span><span data-i18n="signal_register_step2">Get a captcha token:</span></p>
+                <a href="https://signalcaptchas.org/registration/generate.html" target="_blank" class="btn btn-sm" style="margin-bottom:8px;display:inline-flex;gap:6px">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+                  <span data-i18n="signal_captcha_open">Open captcha page</span>
+                </a>
+                <p class="form-hint" style="margin-bottom:6px" data-i18n="signal_captcha_hint">Solve the captcha → right-click "Open Signal" → copy the link → paste here:</p>
+                <input type="text" id="signal-captcha-input" class="form-input" placeholder="signalcaptcha://signal-hcaptcha..." oninput="signalUpdateRegisterCmds()" autocomplete="off" style="font-size:12px;font-family:var(--font-mono)">
               </div>
-              <p class="form-hint" style="margin-bottom:0" data-i18n="signal_register_step3">3. Confirm the SMS code:</p>
-              <div class="signal-copy-cmd">
-                <code id="signal-cmd-verify">curl -X POST http://localhost:8080/v1/verify/+33... -d '{"token": "123456"}'</code>
-                <button class="btn btn-sm btn-icon" onclick="signalCopyCmd('signal-cmd-verify')" title="Copy">
-                  <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
-                </button>
+
+              <!-- Step 3: register -->
+              <div class="signal-step">
+                <p class="signal-step-label"><span class="signal-step-num">3</span><span data-i18n="signal_register_step3">Run on the server — you will receive an SMS:</span></p>
+                <div class="signal-copy-cmd">
+                  <code id="signal-cmd-register" style="white-space:pre-wrap">curl -X POST "http://localhost:8080/v1/register/%2B33..." \
+  -H 'Content-Type: application/json' \
+  -d '{"captcha": "signalcaptcha://..."}'</code>
+                  <div style="display:flex;flex-direction:column;gap:4px;align-self:flex-start;flex-shrink:0">
+                    <button id="signal-btn-register" class="btn btn-sm btn-primary" onclick="signalRegister()" data-i18n="signal_btn_run">Run</button>
+                    <button class="btn btn-sm btn-icon" onclick="signalCopyCmd('signal-cmd-register')" title="Copy">
+                      <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+                    </button>
+                  </div>
+                </div>
+                <span id="signal-register-status" class="signal-status" style="margin-top:6px;display:none"></span>
               </div>
+
+              <!-- Step 4: verify -->
+              <div class="signal-step">
+                <p class="signal-step-label"><span class="signal-step-num">4</span><span data-i18n="signal_register_step4">Enter the SMS code you received:</span></p>
+                <input type="text" id="signal-sms-code" class="form-input" placeholder="123456" maxlength="7" inputmode="numeric"
+                       oninput="signalUpdateRegisterCmds()" autocomplete="one-time-code"
+                       style="max-width:140px;margin-bottom:8px;font-family:var(--font-mono);letter-spacing:4px;font-size:16px;text-align:center">
+                <div class="signal-copy-cmd">
+                  <code id="signal-cmd-verify">curl -X POST "http://localhost:8080/v1/register/%2B33.../verify/123456"</code>
+                  <div style="display:flex;flex-direction:column;gap:4px;align-self:flex-start;flex-shrink:0">
+                    <button id="signal-btn-verify" class="btn btn-sm btn-primary" onclick="signalVerify()" data-i18n="signal_btn_run">Run</button>
+                    <button class="btn btn-sm btn-icon" onclick="signalCopyCmd('signal-cmd-verify')" title="Copy">
+                      <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+                    </button>
+                  </div>
+                </div>
+                <span id="signal-verify-status" class="signal-status" style="margin-top:6px;display:none"></span>
+              </div>
+
             </div>
           </details>
         </div>

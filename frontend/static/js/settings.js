@@ -204,10 +204,8 @@ function signalBuildUrl() {
   const fromNum = from || "+33...";
   const el1 = document.getElementById("signal-cmd-about");
   if (el1) el1.textContent = `curl http://${host}:${port}/v1/about`;
-  const el2 = document.getElementById("signal-cmd-register");
-  if (el2) el2.textContent = `curl -X POST http://${host}:${port}/v1/register -H 'Content-Type: application/json' -d '{"number": "${fromNum}"}'`;
-  const el3 = document.getElementById("signal-cmd-verify");
-  if (el3) el3.textContent = `curl -X POST http://${host}:${port}/v1/verify/${fromNum} -d '{"token": "123456"}'`;
+  // Update register commands with live captcha/sms fields
+  signalUpdateRegisterCmds();
 
   // Show/hide deploy button vs remote install instructions
   const isLocal = !host || host === "localhost" || host === "127.0.0.1" || host === "::1";
@@ -237,6 +235,26 @@ function signalBuildUrl() {
       `  bbernhard/signal-cli-rest-api`,
     ].join("\n");
   }
+}
+
+function signalUpdateRegisterCmds() {
+  const host    = (document.getElementById("signal-host")?.value.trim()) || "localhost";
+  const port    = (document.getElementById("signal-port")?.value.trim()) || "8080";
+  const from    = (document.getElementById("signal-from")?.value.trim()) || "";
+  const captcha = (document.getElementById("signal-captcha-input")?.value.trim()) || "signalcaptcha://...";
+  const sms     = (document.getElementById("signal-sms-code")?.value.trim()) || "123456";
+
+  const fromEncoded = from ? encodeURIComponent(from) : "%2B33...";
+
+  const el2 = document.getElementById("signal-cmd-register");
+  if (el2) el2.textContent =
+    `curl -X POST "http://${host}:${port}/v1/register/${fromEncoded}" \\\n` +
+    `  -H 'Content-Type: application/json' \\\n` +
+    `  -d '{"captcha": "${captcha}"}'`;
+
+  const el3 = document.getElementById("signal-cmd-verify");
+  if (el3) el3.textContent =
+    `curl -X POST "http://${host}:${port}/v1/register/${fromEncoded}/verify/${sms}"`;
 }
 
 function signalCopyCmd(id) {
@@ -292,6 +310,93 @@ async function signalDeploy() {
     statusEl.className = "signal-status error";
   } finally {
     if (btn) { btn.disabled = false; btn.textContent = t("signal_btn_deploy"); }
+  }
+}
+
+async function signalRegister() {
+  const host    = document.getElementById("signal-host").value.trim() || "localhost";
+  const port    = parseInt(document.getElementById("signal-port").value.trim()) || 8080;
+  const number  = document.getElementById("signal-from").value.trim();
+  const captcha = document.getElementById("signal-captcha-input").value.trim();
+  const statusEl = document.getElementById("signal-register-status");
+  const btn = document.getElementById("signal-btn-register");
+  if (!number) { showToast(t("signal_err_number"), "error"); return; }
+  if (!captcha) { showToast(t("signal_err_captcha"), "error"); return; }
+  statusEl.textContent = t("signal_register_running");
+  statusEl.className = "signal-status checking";
+  statusEl.style.display = "inline-flex";
+  if (btn) btn.disabled = true;
+  try {
+    const res = await API.post("/api/settings/signal-register", { host, port, number, captcha });
+    if (res.success) {
+      statusEl.textContent = res.message || t("signal_sms_sent");
+      statusEl.className = "signal-status ok";
+    } else {
+      statusEl.textContent = res.message || t("settings_error");
+      statusEl.className = "signal-status error";
+    }
+  } catch(e) {
+    statusEl.textContent = t("settings_error");
+    statusEl.className = "signal-status error";
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+}
+
+async function signalVerify() {
+  const host   = document.getElementById("signal-host").value.trim() || "localhost";
+  const port   = parseInt(document.getElementById("signal-port").value.trim()) || 8080;
+  const number = document.getElementById("signal-from").value.trim();
+  const code   = document.getElementById("signal-sms-code").value.trim();
+  const statusEl = document.getElementById("signal-verify-status");
+  const btn = document.getElementById("signal-btn-verify");
+  if (!number) { showToast(t("signal_err_number"), "error"); return; }
+  if (!code)   { showToast(t("signal_err_code"), "error"); return; }
+  statusEl.textContent = t("signal_verify_running");
+  statusEl.className = "signal-status checking";
+  statusEl.style.display = "inline-flex";
+  if (btn) btn.disabled = true;
+  try {
+    const res = await API.post("/api/settings/signal-verify", { host, port, number, code });
+    if (res.success) {
+      statusEl.textContent = res.message || t("signal_verified");
+      statusEl.className = "signal-status ok";
+      // Show persistent registration badge
+      const badge = document.getElementById("signal-reg-status");
+      if (badge) badge.classList.remove("hidden");
+    } else {
+      statusEl.textContent = res.message || t("settings_error");
+      statusEl.className = "signal-status error";
+    }
+  } catch(e) {
+    statusEl.textContent = t("settings_error");
+    statusEl.className = "signal-status error";
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+}
+
+async function signalReset() {
+  if (!confirm(t("signal_reset_confirm"))) return;
+  try {
+    const res = await API.post("/api/settings/signal-reset", {});
+    if (res.success) {
+      showToast(t("signal_reset_done"), "ok");
+      // Clear fields and hide badge
+      document.getElementById("signal-host").value = "";
+      document.getElementById("signal-port").value = "8080";
+      document.getElementById("signal-from").value = "";
+      document.getElementById("signal-to").value = "";
+      document.getElementById("webhook-url").value = "";
+      document.getElementById("webhook-format").value = "generic";
+      const badge = document.getElementById("signal-reg-status");
+      if (badge) badge.classList.add("hidden");
+      updateWebhookPreset();
+    } else {
+      showToast(res.message || t("settings_error"), "error");
+    }
+  } catch {
+    showToast(t("settings_error"), "error");
   }
 }
 
@@ -670,6 +775,12 @@ async function bootSettings() {
       document.getElementById("wh-evt-package").checked = cfg.webhook_events.includes("package_complete");
     }
     toggleWebhookFields();
+    // Show registered badge if Signal number is already registered
+    const regBadge = document.getElementById("signal-reg-status");
+    if (regBadge) {
+      if (cfg.signal_registered) regBadge.classList.remove("hidden");
+      else regBadge.classList.add("hidden");
+    }
 
     document.getElementById("simultaneous-input").value = cfg.simultaneous_downloads || 3;
     document.getElementById("segments-input").value = cfg.download_segments || 1;
