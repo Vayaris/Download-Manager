@@ -248,6 +248,7 @@ async def deploy_signal(body: SignalDeployRequest, _=Depends(get_current_user)):
             run = subprocess.run(
                 ["docker", "run", "-d", "--name", "signal-cli-rest-api",
                  "--restart", "unless-stopped",
+                 "--security-opt", "apparmor=unconfined",
                  "-p", f"{port}:8080",
                  "-v", "/opt/signal:/home/.local/share/signal-cli",
                  "bbernhard/signal-cli-rest-api"],
