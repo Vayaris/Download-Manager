@@ -178,128 +178,80 @@ async def check_signal(body: SignalCheckRequest, _=Depends(get_current_user)):
 
 @router.post("/deploy-signal")
 async def deploy_signal(body: SignalDeployRequest, _=Depends(get_current_user)):
-    import httpx
-    import platform
-    import glob as _glob
-
     port = body.port
     if port < 1 or port > 65535:
         raise HTTPException(status_code=400, detail="Invalid port")
 
-    # Check if service is already running
     try:
-        svc = subprocess.run(
-            ["systemctl", "is-active", "signal-cli-rest-api"],
-            capture_output=True, text=True, timeout=5
-        )
-        if svc.stdout.strip() == "active":
-            return {"success": True, "message": "Service already running", "action": "already_running"}
-    except Exception:
-        pass
-
-    # Detect CPU architecture
-    arch_map = {"x86_64": "amd64", "aarch64": "arm64"}
-    api_arch = arch_map.get(platform.machine())
-    if not api_arch:
-        return {"success": False,
-                "message": f"Unsupported architecture: {platform.machine()}",
-                "action": None}
-
-    try:
-        # Fetch latest release tags from GitHub
-        async with httpx.AsyncClient(timeout=15.0) as client:
-            r1 = await client.get(
-                "https://api.github.com/repos/AsamK/signal-cli/releases/latest",
-                headers={"Accept": "application/vnd.github+json"},
+        # ── Check if container is already running ─────────────────────────
+        try:
+            ps = subprocess.run(
+                ["docker", "ps", "--filter", "name=signal-cli-rest-api",
+                 "--filter", "status=running", "--format", "{{.Names}}"],
+                capture_output=True, text=True, timeout=10,
             )
-            signal_cli_tag = r1.json()["tag_name"]           # e.g. "v0.13.4"
-            signal_cli_ver = signal_cli_tag.lstrip("v")
+            if "signal-cli-rest-api" in ps.stdout:
+                return {"success": True, "message": "Container already running", "action": "already_running"}
+        except FileNotFoundError:
+            pass  # Docker not installed yet — will install below
 
-            r2 = await client.get(
-                "https://api.github.com/repos/bbernhard/signal-cli-rest-api/releases/latest",
-                headers={"Accept": "application/vnd.github+json"},
+        # ── Install Docker Engine if missing ──────────────────────────────
+        docker_missing = False
+        try:
+            subprocess.run(["docker", "--version"], capture_output=True, timeout=5, check=True)
+        except (FileNotFoundError, subprocess.CalledProcessError):
+            docker_missing = True
+
+        if docker_missing:
+            apt = subprocess.run(
+                ["apt-get", "install", "-y", "--no-install-recommends", "docker.io"],
+                capture_output=True, text=True, timeout=300,
+                env={**os.environ, "DEBIAN_FRONTEND": "noninteractive"},
             )
-            api_tag = r2.json()["tag_name"]                  # e.g. "0.97"
+            if apt.returncode != 0:
+                return {"success": False,
+                        "message": f"Docker install failed: {apt.stderr[:200]}",
+                        "action": None}
+            # Start Docker daemon
+            subprocess.run(["systemctl", "start", "docker"], capture_output=True, timeout=30)
 
-        # ── Step 1 : Java (required by signal-cli) ───────────────────────
-        apt = subprocess.run(
-            ["apt-get", "install", "-y", "--no-install-recommends", "default-jre"],
-            capture_output=True, text=True, timeout=300,
-            env={**os.environ, "DEBIAN_FRONTEND": "noninteractive"},
-        )
-        if apt.returncode != 0:
-            return {"success": False,
-                    "message": f"Java install failed: {apt.stderr[:200]}",
-                    "action": None}
-
-        # ── Step 2 : signal-cli ───────────────────────────────────────────
-        if not Path("/usr/local/bin/signal-cli").exists():
-            sc_url = (f"https://github.com/AsamK/signal-cli/releases/download/"
-                      f"{signal_cli_tag}/signal-cli-{signal_cli_ver}.tar.gz")
-            async with httpx.AsyncClient(timeout=300, follow_redirects=True) as client:
-                async with client.stream("GET", sc_url) as r:
-                    r.raise_for_status()
-                    with open("/tmp/signal-cli.tar.gz", "wb") as f:
-                        async for chunk in r.aiter_bytes(8192):
-                            f.write(chunk)
-            subprocess.run(
-                ["tar", "-xf", "/tmp/signal-cli.tar.gz", "-C", "/opt"],
-                capture_output=True, timeout=60,
-            )
-            dirs = sorted(_glob.glob("/opt/signal-cli-*"))
-            if not dirs:
-                return {"success": False, "message": "signal-cli extraction failed", "action": None}
-            subprocess.run(
-                ["ln", "-sf", f"{dirs[-1]}/bin/signal-cli", "/usr/local/bin/signal-cli"],
-                capture_output=True,
-            )
-
-        # ── Step 3 : signal-cli-rest-api binary ──────────────────────────
-        api_url = (f"https://github.com/bbernhard/signal-cli-rest-api/releases/download/"
-                   f"{api_tag}/signal-cli-rest-api-{api_arch}")
-        async with httpx.AsyncClient(timeout=300, follow_redirects=True) as client:
-            async with client.stream("GET", api_url) as r:
-                r.raise_for_status()
-                with open("/usr/local/bin/signal-cli-rest-api", "wb") as f:
-                    async for chunk in r.aiter_bytes(8192):
-                        f.write(chunk)
-        subprocess.run(["chmod", "+x", "/usr/local/bin/signal-cli-rest-api"], capture_output=True)
-
-        # ── Step 4 : data directory ───────────────────────────────────────
+        # ── Create data directory ─────────────────────────────────────────
         Path("/opt/signal").mkdir(parents=True, exist_ok=True)
 
-        # ── Step 5 : systemd service ──────────────────────────────────────
-        service = (
-            "[Unit]\n"
-            "Description=signal-cli REST API\n"
-            "After=network.target\n\n"
-            "[Service]\n"
-            "Type=simple\n"
-            f"ExecStart=/usr/local/bin/signal-cli-rest-api -p {port}\n"
-            "Environment=PATH=/usr/local/bin:/usr/bin:/bin\n"
-            "Environment=SIGNAL_CLI_CONFIG_DIR=/opt/signal\n"
-            "WorkingDirectory=/opt/signal\n"
-            "Restart=on-failure\n"
-            "RestartSec=10\n\n"
-            "[Install]\n"
-            "WantedBy=multi-user.target\n"
+        # ── Check if container exists (stopped) ───────────────────────────
+        ps_all = subprocess.run(
+            ["docker", "ps", "-a", "--filter", "name=signal-cli-rest-api",
+             "--format", "{{.Status}}"],
+            capture_output=True, text=True, timeout=10,
         )
-        Path("/etc/systemd/system/signal-cli-rest-api.service").write_text(service)
+        status_out = ps_all.stdout.strip()
 
-        subprocess.run(["systemctl", "daemon-reload"], capture_output=True, timeout=10)
-        subprocess.run(["systemctl", "enable", "signal-cli-rest-api"], capture_output=True, timeout=10)
-        start = subprocess.run(
-            ["systemctl", "start", "signal-cli-rest-api"],
-            capture_output=True, text=True, timeout=30,
-        )
-        if start.returncode != 0:
-            return {"success": False,
-                    "message": f"Service start failed: {start.stderr[:200]}",
-                    "action": None}
+        if not status_out:
+            # Create and start container
+            run = subprocess.run(
+                ["docker", "run", "-d", "--name", "signal-cli-rest-api",
+                 "--restart", "unless-stopped",
+                 "-p", f"{port}:8080",
+                 "-v", "/opt/signal:/home/.local/share/signal-cli",
+                 "bbernhard/signal-cli-rest-api"],
+                capture_output=True, text=True, timeout=300,
+            )
+            if run.returncode != 0:
+                return {"success": False, "message": run.stderr.strip()[:200], "action": None}
+            return {"success": True, "message": "Container created and started", "action": "created"}
 
-        return {"success": True,
-                "message": f"signal-cli-rest-api {api_tag} installed and started",
-                "action": "created"}
+        elif status_out.lower().startswith("up"):
+            return {"success": True, "message": "Container already running", "action": "already_running"}
+
+        else:
+            # Container exists but stopped — restart it
+            start = subprocess.run(
+                ["docker", "start", "signal-cli-rest-api"],
+                capture_output=True, text=True, timeout=30,
+            )
+            if start.returncode != 0:
+                return {"success": False, "message": start.stderr.strip()[:200], "action": None}
+            return {"success": True, "message": "Container started", "action": "started"}
 
     except Exception as e:
         return {"success": False, "message": str(e)[:300], "action": None}
