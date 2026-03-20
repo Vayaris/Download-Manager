@@ -183,11 +183,14 @@ async def deploy_signal(body: SignalDeployRequest, _=Depends(get_current_user)):
         raise HTTPException(status_code=400, detail="Invalid port")
 
     # Check Docker availability
-    docker_check = subprocess.run(
-        ["docker", "--version"],
-        capture_output=True, timeout=5
-    )
-    if docker_check.returncode != 0:
+    try:
+        docker_check = subprocess.run(
+            ["docker", "--version"],
+            capture_output=True, timeout=5
+        )
+        if docker_check.returncode != 0:
+            return {"success": False, "message": "Docker not found on this server", "action": None}
+    except FileNotFoundError:
         return {"success": False, "message": "Docker not found on this server", "action": None}
 
     # Check if container already exists
