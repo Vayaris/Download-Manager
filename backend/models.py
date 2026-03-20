@@ -72,3 +72,12 @@ class MagnetUploadRequest(BaseModel):
 
 class StoragePathRequest(BaseModel):
     path: str
+
+
+class SignalCheckRequest(BaseModel):
+    host: str
+    port: int
+
+
+class SignalDeployRequest(BaseModel):
+    port: int

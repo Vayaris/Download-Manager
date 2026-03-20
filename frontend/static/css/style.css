@@ -1723,3 +1723,43 @@ select.form-input {
 .btn-danger:hover {
   background: var(--error, #e05); color: #fff;
 }
+
+/* ---- Signal wizard ---- */
+.signal-config {
+  display: flex; flex-direction: column; gap: 0;
+  border: 1px solid var(--border); border-radius: var(--radius);
+  padding: 14px 16px; margin-bottom: 12px;
+  background: var(--surface);
+}
+.signal-status {
+  display: inline-flex; align-items: center; gap: 6px;
+  font-size: 12px; font-weight: 500; padding: 3px 10px;
+  border-radius: var(--radius-full); border: 1px solid transparent;
+}
+.signal-status:empty { display: none; }
+.signal-status.ok {
+  color: var(--green, #22c55e); background: hsla(142,70%,45%,.1);
+  border-color: hsla(142,70%,45%,.25);
+}
+.signal-status.error {
+  color: var(--red, #ef4444); background: hsla(0,84%,60%,.1);
+  border-color: hsla(0,84%,60%,.25);
+}
+.signal-status.checking {
+  color: var(--text-3); background: var(--surface-2);
+  border-color: var(--border);
+}
+.signal-register {
+  border: 1px solid var(--border); border-radius: var(--radius-sm);
+  padding: 10px 12px; background: var(--surface-2);
+}
+.signal-register summary { user-select: none; }
+.signal-copy-cmd {
+  display: flex; align-items: center; gap: 8px;
+  background: var(--surface-3); border-radius: var(--radius-sm);
+  padding: 7px 10px; overflow-x: auto;
+}
+.signal-copy-cmd code {
+  flex: 1; font-family: var(--font-mono); font-size: 11px;
+  color: var(--text-2); white-space: nowrap;
+}

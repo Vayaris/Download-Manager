@@ -7,7 +7,7 @@ from pathlib import Path
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 
-from models import SettingsUpdate, StoragePathRequest
+from models import SettingsUpdate, StoragePathRequest, SignalCheckRequest, SignalDeployRequest
 from auth import get_current_user, get_password_hash
 from config import get_config, save_config
 from services.alldebrid import alldebrid
@@ -79,16 +79,18 @@ async def update_settings(body: SettingsUpdate, _=Depends(get_current_user)):
             parsed = urlparse(body.webhook_url)
             if parsed.scheme not in ("http", "https"):
                 raise HTTPException(status_code=400, detail="Webhook URL must use http or https")
-            # Block private/reserved IPs (SSRF protection)
-            host = parsed.hostname or ""
-            try:
-                infos = socket.getaddrinfo(host, None)
-                for info in infos:
-                    addr = ipaddress.ip_address(info[4][0])
-                    if addr.is_private or addr.is_reserved or addr.is_loopback or addr.is_link_local:
-                        raise HTTPException(status_code=400, detail="Webhook URL cannot target a private or local address")
-            except socket.gaierror:
-                pass  # DNS resolution failed, allow (will fail on actual webhook call anyway)
+            # Signal intentionally targets a local service — skip SSRF check for that format
+            if body.webhook_format != "signal":
+                # Block private/reserved IPs (SSRF protection)
+                host = parsed.hostname or ""
+                try:
+                    infos = socket.getaddrinfo(host, None)
+                    for info in infos:
+                        addr = ipaddress.ip_address(info[4][0])
+                        if addr.is_private or addr.is_reserved or addr.is_loopback or addr.is_link_local:
+                            raise HTTPException(status_code=400, detail="Webhook URL cannot target a private or local address")
+                except socket.gaierror:
+                    pass  # DNS resolution failed, allow (will fail on actual webhook call anyway)
         cfg["webhooks"]["url"] = body.webhook_url
     if body.webhook_format is not None:
         cfg["webhooks"]["format"] = body.webhook_format
@@ -148,6 +150,77 @@ async def test_webhook(_=Depends(get_current_user)):
                 return {"success": False, "message": f"HTTP error {resp.status_code}"}
     except Exception as e:
         return {"success": False, "message": str(e)[:200]}
+
+
+@router.post("/check-signal")
+async def check_signal(body: SignalCheckRequest, _=Depends(get_current_user)):
+    import httpx
+    import re
+    host = body.host.strip()
+    port = body.port
+    if not host or port < 1 or port > 65535:
+        return {"running": False, "version": "", "message": "Invalid host or port"}
+    if not re.match(r'^[a-zA-Z0-9._-]+$', host):
+        return {"running": False, "version": "", "message": "Invalid host"}
+    try:
+        async with httpx.AsyncClient(timeout=3.0) as client:
+            resp = await client.get(f"http://{host}:{port}/v1/about")
+            if resp.status_code == 200:
+                data = resp.json()
+                versions = data.get("versions", {})
+                version = versions.get("signal-cli", "") if isinstance(versions, dict) else ""
+                return {"running": True, "version": version, "message": "Service is running"}
+            else:
+                return {"running": False, "version": "", "message": f"HTTP {resp.status_code}"}
+    except Exception as e:
+        return {"running": False, "version": "", "message": str(e)[:100]}
+
+
+@router.post("/deploy-signal")
+async def deploy_signal(body: SignalDeployRequest, _=Depends(get_current_user)):
+    port = body.port
+    if port < 1 or port > 65535:
+        raise HTTPException(status_code=400, detail="Invalid port")
+
+    # Check Docker availability
+    docker_check = subprocess.run(
+        ["docker", "--version"],
+        capture_output=True, timeout=5
+    )
+    if docker_check.returncode != 0:
+        return {"success": False, "message": "Docker not found on this server", "action": None}
+
+    # Check if container already exists
+    status_check = subprocess.run(
+        ["docker", "ps", "-a", "--filter", "name=signal-cli-rest-api",
+         "--format", "{{.Status}}"],
+        capture_output=True, text=True, timeout=10
+    )
+    status_output = status_check.stdout.strip()
+
+    if not status_output:
+        # Container doesn't exist — create and start it
+        result = subprocess.run(
+            ["docker", "run", "-d", "--name", "signal-cli-rest-api",
+             "-p", f"{port}:8080",
+             "-v", "/opt/signal:/home/.local/share/signal-cli",
+             "bbernhard/signal-cli-rest-api"],
+            capture_output=True, text=True, timeout=120
+        )
+        if result.returncode != 0:
+            return {"success": False, "message": result.stderr.strip()[:200], "action": None}
+        return {"success": True, "message": "Container created and started", "action": "created"}
+    elif status_output.lower().startswith("up"):
+        return {"success": True, "message": "Container is already running", "action": "already_running"}
+    else:
+        # Container exists but stopped
+        result = subprocess.run(
+            ["docker", "start", "signal-cli-rest-api"],
+            capture_output=True, text=True, timeout=30
+        )
+        if result.returncode != 0:
+            return {"success": False, "message": result.stderr.strip()[:200], "action": None}
+        return {"success": True, "message": "Container started", "action": "started"}
 
 
 @router.get("/storage")

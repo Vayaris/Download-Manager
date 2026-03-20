@@ -143,6 +143,35 @@ function updateWebhookPreset() {
   const preset = WEBHOOK_PRESETS[format];
   const urlInput = document.getElementById("webhook-url");
   const infoDiv = document.getElementById("webhook-preset-info");
+  const urlGroup = document.getElementById("webhook-url-group");
+  const signalConfig = document.getElementById("signal-config");
+
+  if (format === "signal") {
+    urlGroup.classList.add("hidden");
+    signalConfig.classList.remove("hidden");
+    // Parse existing URL to prefill fields (if already configured)
+    const existing = urlInput.value;
+    if (existing && existing.includes("/v2/send")) {
+      try {
+        const u = new URL(existing);
+        document.getElementById("signal-host").value = u.hostname || "localhost";
+        document.getElementById("signal-port").value = u.port || "8080";
+        document.getElementById("signal-from").value = decodeURIComponent(u.searchParams.get("from") || "");
+        document.getElementById("signal-to").value = decodeURIComponent(u.searchParams.get("to") || "");
+      } catch {}
+    } else {
+      if (!document.getElementById("signal-host").value)
+        document.getElementById("signal-host").value = "localhost";
+      if (!document.getElementById("signal-port").value)
+        document.getElementById("signal-port").value = "8080";
+    }
+    signalBuildUrl();
+    infoDiv.classList.add("hidden");
+    return;
+  }
+
+  urlGroup.classList.remove("hidden");
+  signalConfig.classList.add("hidden");
 
   if (preset && preset.placeholder) {
     urlInput.placeholder = preset.placeholder;
@@ -159,6 +188,81 @@ function updateWebhookPreset() {
       ${preset.badgeKey ? `<span class="preset-badge">${t(preset.badgeKey)}</span>` : ""}
     </div>
     <div class="preset-guide">${t(preset.infoKey)}</div>`;
+}
+
+// ---- Signal helpers ----
+
+function signalBuildUrl() {
+  const host = document.getElementById("signal-host").value.trim() || "localhost";
+  const port = document.getElementById("signal-port").value.trim() || "8080";
+  const from = document.getElementById("signal-from").value.trim();
+  const to   = document.getElementById("signal-to").value.trim();
+  const url  = `http://${host}:${port}/v2/send?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`;
+  document.getElementById("webhook-url").value = url;
+
+  // Update registration guide commands with current host/port/from
+  const fromNum = from || "+33...";
+  const el1 = document.getElementById("signal-cmd-about");
+  if (el1) el1.textContent = `curl http://${host}:${port}/v1/about`;
+  const el2 = document.getElementById("signal-cmd-register");
+  if (el2) el2.textContent = `curl -X POST http://${host}:${port}/v1/register -H 'Content-Type: application/json' -d '{"number": "${fromNum}"}'`;
+  const el3 = document.getElementById("signal-cmd-verify");
+  if (el3) el3.textContent = `curl -X POST http://${host}:${port}/v1/verify/${fromNum} -d '{"token": "123456"}'`;
+}
+
+function signalCopyCmd(id) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  navigator.clipboard.writeText(el.textContent).then(
+    () => showToast(t("copy_ok"), "ok"),
+    () => showToast(t("copy_fail"), "error")
+  );
+}
+
+async function signalCheck() {
+  const host = document.getElementById("signal-host").value.trim() || "localhost";
+  const port = parseInt(document.getElementById("signal-port").value.trim()) || 8080;
+  const statusEl = document.getElementById("signal-status");
+  statusEl.textContent = t("settings_checking");
+  statusEl.className = "signal-status checking";
+  try {
+    const res = await API.post("/api/settings/check-signal", { host, port });
+    if (res.running) {
+      statusEl.textContent = t("signal_running") + (res.version ? ` v${res.version}` : "");
+      statusEl.className = "signal-status ok";
+    } else {
+      statusEl.textContent = t("signal_unreachable");
+      statusEl.className = "signal-status error";
+    }
+  } catch {
+    statusEl.textContent = t("signal_unreachable");
+    statusEl.className = "signal-status error";
+  }
+}
+
+async function signalDeploy() {
+  const port = parseInt(document.getElementById("signal-port").value.trim()) || 8080;
+  const statusEl = document.getElementById("signal-status");
+  statusEl.textContent = t("signal_deploying");
+  statusEl.className = "signal-status checking";
+  try {
+    const res = await API.post("/api/settings/deploy-signal", { port });
+    if (res.success) {
+      const msgKey = res.action === "already_running" ? "signal_already_running" : "signal_deployed";
+      statusEl.textContent = t(msgKey);
+      statusEl.className = "signal-status ok";
+      // Auto-check connection after deploy
+      setTimeout(signalCheck, 1500);
+    } else {
+      const msg = (res.message || "").toLowerCase().includes("docker")
+        ? t("signal_docker_missing") : res.message;
+      statusEl.textContent = msg;
+      statusEl.className = "signal-status error";
+    }
+  } catch {
+    statusEl.textContent = t("settings_error");
+    statusEl.className = "signal-status error";
+  }
 }
 
 // ---- Webhook test ----
@@ -184,6 +288,8 @@ async function saveWebhookSettings() {
   if (document.getElementById("wh-evt-failed").checked) events.push("download_failed");
   if (document.getElementById("wh-evt-package").checked) events.push("package_complete");
 
+  if (document.getElementById("webhook-format").value === "signal") signalBuildUrl();
+
   await API.put("/api/settings/", {
     webhook_enabled: document.getElementById("webhook-enabled").checked,
     webhook_url: document.getElementById("webhook-url").value.trim(),
@@ -204,6 +310,8 @@ async function saveSettings() {
   if (document.getElementById("wh-evt-complete").checked) events.push("download_complete");
   if (document.getElementById("wh-evt-failed").checked) events.push("download_failed");
   if (document.getElementById("wh-evt-package").checked) events.push("package_complete");
+
+  if (document.getElementById("webhook-format").value === "signal") signalBuildUrl();
 
   const payload = {
     alldebrid_api_key: document.getElementById("alldebrid-key").value.trim() || undefined,
