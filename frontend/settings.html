@@ -243,8 +243,27 @@
           <input type="url" id="webhook-url" class="form-input" placeholder="https://discord.com/api/webhooks/..." autocomplete="off">
         </div>
 
+        <div class="form-group">
+          <label class="form-label" data-i18n="settings_webhook_format">Format</label>
+
+          <select id="webhook-format" class="form-input" onchange="updateWebhookPreset()">
+            <option value="signal">Signal</option>
+            <option value="generic" data-i18n="settings_webhook_format_generic">Generic (JSON)</option>
+            <option value="discord">Discord</option>
+            <option value="slack">Slack</option>
+            <option value="telegram">Telegram</option>
+            <option value="gotify">Gotify</option>
+            <option value="ntfy">ntfy</option>
+          </select>
+          <div id="webhook-preset-info" class="preset-info hidden"></div>
+        </div>
+
         <!-- Signal configuration wizard -->
         <div id="signal-config" class="signal-config hidden">
+          <div class="signal-header">
+            <span class="signal-badge-recommended" data-i18n="signal_recommended">Recommandé</span>
+            <span class="signal-badge-e2e" data-i18n="signal_e2e">100% chiffré de bout en bout</span>
+          </div>
           <div style="display:grid;grid-template-columns:1fr 100px;gap:10px">
             <div class="form-group" style="margin-bottom:0">
               <label class="form-label" data-i18n="signal_host">Host / IP</label>
@@ -325,16 +344,16 @@
               <!-- Step 3: register -->
               <div class="signal-step">
                 <p class="signal-step-label"><span class="signal-step-num">3</span><span data-i18n="signal_register_step3">Run on the server — you will receive an SMS:</span></p>
+                <div class="signal-cmd-actions">
+                  <button id="signal-btn-register" class="btn btn-sm btn-primary" onclick="signalRegister()" data-i18n="signal_btn_run">Exécuter</button>
+                  <button class="btn btn-sm btn-icon" onclick="signalCopyCmd('signal-cmd-register')" title="Copy">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+                  </button>
+                </div>
                 <div class="signal-copy-cmd">
                   <code id="signal-cmd-register" style="white-space:pre-wrap">curl -X POST "http://localhost:8080/v1/register/%2B33..." \
   -H 'Content-Type: application/json' \
   -d '{"captcha": "signalcaptcha://..."}'</code>
-                  <div style="display:flex;flex-direction:column;gap:4px;align-self:flex-start;flex-shrink:0">
-                    <button id="signal-btn-register" class="btn btn-sm btn-primary" onclick="signalRegister()" data-i18n="signal_btn_run">Run</button>
-                    <button class="btn btn-sm btn-icon" onclick="signalCopyCmd('signal-cmd-register')" title="Copy">
-                      <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
-                    </button>
-                  </div>
                 </div>
                 <span id="signal-register-status" class="signal-status" style="margin-top:6px;display:none"></span>
               </div>
@@ -345,35 +364,20 @@
                 <input type="text" id="signal-sms-code" class="form-input" placeholder="123456" maxlength="7" inputmode="numeric"
                        oninput="signalUpdateRegisterCmds()" autocomplete="one-time-code"
                        style="max-width:140px;margin-bottom:8px;font-family:var(--font-mono);letter-spacing:4px;font-size:16px;text-align:center">
+                <div class="signal-cmd-actions">
+                  <button id="signal-btn-verify" class="btn btn-sm btn-primary" onclick="signalVerify()" data-i18n="signal_btn_run">Exécuter</button>
+                  <button class="btn btn-sm btn-icon" onclick="signalCopyCmd('signal-cmd-verify')" title="Copy">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+                  </button>
+                </div>
                 <div class="signal-copy-cmd">
                   <code id="signal-cmd-verify">curl -X POST "http://localhost:8080/v1/register/%2B33.../verify/123456"</code>
-                  <div style="display:flex;flex-direction:column;gap:4px;align-self:flex-start;flex-shrink:0">
-                    <button id="signal-btn-verify" class="btn btn-sm btn-primary" onclick="signalVerify()" data-i18n="signal_btn_run">Run</button>
-                    <button class="btn btn-sm btn-icon" onclick="signalCopyCmd('signal-cmd-verify')" title="Copy">
-                      <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
-                    </button>
-                  </div>
                 </div>
                 <span id="signal-verify-status" class="signal-status" style="margin-top:6px;display:none"></span>
               </div>
 
             </div>
           </details>
-        </div>
-
-        <div class="form-group">
-          <label class="form-label" data-i18n="settings_webhook_format">Format</label>
-
-          <select id="webhook-format" class="form-input" onchange="updateWebhookPreset()">
-            <option value="generic" data-i18n="settings_webhook_format_generic">Generic (JSON)</option>
-            <option value="discord">Discord</option>
-            <option value="slack">Slack</option>
-            <option value="telegram">Telegram</option>
-            <option value="gotify">Gotify</option>
-            <option value="ntfy">ntfy</option>
-            <option value="signal">Signal</option>
-          </select>
-          <div id="webhook-preset-info" class="preset-info hidden"></div>
         </div>
 
         <div class="form-group">

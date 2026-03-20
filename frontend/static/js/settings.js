@@ -329,7 +329,7 @@ async function signalRegister() {
   try {
     const res = await API.post("/api/settings/signal-register", { host, port, number, captcha });
     if (res.success) {
-      statusEl.textContent = res.message || t("signal_sms_sent");
+      statusEl.textContent = t("signal_sms_sent");
       statusEl.className = "signal-status ok";
     } else {
       statusEl.textContent = res.message || t("settings_error");
@@ -359,7 +359,7 @@ async function signalVerify() {
   try {
     const res = await API.post("/api/settings/signal-verify", { host, port, number, code });
     if (res.success) {
-      statusEl.textContent = res.message || t("signal_verified");
+      statusEl.textContent = t("signal_verified");
       statusEl.className = "signal-status ok";
       // Show persistent registration badge
       const badge = document.getElementById("signal-reg-status");

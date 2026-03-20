@@ -218,6 +218,7 @@ async def deploy_signal(body: SignalDeployRequest, _=Depends(get_current_user)):
 
         # ── Create data directory ─────────────────────────────────────────
         Path("/opt/signal").mkdir(parents=True, exist_ok=True)
+        Path("/opt/signal").chmod(0o700)  # only root can read/write
 
         # ── Check if container exists (stopped) ───────────────────────────
         ps_all = subprocess.run(
