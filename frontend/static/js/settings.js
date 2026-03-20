@@ -385,7 +385,7 @@ async function signalReset() {
     const res = await API.post("/api/settings/signal-reset", { host, port, number });
     if (res.success) {
       showToast(t("signal_reset_done"), "ok");
-      // Clear fields and hide badge
+      // Clear fields and hide all Signal UI
       document.getElementById("signal-host").value = "";
       document.getElementById("signal-port").value = "8080";
       document.getElementById("signal-from").value = "";
@@ -394,12 +394,225 @@ async function signalReset() {
       document.getElementById("webhook-format").value = "generic";
       const badge = document.getElementById("signal-reg-status");
       if (badge) badge.classList.add("hidden");
+      document.getElementById("signal-compact-view").classList.add("hidden");
       updateWebhookPreset();
     } else {
       showToast(res.message || t("settings_error"), "error");
     }
   } catch {
     showToast(t("settings_error"), "error");
+  }
+}
+
+// ---- Signal compact / full panel ----
+
+function signalShowCompactView() {
+  const from = document.getElementById("signal-from").value.trim();
+  const to   = document.getElementById("signal-to").value.trim();
+  document.getElementById("signal-compact-from").textContent = from || "—";
+  document.getElementById("signal-compact-to").textContent   = to   || "—";
+  document.getElementById("signal-compact-to-input").value   = to;
+  document.getElementById("signal-compact-view").classList.remove("hidden");
+  document.getElementById("signal-config").classList.add("hidden");
+}
+
+function signalShowFullPanel() {
+  document.getElementById("signal-compact-view").classList.add("hidden");
+  document.getElementById("signal-config").classList.remove("hidden");
+  const testBtn = document.getElementById("signal-btn-test-full");
+  if (testBtn) testBtn.classList.remove("hidden");
+  const regBadge = document.getElementById("signal-reg-status");
+  if (regBadge) regBadge.classList.remove("hidden");
+}
+
+async function signalAutoDetectStatus() {
+  try {
+    const status = await API.get("/api/settings/signal-status");
+    if (status.registered) {
+      if (status.number_from && !document.getElementById("signal-from").value)
+        document.getElementById("signal-from").value = status.number_from;
+      if (status.number_to && !document.getElementById("signal-to").value)
+        document.getElementById("signal-to").value = status.number_to;
+      if (status.host && !document.getElementById("signal-host").value)
+        document.getElementById("signal-host").value = status.host;
+      if (status.port && !document.getElementById("signal-port").value)
+        document.getElementById("signal-port").value = status.port;
+      signalBuildUrl();
+      signalShowCompactView();
+    }
+  } catch { /* silent */ }
+}
+
+// ---- Signal stepper ----
+
+function signalStepSetState(n, state) {
+  const step = document.getElementById(`signal-step-${n}`);
+  const ind  = document.getElementById(`stepper-ind-${n}`);
+  const num  = document.getElementById(`signal-step-num-${n}`);
+  if (!step) return;
+  step.className = `signal-stepper-step step--${state}`;
+  if (ind) ind.className = `signal-step-indicator step-ind--${state}`;
+  if (num) {
+    if (state === "done") {
+      num.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>`;
+      num.style.background = "var(--green, #22c55e)";
+      num.style.color = "#fff";
+    } else {
+      num.textContent = n;
+      num.style.background = "";
+      num.style.color = "";
+    }
+  }
+}
+
+function signalStepUnlock(n) {
+  if (n > 4) return;
+  signalStepSetState(n, "active");
+  const el = document.getElementById(`signal-step-${n}`);
+  if (el) el.scrollIntoView({ behavior: "smooth", block: "nearest" });
+}
+
+function signalStepperReset() {
+  signalStepSetState(1, "active");
+  for (let i = 2; i <= 4; i++) signalStepSetState(i, "locked");
+  ["signal-step1-status", "signal-step3-status", "signal-step4-status"].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) { el.textContent = ""; el.className = "signal-status"; }
+  });
+}
+
+async function signalStepCheckService() {
+  const btn   = document.getElementById("signal-step1-btn");
+  const badge = document.getElementById("signal-step1-status");
+  const host  = document.getElementById("signal-host").value.trim() || "localhost";
+  const port  = parseInt(document.getElementById("signal-port").value.trim()) || 8080;
+  if (btn) btn.disabled = true;
+  badge.textContent = t("settings_checking");
+  badge.className = "signal-status checking";
+  try {
+    const res = await API.post("/api/settings/check-signal", { host, port });
+    if (res.running) {
+      badge.textContent = t("signal_running") + (res.version ? ` v${res.version}` : "");
+      badge.className = "signal-status ok";
+      signalStepSetState(1, "done");
+      signalStepUnlock(2);
+    } else {
+      badge.textContent = t("signal_unreachable");
+      badge.className = "signal-status error";
+    }
+  } catch {
+    badge.textContent = t("signal_unreachable");
+    badge.className = "signal-status error";
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+}
+
+function signalStepCaptchaValidate() {
+  const captcha = document.getElementById("signal-captcha-input")?.value.trim() || "";
+  if (captcha.startsWith("signalcaptcha://") && captcha.length > 20) {
+    signalStepSetState(2, "done");
+    signalStepUnlock(3);
+  }
+}
+
+async function signalStepRegister() {
+  const badge   = document.getElementById("signal-step3-status");
+  const btn     = document.getElementById("signal-btn-register");
+  const host    = document.getElementById("signal-host").value.trim() || "localhost";
+  const port    = parseInt(document.getElementById("signal-port").value.trim()) || 8080;
+  const number  = document.getElementById("signal-from").value.trim();
+  const captcha = document.getElementById("signal-captcha-input").value.trim();
+  if (!number)  { showToast(t("signal_err_number"),  "error"); return; }
+  if (!captcha) { showToast(t("signal_err_captcha"), "error"); return; }
+  badge.textContent = t("signal_register_running");
+  badge.className = "signal-status checking";
+  if (btn) btn.disabled = true;
+  try {
+    const res = await API.post("/api/settings/signal-register", { host, port, number, captcha });
+    if (res.success) {
+      badge.textContent = t("signal_sms_sent");
+      badge.className = "signal-status ok";
+      signalStepSetState(3, "done");
+      signalStepUnlock(4);
+      setTimeout(() => document.getElementById("signal-sms-code")?.focus(), 300);
+    } else {
+      badge.textContent = res.message || t("settings_error");
+      badge.className = "signal-status error";
+    }
+  } catch {
+    badge.textContent = t("settings_error");
+    badge.className = "signal-status error";
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+}
+
+async function signalStepVerify() {
+  const badge  = document.getElementById("signal-step4-status");
+  const btn    = document.getElementById("signal-btn-verify");
+  const host   = document.getElementById("signal-host").value.trim() || "localhost";
+  const port   = parseInt(document.getElementById("signal-port").value.trim()) || 8080;
+  const number = document.getElementById("signal-from").value.trim();
+  const code   = document.getElementById("signal-sms-code").value.trim().replace("-", "");
+  if (!number) { showToast(t("signal_err_number"), "error"); return; }
+  if (!code)   { showToast(t("signal_err_code"),   "error"); return; }
+  badge.textContent = t("signal_verify_running");
+  badge.className = "signal-status checking";
+  if (btn) btn.disabled = true;
+  try {
+    const res = await API.post("/api/settings/signal-verify", { host, port, number, code });
+    if (res.success) {
+      badge.textContent = t("signal_verified");
+      badge.className = "signal-status ok";
+      signalStepSetState(4, "done");
+      const regBadge = document.getElementById("signal-reg-status");
+      if (regBadge) regBadge.classList.remove("hidden");
+      showToast(t("signal_verified"), "ok");
+      setTimeout(() => signalShowCompactView(), 1000);
+    } else {
+      badge.textContent = res.message || t("settings_error");
+      badge.className = "signal-status error";
+    }
+  } catch {
+    badge.textContent = t("settings_error");
+    badge.className = "signal-status error";
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+}
+
+// ---- Signal test & recipient update ----
+
+async function signalSendTest() {
+  showToast(t("signal_test_sending"), "ok");
+  try {
+    const res = await API.post("/api/settings/signal-test", {});
+    if (res.success) {
+      showToast(t("signal_test_ok"), "ok");
+    } else {
+      showToast(t("signal_test_fail") + " " + (res.message || ""), "error");
+    }
+  } catch (e) {
+    showToast(t("error_prefix") + e.message, "error");
+  }
+}
+
+async function signalUpdateRecipient() {
+  const newTo = document.getElementById("signal-compact-to-input").value.trim();
+  if (!newTo.match(/^\+[0-9]{7,15}$/)) {
+    showToast(t("signal_err_number_format"), "error");
+    return;
+  }
+  document.getElementById("signal-to").value = newTo;
+  signalBuildUrl();
+  const newUrl = document.getElementById("webhook-url").value;
+  try {
+    await API.put("/api/settings/", { webhook_url: newUrl, webhook_format: "signal", webhook_enabled: true });
+    document.getElementById("signal-compact-to").textContent = newTo;
+    showToast(t("signal_recipient_updated"), "ok");
+  } catch (e) {
+    showToast(t("error_prefix") + e.message, "error");
   }
 }
 
@@ -778,11 +991,9 @@ async function bootSettings() {
       document.getElementById("wh-evt-package").checked = cfg.webhook_events.includes("package_complete");
     }
     toggleWebhookFields();
-    // Show registered badge if Signal number is already registered
-    const regBadge = document.getElementById("signal-reg-status");
-    if (regBadge) {
-      if (cfg.signal_registered) regBadge.classList.remove("hidden");
-      else regBadge.classList.add("hidden");
+    // Auto-detect Signal status and switch to compact view if registered
+    if (cfg.signal_registered || cfg.webhook_format === "signal") {
+      await signalAutoDetectStatus();
     }
 
     document.getElementById("simultaneous-input").value = cfg.simultaneous_downloads || 3;

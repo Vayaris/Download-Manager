@@ -258,6 +258,30 @@
           <div id="webhook-preset-info" class="preset-info hidden"></div>
         </div>
 
+        <!-- Signal compact view (shown when registered) -->
+        <div id="signal-compact-view" class="signal-compact-view hidden">
+          <div class="signal-compact-header">
+            <span class="signal-badge-active" data-i18n="signal_active">Signal actif</span>
+            <span class="signal-compact-route">
+              <span id="signal-compact-from" class="signal-compact-num">—</span>
+              <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>
+              <span id="signal-compact-to" class="signal-compact-num">—</span>
+            </span>
+          </div>
+          <div class="signal-compact-actions">
+            <button class="btn btn-sm btn-primary" onclick="signalSendTest()" data-i18n="signal_btn_test">Envoyer un test</button>
+            <button class="btn btn-sm" onclick="signalShowFullPanel()" data-i18n="signal_btn_edit_config">Modifier la configuration</button>
+            <button class="btn btn-sm" style="color:var(--danger)" onclick="signalReset()" data-i18n="signal_btn_reset">Désenregistrer &amp; réinitialiser</button>
+          </div>
+          <div class="signal-compact-to-edit">
+            <label class="form-label" data-i18n="signal_to">Envoyer à</label>
+            <div class="signal-compact-to-row">
+              <input type="text" id="signal-compact-to-input" class="form-input" placeholder="+33612345678" autocomplete="tel">
+              <button class="btn btn-sm btn-primary" onclick="signalUpdateRecipient()" data-i18n="signal_btn_update_recipient">Mettre à jour</button>
+            </div>
+          </div>
+        </div>
+
         <!-- Signal configuration wizard -->
         <div id="signal-config" class="signal-config hidden">
           <div class="signal-header">
@@ -288,11 +312,13 @@
           <div class="key-actions" style="flex-wrap:wrap">
             <button class="btn" onclick="signalCheck()" data-i18n="signal_btn_check">Check connection</button>
             <button id="signal-btn-deploy" class="btn" onclick="signalDeploy()" data-i18n="signal_btn_deploy">Deploy on this server</button>
+            <button id="signal-btn-test-full" class="btn hidden" onclick="signalSendTest()" data-i18n="signal_btn_test">Envoyer un test</button>
             <span id="signal-status" class="signal-status"></span>
           </div>
           <!-- Persistent registered badge -->
           <div id="signal-reg-status" class="hidden" style="margin-top:8px;display:flex;align-items:center;flex-wrap:wrap;gap:8px">
             <span class="signal-status ok" data-i18n="signal_registered">Number registered</span>
+            <button class="btn btn-sm" onclick="signalShowCompactView()" data-i18n="signal_btn_back">← Retour</button>
             <button class="btn btn-sm" style="color:var(--danger)" onclick="signalReset()" data-i18n="signal_btn_reset">Unregister &amp; reset all</button>
           </div>
           <!-- Local deploy hint -->
@@ -311,41 +337,64 @@
               </button>
             </div>
           </div>
-          <!-- Registration guide -->
-          <details class="signal-register" style="margin-top:16px">
-            <summary style="cursor:pointer;display:inline-flex;align-items:center;gap:6px;list-style:none;color:var(--text-2);font-size:13px">
-              <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
-              <span data-i18n="signal_register_title">Register your Signal number</span>
-            </summary>
-            <div style="margin-top:14px;display:flex;flex-direction:column;gap:16px">
+          <!-- Registration stepper -->
+          <div id="signal-stepper" style="margin-top:16px">
+            <div class="signal-stepper-header">
+              <span class="signal-step-indicator step-ind--active" id="stepper-ind-1"></span>
+              <span class="signal-stepper-connector"></span>
+              <span class="signal-step-indicator step-ind--locked" id="stepper-ind-2"></span>
+              <span class="signal-stepper-connector"></span>
+              <span class="signal-step-indicator step-ind--locked" id="stepper-ind-3"></span>
+              <span class="signal-stepper-connector"></span>
+              <span class="signal-step-indicator step-ind--locked" id="stepper-ind-4"></span>
+            </div>
 
-              <!-- Step 1 -->
-              <div class="signal-step">
-                <p class="signal-step-label"><span class="signal-step-num">1</span><span data-i18n="signal_register_step1">Check the service is up:</span></p>
+            <!-- Step 1: Check service -->
+            <div id="signal-step-1" class="signal-stepper-step step--active">
+              <div class="signal-stepper-step-header">
+                <span class="signal-step-num" id="signal-step-num-1">1</span>
+                <span class="signal-stepper-step-title" data-i18n="signal_step1_title">Vérifier le service</span>
+                <span id="signal-step1-status" class="signal-status" style="margin-left:auto"></span>
+              </div>
+              <div class="signal-stepper-step-body">
                 <div class="signal-copy-cmd">
                   <code id="signal-cmd-about">curl http://localhost:8080/v1/about</code>
                   <button class="btn btn-sm btn-icon" onclick="signalCopyCmd('signal-cmd-about')" title="Copy">
                     <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
                   </button>
                 </div>
+                <div class="signal-cmd-actions">
+                  <button id="signal-step1-btn" class="btn btn-sm btn-primary" onclick="signalStepCheckService()" data-i18n="signal_step1_btn">Vérifier</button>
+                </div>
               </div>
+            </div>
 
-              <!-- Step 2: captcha -->
-              <div class="signal-step">
-                <p class="signal-step-label"><span class="signal-step-num">2</span><span data-i18n="signal_register_step2">Get a captcha token:</span></p>
-                <a href="https://signalcaptchas.org/registration/generate.html" target="_blank" class="btn btn-sm" style="margin-bottom:8px;display:inline-flex;gap:6px">
+            <!-- Step 2: Captcha -->
+            <div id="signal-step-2" class="signal-stepper-step step--locked">
+              <div class="signal-stepper-step-header">
+                <span class="signal-step-num" id="signal-step-num-2">2</span>
+                <span class="signal-stepper-step-title" data-i18n="signal_step2_title">Token captcha</span>
+              </div>
+              <div class="signal-stepper-step-body">
+                <a href="https://signalcaptchas.org/registration/generate.html" target="_blank" class="btn btn-sm" style="display:inline-flex;gap:6px">
                   <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
                   <span data-i18n="signal_captcha_open">Open captcha page</span>
                 </a>
-                <p class="form-hint" style="margin-bottom:6px" data-i18n="signal_captcha_hint">Solve the captcha → right-click "Open Signal" → copy the link → paste here:</p>
-                <input type="text" id="signal-captcha-input" class="form-input" placeholder="signalcaptcha://signal-hcaptcha..." oninput="signalUpdateRegisterCmds()" autocomplete="off" style="font-size:12px;font-family:var(--font-mono)">
+                <p class="form-hint" data-i18n="signal_captcha_hint">Solve the captcha → right-click "Open Signal" → copy the link → paste here:</p>
+                <input type="text" id="signal-captcha-input" class="form-input" placeholder="signalcaptcha://signal-hcaptcha..." oninput="signalUpdateRegisterCmds(); signalStepCaptchaValidate()" autocomplete="off" style="font-size:12px;font-family:var(--font-mono)">
               </div>
+            </div>
 
-              <!-- Step 3: register -->
-              <div class="signal-step">
-                <p class="signal-step-label"><span class="signal-step-num">3</span><span data-i18n="signal_register_step3">Run on the server — you will receive an SMS:</span></p>
+            <!-- Step 3: Register (SMS) -->
+            <div id="signal-step-3" class="signal-stepper-step step--locked">
+              <div class="signal-stepper-step-header">
+                <span class="signal-step-num" id="signal-step-num-3">3</span>
+                <span class="signal-stepper-step-title" data-i18n="signal_step3_title">Envoyer le SMS</span>
+                <span id="signal-step3-status" class="signal-status" style="margin-left:auto"></span>
+              </div>
+              <div class="signal-stepper-step-body">
                 <div class="signal-cmd-actions">
-                  <button id="signal-btn-register" class="btn btn-sm btn-primary" onclick="signalRegister()" data-i18n="signal_btn_run">Exécuter</button>
+                  <button id="signal-btn-register" class="btn btn-sm btn-primary" onclick="signalStepRegister()" data-i18n="signal_btn_run">Exécuter</button>
                   <button class="btn btn-sm btn-icon" onclick="signalCopyCmd('signal-cmd-register')" title="Copy">
                     <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
                   </button>
@@ -355,17 +404,22 @@
   -H 'Content-Type: application/json' \
   -d '{"captcha": "signalcaptcha://..."}'</code>
                 </div>
-                <span id="signal-register-status" class="signal-status" style="margin-top:6px;display:none"></span>
               </div>
+            </div>
 
-              <!-- Step 4: verify -->
-              <div class="signal-step">
-                <p class="signal-step-label"><span class="signal-step-num">4</span><span data-i18n="signal_register_step4">Enter the SMS code you received:</span></p>
+            <!-- Step 4: Verify SMS code -->
+            <div id="signal-step-4" class="signal-stepper-step step--locked">
+              <div class="signal-stepper-step-header">
+                <span class="signal-step-num" id="signal-step-num-4">4</span>
+                <span class="signal-stepper-step-title" data-i18n="signal_step4_title">Code SMS</span>
+                <span id="signal-step4-status" class="signal-status" style="margin-left:auto"></span>
+              </div>
+              <div class="signal-stepper-step-body">
                 <input type="text" id="signal-sms-code" class="form-input" placeholder="123456" maxlength="7" inputmode="numeric"
                        oninput="signalUpdateRegisterCmds()" autocomplete="one-time-code"
-                       style="max-width:140px;margin-bottom:8px;font-family:var(--font-mono);letter-spacing:4px;font-size:16px;text-align:center">
+                       style="max-width:140px;font-family:var(--font-mono);letter-spacing:4px;font-size:16px;text-align:center">
                 <div class="signal-cmd-actions">
-                  <button id="signal-btn-verify" class="btn btn-sm btn-primary" onclick="signalVerify()" data-i18n="signal_btn_run">Exécuter</button>
+                  <button id="signal-btn-verify" class="btn btn-sm btn-primary" onclick="signalStepVerify()" data-i18n="signal_btn_run">Exécuter</button>
                   <button class="btn btn-sm btn-icon" onclick="signalCopyCmd('signal-cmd-verify')" title="Copy">
                     <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
                   </button>
@@ -373,11 +427,9 @@
                 <div class="signal-copy-cmd">
                   <code id="signal-cmd-verify">curl -X POST "http://localhost:8080/v1/register/%2B33.../verify/123456"</code>
                 </div>
-                <span id="signal-verify-status" class="signal-status" style="margin-top:6px;display:none"></span>
               </div>
-
             </div>
-          </details>
+          </div>
         </div>
 
         <div class="form-group">

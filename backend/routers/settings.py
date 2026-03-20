@@ -388,6 +388,54 @@ async def signal_reset(body: SignalResetRequest, _=Depends(get_current_user)):
     return {"success": True, "message": " — ".join(steps)}
 
 
+@router.get("/signal-status")
+async def signal_status(_=Depends(get_current_user)):
+    from urllib.parse import urlparse, unquote
+    cfg = get_config()
+    registered = cfg.get("signal_registered", False)
+    wh = cfg.get("webhooks", {})
+    host, port, number_from, number_to = "localhost", 8080, "", ""
+    if wh.get("format") == "signal" and wh.get("url"):
+        try:
+            u = urlparse(wh["url"])
+            host = u.hostname or "localhost"
+            port = int(u.port or 8080)
+            q = dict(pair.split("=", 1) for pair in u.query.split("&") if "=" in pair)
+            number_from = unquote(q.get("from", ""))
+            number_to   = unquote(q.get("to", ""))
+        except Exception:
+            pass
+    return {"registered": registered, "number_from": number_from, "number_to": number_to, "host": host, "port": port}
+
+
+@router.post("/signal-test")
+async def signal_test(_=Depends(get_current_user)):
+    import httpx
+    from urllib.parse import urlparse, unquote, urlunparse
+    cfg = get_config()
+    wh = cfg.get("webhooks", {})
+    if wh.get("format") != "signal" or not wh.get("url"):
+        return {"success": False, "message": "Signal not configured"}
+    wh_url = wh["url"]
+    try:
+        u = urlparse(wh_url)
+        q = dict(pair.split("=", 1) for pair in u.query.split("&") if "=" in pair)
+        number_from = unquote(q.get("from", ""))
+        number_to   = unquote(q.get("to", ""))
+        if not number_from or not number_to:
+            return {"success": False, "message": "Missing from/to numbers"}
+        target = urlunparse(u._replace(query="", fragment=""))
+        payload = {"message": "✅ Test — Download Manager", "number": number_from, "recipients": [number_to]}
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            resp = await client.post(target, json=payload)
+            if resp.status_code < 400:
+                return {"success": True}
+            else:
+                return {"success": False, "message": f"HTTP {resp.status_code}: {resp.text[:100]}"}
+    except Exception as e:
+        return {"success": False, "message": str(e)[:200]}
+
+
 @router.get("/storage")
 async def get_storage(_=Depends(get_current_user)):
     cfg = get_config()
