@@ -228,6 +228,22 @@ async def deploy_signal(body: SignalDeployRequest, _=Depends(get_current_user)):
         status_out = ps_all.stdout.strip()
 
         if not status_out:
+            # Pull image first (separate step so timeout applies only to pull)
+            pull = subprocess.run(
+                ["docker", "pull", "bbernhard/signal-cli-rest-api"],
+                capture_output=True, text=True, timeout=600,  # 10 min for slow connections
+            )
+            if pull.returncode != 0:
+                err = (pull.stderr or pull.stdout).strip()
+                # Strip pull progress lines, keep only the actual error
+                error_lines = [l for l in err.splitlines() if not any(
+                    kw in l for kw in ("Pulling from", "Pulling fs layer", "Pull complete",
+                                       "Waiting", "Verifying", "Download complete",
+                                       "Already exists", "Digest:", "Status:")
+                )]
+                msg = "\n".join(error_lines).strip() or err
+                return {"success": False, "message": f"Image pull failed: {msg[:400]}", "action": None}
+
             # Create and start container
             run = subprocess.run(
                 ["docker", "run", "-d", "--name", "signal-cli-rest-api",
@@ -235,10 +251,10 @@ async def deploy_signal(body: SignalDeployRequest, _=Depends(get_current_user)):
                  "-p", f"{port}:8080",
                  "-v", "/opt/signal:/home/.local/share/signal-cli",
                  "bbernhard/signal-cli-rest-api"],
-                capture_output=True, text=True, timeout=300,
+                capture_output=True, text=True, timeout=30,
             )
             if run.returncode != 0:
-                return {"success": False, "message": run.stderr.strip()[:200], "action": None}
+                return {"success": False, "message": run.stderr.strip()[:400], "action": None}
             return {"success": True, "message": "Container created and started", "action": "created"}
 
         elif status_out.lower().startswith("up"):
@@ -251,11 +267,13 @@ async def deploy_signal(body: SignalDeployRequest, _=Depends(get_current_user)):
                 capture_output=True, text=True, timeout=30,
             )
             if start.returncode != 0:
-                return {"success": False, "message": start.stderr.strip()[:200], "action": None}
+                return {"success": False, "message": start.stderr.strip()[:400], "action": None}
             return {"success": True, "message": "Container started", "action": "started"}
 
+    except subprocess.TimeoutExpired:
+        return {"success": False, "message": "Operation timed out — the image may still be downloading in the background. Wait a minute then click 'Check connection'.", "action": None}
     except Exception as e:
-        return {"success": False, "message": str(e)[:300], "action": None}
+        return {"success": False, "message": str(e)[:400], "action": None}
 
 
 @router.post("/signal-register")
