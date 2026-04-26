@@ -1,6 +1,8 @@
 import asyncio
 import sys
+import time
 import uuid
+from collections import deque
 from datetime import datetime, timezone
 from typing import Optional
 
@@ -13,12 +15,14 @@ import httpx
 
 from config import get_config
 from database import DB_PATH
-from services.aria2_service import aria2
+from services.aria2_service import Aria2RpcError, aria2
 from services.alldebrid import alldebrid
 from services.webhook import send_webhook
 
 
 def _is_missing_aria2_gid_error(exc: Exception) -> bool:
+    if isinstance(exc, Aria2RpcError):
+        return exc.category == "missing_gid"
     msg = str(exc).lower()
     return (
         "gid" in msg
@@ -31,6 +35,8 @@ def _is_transient_aria2_error(exc: Exception) -> bool:
         return True
     if isinstance(exc, httpx.HTTPStatusError):
         return exc.response.status_code >= 500
+    if isinstance(exc, Aria2RpcError):
+        return exc.category not in ("missing_gid", "download_error")
     return not _is_missing_aria2_gid_error(exc)
 
 
@@ -40,16 +46,43 @@ class QueueManager:
         self._ws_manager = None
         self._running = False
         self._last_torrent_check = 0
+        self._recent_errors = deque(maxlen=20)
+        self._health = {
+            "running": False,
+            "last_tick_at": None,
+            "last_tick_seconds": 0,
+            "last_tick_error": "",
+            "tick_errors": 0,
+            "temporary_aria2_errors": 0,
+            "active_downloads": 0,
+            "pending_downloads": 0,
+            "torrent_errors": 0,
+            "recent_errors": self._recent_errors,
+        }
 
     def register_ws_manager(self, ws_manager):
         self._ws_manager = ws_manager
 
+    def health_snapshot(self):
+        snapshot = dict(self._health)
+        snapshot["recent_errors"] = list(self._recent_errors)
+        return snapshot
+
+    def _record_error(self, source: str, message: str):
+        self._recent_errors.appendleft({
+            "at": datetime.now(timezone.utc).isoformat(),
+            "source": source,
+            "message": str(message)[:200],
+        })
+
     async def start(self):
         self._running = True
+        self._health["running"] = True
         self._task = asyncio.create_task(self._loop())
 
     async def stop(self):
         self._running = False
+        self._health["running"] = False
         if self._task:
             self._task.cancel()
             try:
@@ -84,10 +117,18 @@ class QueueManager:
             log(f"Could not set speed limit: {e}")
 
         while self._running:
+            started = time.monotonic()
             try:
                 await self._tick()
+                self._health["last_tick_error"] = ""
             except Exception as e:
+                self._health["tick_errors"] += 1
+                self._health["last_tick_error"] = str(e)[:200]
+                self._record_error("queue_tick", e)
                 import traceback; log(f"Queue tick error: {e}\n{traceback.format_exc()}")
+            finally:
+                self._health["last_tick_at"] = datetime.now(timezone.utc).isoformat()
+                self._health["last_tick_seconds"] = round(time.monotonic() - started, 3)
             await asyncio.sleep(1)
 
     async def _tick(self):
@@ -120,18 +161,20 @@ class QueueManager:
 
                         if retry_count >= max_retries:
                             # Max retries reached — mark as failed definitively
-                            await db.execute(
+                            cursor = await db.execute(
                                 """UPDATE downloads SET
                                        name = ?, status = 'failed', progress = ?,
                                        speed = 0, size = ?, downloaded = ?,
                                        error_msg = ?, retry_count = ?,
                                        aria2_gid = NULL, updated_at = ?
-                                   WHERE id = ?""",
+                                   WHERE id = ? AND aria2_gid = ? AND status NOT IN ('complete', 'failed')""",
                                 (name_update, parsed["progress"], parsed["size"],
                                  parsed["downloaded"],
                                  f"Max retries ({max_retries}) reached. Last error: {parsed['error_msg']}",
-                                 retry_count, now, row["id"]),
+                                 retry_count, now, row["id"], row["aria2_gid"]),
                             )
+                            if cursor.rowcount == 0:
+                                continue
                             # Move to history and remove from active queue
                             await self._move_to_history(db, row["id"], now)
                             if not row["package_id"]:
@@ -151,21 +194,23 @@ class QueueManager:
                                        retry_count = ?,
                                        error_msg = ?,
                                        updated_at = ?
-                                   WHERE id = ?""",
+                                   WHERE id = ? AND aria2_gid = ? AND status NOT IN ('complete', 'failed')""",
                                 (name_update, retry_count,
                                  f"Retry {retry_count}/{max_retries} - {parsed['error_msg']}",
-                                 now, row["id"]),
+                                 now, row["id"], row["aria2_gid"]),
                             )
                     elif parsed["status"] == "complete":
-                        await db.execute(
+                        cursor = await db.execute(
                             """UPDATE downloads SET
                                    name = ?, status = 'complete', progress = 100,
                                    speed = 0, size = ?, downloaded = ?,
                                    updated_at = ?
-                               WHERE id = ?""",
+                               WHERE id = ? AND aria2_gid = ? AND status NOT IN ('complete', 'failed')""",
                             (name_update, parsed["size"], parsed["downloaded"],
-                             now, row["id"]),
+                             now, row["id"], row["aria2_gid"]),
                         )
+                        if cursor.rowcount == 0:
+                            continue
                         await aria2.remove_result(row["aria2_gid"])
 
                         # Move to history immediately and remove from active queue
@@ -189,15 +234,17 @@ class QueueManager:
                                    name = ?, status = ?, progress = ?,
                                    speed = ?, size = ?, downloaded = ?,
                                    updated_at = ?
-                               WHERE id = ?""",
+                               WHERE id = ? AND aria2_gid = ? AND status NOT IN ('complete', 'failed')""",
                             (name_update, parsed["status"], parsed["progress"],
                              parsed["speed"], parsed["size"], parsed["downloaded"],
-                             now, row["id"]),
+                             now, row["id"], row["aria2_gid"]),
                         )
 
                 except Exception as e:
                     log(f"aria2 status check failed for {row['id']} (gid={row['aria2_gid']}): {type(e).__name__}: {e}")
                     if _is_transient_aria2_error(e):
+                        self._health["temporary_aria2_errors"] += 1
+                        self._record_error("aria2_temporary", f"{type(e).__name__}: {e}")
                         # Keep the GID: aria2 may still be downloading while RPC is slow.
                         await db.execute(
                             """UPDATE downloads SET
@@ -207,13 +254,22 @@ class QueueManager:
                         )
                         continue
 
-                    # aria2 really doesn't know this GID anymore — reset to pending
-                    await db.execute(
-                        """UPDATE downloads SET
-                               aria2_gid = NULL, status = 'pending', speed = 0, updated_at = ?
-                           WHERE id = ? AND status NOT IN ('complete', 'error', 'failed')""",
-                        (now, row["id"]),
-                    )
+                    if _is_missing_aria2_gid_error(e):
+                        # aria2 really doesn't know this GID anymore — reset to pending.
+                        await db.execute(
+                            """UPDATE downloads SET
+                                   aria2_gid = NULL, status = 'pending', speed = 0, updated_at = ?
+                               WHERE id = ? AND status NOT IN ('complete', 'error', 'failed')""",
+                            (now, row["id"]),
+                        )
+                    else:
+                        self._record_error("aria2_status", f"{type(e).__name__}: {e}")
+                        await db.execute(
+                            """UPDATE downloads SET
+                                   error_msg = ?, updated_at = ?
+                               WHERE id = ? AND status NOT IN ('complete', 'failed')""",
+                            (f"aria2 status check failed: {type(e).__name__}", now, row["id"]),
+                        )
 
             await db.commit()
 
@@ -236,6 +292,11 @@ class QueueManager:
                    OR (aria2_gid IS NOT NULL AND status NOT IN ('complete', 'failed'))"""
             )
             (active_count,) = await cursor.fetchone()
+            self._health["active_downloads"] = active_count
+
+            cursor = await db.execute("SELECT COUNT(*) FROM downloads WHERE status = 'pending'")
+            (pending_count,) = await cursor.fetchone()
+            self._health["pending_downloads"] = pending_count
 
             slots = max_concurrent - active_count
             if slots > 0:
@@ -384,23 +445,32 @@ class QueueManager:
 
     async def _check_torrents(self, db, now: str):
         cursor = await db.execute(
-            "SELECT * FROM torrents WHERE status = 'processing'"
+            "SELECT * FROM torrents WHERE status IN ('processing', 'ready_importing')"
         )
         rows = await cursor.fetchall()
+        torrent_errors = 0
         for row in rows:
+            importing = row["status"] == "ready_importing"
             try:
                 status_data = await alldebrid.magnet_status(row["alldebrid_id"])
                 sc = status_data.get("statusCode", 0)
 
                 if sc == 4:
+                    importing = True
+                    await db.execute(
+                        "UPDATE torrents SET status = 'ready_importing', status_message = ?, updated_at = ? WHERE id = ? AND status IN ('processing', 'ready_importing')",
+                        ("Ready on AllDebrid, importing files", now, row["id"]),
+                    )
+                    await db.commit()
                     # Ready — get files and create package
                     links = await alldebrid.magnet_files(row["alldebrid_id"])
-                    if links:
-                        await self.add_package(
-                            row["name"] or "Torrent",
-                            links,
-                            row["destination"],
-                        )
+                    if not links:
+                        raise Exception("AllDebrid returned no files for ready torrent")
+                    await self.add_package(
+                        row["name"] or "Torrent",
+                        links,
+                        row["destination"],
+                    )
                     await db.execute("DELETE FROM torrents WHERE id = ?", (row["id"],))
                     await db.commit()
                     try:
@@ -409,6 +479,7 @@ class QueueManager:
                         pass
                 elif sc >= 5:
                     # Error
+                    torrent_errors += 1
                     await db.execute(
                         "UPDATE torrents SET status = 'error', status_message = ?, updated_at = ? WHERE id = ?",
                         (status_data.get("filename", "Torrent error"), now, row["id"]),
@@ -430,7 +501,21 @@ class QueueManager:
                     )
                     await db.commit()
             except Exception as e:
+                torrent_errors += 1
+                self._record_error("torrent", e)
+                if importing:
+                    await db.execute(
+                        "UPDATE torrents SET status = 'import_failed', status_message = ?, updated_at = ? WHERE id = ?",
+                        (str(e)[:400], now, row["id"]),
+                    )
+                else:
+                    await db.execute(
+                        "UPDATE torrents SET status_message = ?, updated_at = ? WHERE id = ? AND status = 'processing'",
+                        (f"Temporary torrent check failed: {type(e).__name__}", now, row["id"]),
+                    )
+                await db.commit()
                 log(f"Torrent check failed for {row['id']}: {e}")
+        self._health["torrent_errors"] = torrent_errors
 
     async def _move_to_history(self, db, download_id: str, now: str):
         cursor = await db.execute("SELECT * FROM downloads WHERE id = ?", (download_id,))
@@ -562,7 +647,8 @@ class QueueManager:
                     pass
             now = datetime.now(timezone.utc).isoformat()
             await db.execute(
-                "UPDATE downloads SET status = 'paused', speed = 0, updated_at = ? WHERE id = ?",
+                """UPDATE downloads SET status = 'paused', speed = 0, updated_at = ?
+                   WHERE id = ? AND status IN ('pending', 'submitting', 'downloading', 'error')""",
                 (now, download_id),
             )
             await db.commit()
@@ -596,7 +682,7 @@ class QueueManager:
                 )
             else:
                 await db.execute(
-                    "UPDATE downloads SET status = ?, updated_at = ? WHERE id = ?",
+                    "UPDATE downloads SET status = ?, updated_at = ? WHERE id = ? AND status IN ('paused', 'error', 'failed')",
                     (new_status, now, download_id),
                 )
             await db.commit()

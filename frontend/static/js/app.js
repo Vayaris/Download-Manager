@@ -688,8 +688,16 @@ function renderTorrents(torrents) {
 
   list.innerHTML = torrents.map(torr => {
     const pct = torr.progress ? torr.progress.toFixed(1) : "0.0";
-    const statusClass = torr.status === "error" ? "error" : "downloading";
-    const statusLabel = torr.status === "error" ? t("torrent_status_error") : t("torrent_status_processing");
+    const isError = torr.status === "error" || torr.status === "import_failed";
+    const statusClass = isError ? "error" : "downloading";
+    const statusLabels = {
+      error: t("torrent_status_error"),
+      import_failed: t("torrent_status_import_failed"),
+      ready_importing: t("torrent_status_importing"),
+      processing: t("torrent_status_processing"),
+    };
+    const statusLabel = statusLabels[torr.status] || t("torrent_status_processing");
+    const detail = torr.status_message ? ` \u2022 ${escHtml(torr.status_message)}` : "";
 
     return `
       <div class="torrent-card">
@@ -703,6 +711,7 @@ function renderTorrents(torrents) {
               ${escHtml(fmtBytes(torr.size))}
               ${torr.speed > 0 ? ` \u2022 ${escHtml(fmtSpeed(torr.speed))}` : ''}
               ${torr.seeders > 0 ? ` \u2022 ${torr.seeders} seed${torr.seeders > 1 ? 's' : ''}` : ''}
+              ${detail}
             </span>
           </div>
           <div class="torrent-progress-wrap">

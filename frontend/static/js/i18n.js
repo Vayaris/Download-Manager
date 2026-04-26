@@ -82,6 +82,8 @@ const TRANSLATIONS = {
     // ---- Torrent status ----
     torrent_status_error: "Error",
     torrent_status_processing: "Processing",
+    torrent_status_importing: "Importing files",
+    torrent_status_import_failed: "Import failed",
 
     // ---- File browser ----
     fb_loading: "Loading...",
@@ -211,6 +213,15 @@ const TRANSLATIONS = {
     update_failed: "Failed",
     update_available_toast: "Update available: v",
     update_btn_prefix: "Update to v",
+    diagnostics_title: "Diagnostics",
+    diagnostics_subtitle: "Runtime health for queue, aria2 and database.",
+    diagnostics_refresh: "Refresh diagnostics",
+    diagnostics_loading: "Loading diagnostics...",
+    diagnostics_unavailable: "Diagnostics unavailable",
+    diagnostics_queue: "Queue",
+    diagnostics_aria2: "aria2",
+    diagnostics_database: "Database",
+    diagnostics_git: "Git",
 
     // ---- Settings login ----
     settings_login_invalid: "Invalid credentials",
@@ -460,6 +471,8 @@ const TRANSLATIONS = {
     // ---- Torrent status ----
     torrent_status_error: "Erreur",
     torrent_status_processing: "Traitement",
+    torrent_status_importing: "Import des fichiers",
+    torrent_status_import_failed: "Import échoué",
 
     // ---- File browser ----
     fb_loading: "Chargement...",
@@ -589,6 +602,15 @@ const TRANSLATIONS = {
     update_failed: "Échec",
     update_available_toast: "Mise à jour disponible : v",
     update_btn_prefix: "Mettre à jour vers v",
+    diagnostics_title: "Diagnostics",
+    diagnostics_subtitle: "Santé runtime de la queue, aria2 et la base.",
+    diagnostics_refresh: "Rafraîchir les diagnostics",
+    diagnostics_loading: "Chargement des diagnostics...",
+    diagnostics_unavailable: "Diagnostics indisponibles",
+    diagnostics_queue: "Queue",
+    diagnostics_aria2: "aria2",
+    diagnostics_database: "Base de données",
+    diagnostics_git: "Git",
 
     // ---- Settings login ----
     settings_login_invalid: "Identifiants invalides",

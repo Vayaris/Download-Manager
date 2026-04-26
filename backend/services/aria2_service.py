@@ -3,6 +3,22 @@ from typing import Optional, List, Dict, Any
 from config import get_config
 
 
+class Aria2RpcError(Exception):
+    def __init__(self, message: str, code: Optional[int] = None, category: str = "unknown"):
+        super().__init__(message)
+        self.code = code
+        self.category = category
+
+
+def classify_rpc_error(code: Optional[int], message: str) -> str:
+    msg = (message or "").lower()
+    if "gid" in msg and ("not found" in msg or "no such" in msg or "unknown" in msg):
+        return "missing_gid"
+    if code in (1, 2, 3, 4, 5, 6, 7, 8):
+        return "download_error"
+    return "unknown"
+
+
 class Aria2Service:
     def __init__(self):
         self._id = 0
@@ -31,7 +47,14 @@ class Aria2Service:
             resp.raise_for_status()
             data = resp.json()
             if "error" in data:
-                raise Exception(f"aria2 RPC error: {data['error'].get('message', data['error'])}")
+                err = data["error"]
+                message = str(err.get("message", err))
+                code = err.get("code")
+                raise Aria2RpcError(
+                    f"aria2 RPC error: {message}",
+                    code=code,
+                    category=classify_rpc_error(code, message),
+                )
             return data.get("result")
 
     async def add_uri(self, url: str, destination: str, filename: Optional[str] = None, split: int = 1) -> str:

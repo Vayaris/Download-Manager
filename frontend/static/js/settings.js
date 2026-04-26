@@ -1035,8 +1035,65 @@ async function bootSettings() {
 
     // Load storage info
     await loadStorage();
+
+    // Load runtime diagnostics
+    await loadDiagnostics();
   } catch {
     showToast(t("settings_load_error"), "error");
+  }
+}
+
+// ---- Diagnostics ----
+
+function renderDiagnostics(data) {
+  const panel = document.getElementById("diagnostics-panel");
+  if (!panel) return;
+
+  const queue = data.queue || {};
+  const aria2 = data.aria2 || {};
+  const db = data.database || {};
+  const tables = db.tables || {};
+  const statuses = db.download_statuses || [];
+  const git = data.git || {};
+  const recent = queue.recent_errors || [];
+
+  const statusHtml = statuses.length
+    ? statuses.map(s => `${escHtml(s.status)}: ${escHtml(s.count)}`).join(" · ")
+    : "none";
+  const tableHtml = Object.entries(tables)
+    .map(([name, count]) => `${escHtml(name)}: ${escHtml(count)}`)
+    .join(" · ");
+  const errorsHtml = recent.length
+    ? recent.slice(0, 5).map(e => `<div>${escHtml(e.at || "")} · ${escHtml(e.source || "")}: ${escHtml(e.message || "")}</div>`).join("")
+    : "<div>none</div>";
+
+  panel.innerHTML = `
+    <div style="display:grid;gap:10px;font-size:13px;color:var(--text-2);line-height:1.5">
+      <div><strong style="color:var(--text)">${t("diagnostics_queue")}</strong><br>
+        running: ${queue.running ? "yes" : "no"} · last tick: ${escHtml(queue.last_tick_seconds || 0)}s · active: ${escHtml(queue.active_downloads || 0)} · pending: ${escHtml(queue.pending_downloads || 0)} · temp aria2 errors: ${escHtml(queue.temporary_aria2_errors || 0)}
+      </div>
+      <div><strong style="color:var(--text)">${t("diagnostics_aria2")}</strong><br>
+        ${aria2.ok ? `ok · active: ${escHtml(aria2.active || 0)} · waiting: ${escHtml(aria2.waiting || 0)} · stopped: ${escHtml(aria2.stopped || 0)}` : `error · ${escHtml(aria2.error || "")}`}
+      </div>
+      <div><strong style="color:var(--text)">${t("diagnostics_database")}</strong><br>
+        ${tableHtml || "none"}<br>${statusHtml}
+      </div>
+      <div><strong style="color:var(--text)">${t("diagnostics_git")}</strong><br>
+        ${escHtml(git.head || "")} · dirty: ${git.dirty ? "yes" : "no"}
+      </div>
+      <div><strong style="color:var(--text)">Recent errors</strong><br>${errorsHtml}</div>
+    </div>`;
+}
+
+async function loadDiagnostics() {
+  const panel = document.getElementById("diagnostics-panel");
+  if (!panel) return;
+  panel.innerHTML = `<p class="form-hint">${t("diagnostics_loading")}</p>`;
+  try {
+    const data = await API.get("/api/settings/diagnostics");
+    renderDiagnostics(data);
+  } catch (e) {
+    panel.innerHTML = `<p class="form-hint" style="color:var(--red)">${t("diagnostics_unavailable")}: ${escHtml(e.message)}</p>`;
   }
 }
 

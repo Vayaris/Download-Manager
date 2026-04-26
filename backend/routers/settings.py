@@ -5,7 +5,7 @@ import socket
 import subprocess
 from pathlib import Path
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request
 
 from models import SettingsUpdate, StoragePathRequest, SignalCheckRequest, SignalDeployRequest, SignalRegisterRequest, SignalVerifyRequest, SignalResetRequest
 from auth import get_current_user, get_password_hash
@@ -535,7 +535,7 @@ async def get_version(_=Depends(get_current_user)):
 
 
 @router.get("/diagnostics")
-async def diagnostics(_=Depends(get_current_user)):
+async def diagnostics(request: Request, _=Depends(get_current_user)):
     import asyncio
     import aiosqlite
     from database import DB_PATH
@@ -575,6 +575,9 @@ async def diagnostics(_=Depends(get_current_user)):
     except Exception as e:
         aria2_info = {"ok": False, "error": str(e)[:200]}
 
+    qm = getattr(request.app.state, "queue_manager", None)
+    queue_info = qm.health_snapshot() if qm and hasattr(qm, "health_snapshot") else {"running": False}
+
     return {
         "version": _get_current_version(),
         "git": {
@@ -584,6 +587,7 @@ async def diagnostics(_=Depends(get_current_user)):
         },
         "database": db_info,
         "aria2": aria2_info,
+        "queue": queue_info,
     }
 
 
