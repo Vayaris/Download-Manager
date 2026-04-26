@@ -212,12 +212,27 @@ class QueueManager:
                     try:
                         direct_url = await alldebrid.process_url(item["url"])
                         gid = await aria2.add_uri(direct_url, item["destination"], split=segments)
-                        await db.execute(
-                            "UPDATE downloads SET aria2_gid = ?, status = 'downloading', updated_at = ? WHERE id = ?",
+                        cursor = await db.execute(
+                            "UPDATE downloads SET aria2_gid = ?, status = 'downloading', updated_at = ? WHERE id = ? AND status = 'pending'",
                             (gid, now, item["id"]),
                         )
+                        if cursor.rowcount == 0:
+                            # Another task already picked up this download; cancel the aria2 download
+                            try:
+                                await aria2.remove(gid)
+                            except Exception:
+                                pass
+                            continue
                         await db.commit()
                     except Exception as e:
+                        # Only handle error if still pending (avoid overwriting a concurrent submission)
+                        cursor_check = await db.execute(
+                            "SELECT status FROM downloads WHERE id = ?", (item["id"],)
+                        )
+                        row_check = await cursor_check.fetchone()
+                        if row_check and row_check["status"] != "pending":
+                            continue
+
                         retry_count = (item["retry_count"] or 0) + 1
                         max_retries = item["max_retries"] or 5
 
@@ -225,13 +240,13 @@ class QueueManager:
                             await db.execute(
                                 """UPDATE downloads SET status = 'failed',
                                        error_msg = ?, retry_count = ?, updated_at = ?
-                                   WHERE id = ?""",
+                                   WHERE id = ? AND status = 'pending'""",
                                 (f"Max retries ({max_retries}) reached. Last error: {str(e)[:400]}",
                                  retry_count, now, item["id"]),
                             )
                             await self._move_to_history(db, item["id"], now)
                             if not item["package_id"]:
-                                await db.execute("DELETE FROM downloads WHERE id = ?", (item["id"],))
+                                await db.execute("DELETE FROM downloads WHERE id = ? AND status = 'failed'", (item["id"],))
                             asyncio.create_task(send_webhook("download_failed", {
                                 "name": item["name"] or item["url"],
                                 "destination": item["destination"],
@@ -241,7 +256,7 @@ class QueueManager:
                             await db.execute(
                                 """UPDATE downloads SET status = 'error',
                                        error_msg = ?, retry_count = ?, updated_at = ?
-                                   WHERE id = ?""",
+                                   WHERE id = ? AND status = 'pending'""",
                                 (f"Retry {retry_count}/{max_retries} - {str(e)[:400]}",
                                  retry_count, now, item["id"]),
                             )
