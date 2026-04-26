@@ -22,13 +22,37 @@ _runtime_root = Path(__file__).parent.parent.parent
 GIT_DIR = _runtime_root if (_runtime_root / ".git").exists() else INSTALL_DIR
 
 
+def _is_git_dirty(path: Path) -> bool:
+    result = subprocess.run(
+        ["git", "status", "--porcelain"],
+        cwd=str(path),
+        capture_output=True,
+        text=True,
+        timeout=10,
+    )
+    return bool(result.stdout.strip())
+
+
+def _git_head(path: Path) -> str:
+    result = subprocess.run(
+        ["git", "rev-parse", "--short", "HEAD"],
+        cwd=str(path),
+        capture_output=True,
+        text=True,
+        timeout=10,
+    )
+    return result.stdout.strip() if result.returncode == 0 else ""
+
+
 @router.get("/")
 async def get_settings(_=Depends(get_current_user)):
     cfg = get_config()
     wh = cfg.get("webhooks", {})
+    ad_key = cfg["alldebrid"]["api_key"]
     return {
         "alldebrid_enabled": cfg["alldebrid"]["enabled"],
-        "alldebrid_api_key": cfg["alldebrid"]["api_key"],
+        "alldebrid_api_key": "",
+        "alldebrid_api_key_configured": bool(ad_key),
         "simultaneous_downloads": cfg["downloads"]["simultaneous"],
         "default_destination": cfg["downloads"]["default_destination"],
         "allowed_paths": cfg["downloads"]["allowed_paths"],
@@ -510,6 +534,59 @@ async def get_version(_=Depends(get_current_user)):
     return {"version": _get_current_version()}
 
 
+@router.get("/diagnostics")
+async def diagnostics(_=Depends(get_current_user)):
+    import asyncio
+    import aiosqlite
+    from database import DB_PATH
+    from services.aria2_service import aria2
+
+    git_dir = _find_git_dir()
+    db_info = {"tables": {}, "download_statuses": []}
+    async with aiosqlite.connect(str(DB_PATH)) as db:
+        for table in ("downloads", "packages", "torrents", "history", "users", "blocked_ips"):
+            cursor = await db.execute(f"SELECT COUNT(*) FROM {table}")
+            (count,) = await cursor.fetchone()
+            db_info["tables"][table] = count
+        cursor = await db.execute(
+            "SELECT status, COUNT(*) FROM downloads GROUP BY status ORDER BY status"
+        )
+        db_info["download_statuses"] = [
+            {"status": status, "count": count}
+            for status, count in await cursor.fetchall()
+        ]
+
+    aria2_info = {"ok": False}
+    try:
+        active, waiting, stopped = await asyncio.wait_for(
+            asyncio.gather(
+                aria2._call("aria2.tellActive"),
+                aria2._call("aria2.tellWaiting", [0, 100]),
+                aria2._call("aria2.tellStopped", [0, 100]),
+            ),
+            timeout=5,
+        )
+        aria2_info = {
+            "ok": True,
+            "active": len(active or []),
+            "waiting": len(waiting or []),
+            "stopped": len(stopped or []),
+        }
+    except Exception as e:
+        aria2_info = {"ok": False, "error": str(e)[:200]}
+
+    return {
+        "version": _get_current_version(),
+        "git": {
+            "dir": str(git_dir),
+            "head": _git_head(git_dir),
+            "dirty": _is_git_dirty(git_dir),
+        },
+        "database": db_info,
+        "aria2": aria2_info,
+    }
+
+
 @router.get("/check-update")
 async def check_update(_=Depends(get_current_user)):
     import httpx
@@ -582,6 +659,11 @@ async def perform_update(background_tasks: BackgroundTasks, _=Depends(get_curren
         # Perform git pull from the project root
         install_dir = INSTALL_DIR
         git_dir = _find_git_dir()
+        if _is_git_dirty(git_dir):
+            raise HTTPException(
+                status_code=409,
+                detail="Update blocked: local files have uncommitted changes.",
+            )
 
         result = subprocess.run(
             ["git", "pull", "--ff-only", "origin", "main"],
@@ -590,19 +672,11 @@ async def perform_update(background_tasks: BackgroundTasks, _=Depends(get_curren
         )
 
         if result.returncode != 0:
-            # Try with reset if ff-only fails
-            subprocess.run(
-                ["git", "fetch", "origin", "main"],
-                cwd=str(git_dir),
-                capture_output=True, text=True, timeout=30,
+            msg = (result.stderr or result.stdout or "git pull failed").strip()
+            raise HTTPException(
+                status_code=409,
+                detail=f"Update requires manual intervention: {msg[:300]}",
             )
-            result = subprocess.run(
-                ["git", "reset", "--hard", "origin/main"],
-                cwd=str(git_dir),
-                capture_output=True, text=True, timeout=30,
-            )
-            if result.returncode != 0:
-                raise HTTPException(status_code=500, detail="Update failed. Check system logs.")
 
         # Always ensure start.sh is executable (git may strip the bit)
         start_sh = install_dir / "start.sh"

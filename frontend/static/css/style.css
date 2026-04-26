@@ -688,6 +688,8 @@ html { overflow-y: scroll; }
 
 .badge-pending     { background: var(--surface-2); color: var(--text-3); border: 1px solid var(--border); }
 .badge-pending .b-dot { background: var(--text-3); }
+.badge-submitting  { background: var(--blue-dim); color: var(--blue); border: 1px solid var(--blue-border); }
+.badge-submitting .b-dot { background: var(--blue); }
 .badge-downloading { background: var(--accent-dim); color: var(--accent-text); border: 1px solid hsla(var(--accent-h), var(--accent-s), 58%, .2); }
 .badge-downloading .b-dot { background: var(--accent-text); animation: pulse 1.8s ease-in-out infinite; }
 .badge-paused      { background: var(--yellow-dim); color: var(--yellow); border: 1px solid var(--yellow-border); }

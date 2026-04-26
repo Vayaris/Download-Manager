@@ -72,6 +72,7 @@ function fmtDate(iso) {
 
 const STATUS_LABELS = {
   pending:     function() { return t("status_pending"); },
+  submitting:  function() { return t("status_submitting"); },
   downloading: function() { return t("status_downloading"); },
   paused:      function() { return t("status_paused"); },
   complete:    function() { return t("status_complete"); },
@@ -471,7 +472,7 @@ function updateStats(downloads) {
   // Count only active (non-completed, non-failed) standalone downloads
   const queue   = downloads.filter(d => !d.package_id && d.status !== "complete" && d.status !== "failed");
   const active  = queue.filter(d => d.status === "downloading").length;
-  const pending = queue.filter(d => d.status === "pending" || d.status === "paused" || d.status === "error").length;
+  const pending = queue.filter(d => d.status === "pending" || d.status === "submitting" || d.status === "paused" || d.status === "error").length;
 
   if (queue.length === 0) { el.innerHTML = ""; return; }
 

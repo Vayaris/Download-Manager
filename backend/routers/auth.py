@@ -30,7 +30,7 @@ def _get_client_ip(request: Request) -> str:
     cfg_proxies = get_config().get("server", {}).get("trusted_proxies", [])
     trusted_proxies.update(cfg_proxies)
 
-    if client_host in trusted_proxies or client_host.startswith(("10.", "172.", "192.168.")):
+    if client_host in trusted_proxies:
         forwarded = request.headers.get("x-forwarded-for")
         if forwarded:
             return forwarded.split(",")[0].strip()

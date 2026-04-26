@@ -35,7 +35,11 @@ class Aria2Service:
             return data.get("result")
 
     async def add_uri(self, url: str, destination: str, filename: Optional[str] = None, split: int = 1) -> str:
-        options: Dict[str, str] = {"dir": destination}
+        options: Dict[str, str] = {
+            "dir": destination,
+            "continue": "true",
+            "allow-overwrite": "true",
+        }
         if filename:
             options["out"] = filename
         if split > 1:

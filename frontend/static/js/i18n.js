@@ -6,6 +6,7 @@ const TRANSLATIONS = {
   en: {
     // ---- Status labels ----
     status_pending: "Pending",
+    status_submitting: "Starting",
     status_downloading: "Downloading",
     status_paused: "Paused",
     status_complete: "Complete",
@@ -383,6 +384,7 @@ const TRANSLATIONS = {
   fr: {
     // ---- Status labels ----
     status_pending: "En attente",
+    status_submitting: "Démarrage",
     status_downloading: "En cours",
     status_paused: "En pause",
     status_complete: "Terminé",

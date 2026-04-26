@@ -9,12 +9,29 @@ def log(msg):
     print(f"[queue] {msg}", flush=True)
 
 import aiosqlite
+import httpx
 
 from config import get_config
 from database import DB_PATH
 from services.aria2_service import aria2
 from services.alldebrid import alldebrid
 from services.webhook import send_webhook
+
+
+def _is_missing_aria2_gid_error(exc: Exception) -> bool:
+    msg = str(exc).lower()
+    return (
+        "gid" in msg
+        and ("not found" in msg or "no such" in msg or "unknown" in msg)
+    )
+
+
+def _is_transient_aria2_error(exc: Exception) -> bool:
+    if isinstance(exc, (httpx.TimeoutException, httpx.TransportError)):
+        return True
+    if isinstance(exc, httpx.HTTPStatusError):
+        return exc.response.status_code >= 500
+    return not _is_missing_aria2_gid_error(exc)
 
 
 class QueueManager:
@@ -180,7 +197,17 @@ class QueueManager:
 
                 except Exception as e:
                     log(f"aria2 status check failed for {row['id']} (gid={row['aria2_gid']}): {type(e).__name__}: {e}")
-                    # aria2 doesn't know this GID anymore — reset to pending
+                    if _is_transient_aria2_error(e):
+                        # Keep the GID: aria2 may still be downloading while RPC is slow.
+                        await db.execute(
+                            """UPDATE downloads SET
+                                   error_msg = ?, updated_at = ?
+                               WHERE id = ? AND status NOT IN ('complete', 'failed')""",
+                            (f"Temporary aria2 status check failed: {type(e).__name__}", now, row["id"]),
+                        )
+                        continue
+
+                    # aria2 really doesn't know this GID anymore — reset to pending
                     await db.execute(
                         """UPDATE downloads SET
                                aria2_gid = NULL, status = 'pending', speed = 0, updated_at = ?
@@ -190,9 +217,23 @@ class QueueManager:
 
             await db.commit()
 
+            # Recover items left in submitting state after a crash/restart.
+            await db.execute(
+                """UPDATE downloads SET
+                       status = 'pending',
+                       error_msg = 'Recovered stale submission',
+                       updated_at = ?
+                   WHERE status = 'submitting'
+                   AND datetime(updated_at) <= datetime('now', '-5 minutes')""",
+                (now,),
+            )
+            await db.commit()
+
             # ---- Submit new downloads if slots are available ---- #
             cursor = await db.execute(
-                "SELECT COUNT(*) FROM downloads WHERE status = 'downloading'"
+                """SELECT COUNT(*) FROM downloads
+                   WHERE status = 'submitting'
+                   OR (aria2_gid IS NOT NULL AND status NOT IN ('complete', 'failed'))"""
             )
             (active_count,) = await cursor.fetchone()
 
@@ -209,15 +250,24 @@ class QueueManager:
 
                 segments = config["downloads"].get("download_segments", 1)
                 for item in pending:
+                    cursor = await db.execute(
+                        """UPDATE downloads SET status = 'submitting', updated_at = ?
+                           WHERE id = ? AND status = 'pending' AND aria2_gid IS NULL""",
+                        (now, item["id"]),
+                    )
+                    if cursor.rowcount == 0:
+                        continue
+                    await db.commit()
+
                     try:
                         direct_url = await alldebrid.process_url(item["url"])
                         gid = await aria2.add_uri(direct_url, item["destination"], split=segments)
                         cursor = await db.execute(
-                            "UPDATE downloads SET aria2_gid = ?, status = 'downloading', updated_at = ? WHERE id = ? AND status = 'pending'",
+                            "UPDATE downloads SET aria2_gid = ?, status = 'downloading', error_msg = NULL, updated_at = ? WHERE id = ? AND status = 'submitting'",
                             (gid, now, item["id"]),
                         )
                         if cursor.rowcount == 0:
-                            # Another task already picked up this download; cancel the aria2 download
+                            # User action changed the row while submitting; cancel the aria2 download.
                             try:
                                 await aria2.remove(gid)
                             except Exception:
@@ -225,12 +275,12 @@ class QueueManager:
                             continue
                         await db.commit()
                     except Exception as e:
-                        # Only handle error if still pending (avoid overwriting a concurrent submission)
+                        # Only handle error if still submitting (avoid overwriting a user action)
                         cursor_check = await db.execute(
                             "SELECT status FROM downloads WHERE id = ?", (item["id"],)
                         )
                         row_check = await cursor_check.fetchone()
-                        if row_check and row_check["status"] != "pending":
+                        if row_check and row_check["status"] != "submitting":
                             continue
 
                         retry_count = (item["retry_count"] or 0) + 1
@@ -240,7 +290,7 @@ class QueueManager:
                             await db.execute(
                                 """UPDATE downloads SET status = 'failed',
                                        error_msg = ?, retry_count = ?, updated_at = ?
-                                   WHERE id = ? AND status = 'pending'""",
+                                   WHERE id = ? AND status = 'submitting'""",
                                 (f"Max retries ({max_retries}) reached. Last error: {str(e)[:400]}",
                                  retry_count, now, item["id"]),
                             )
@@ -256,7 +306,7 @@ class QueueManager:
                             await db.execute(
                                 """UPDATE downloads SET status = 'error',
                                        error_msg = ?, retry_count = ?, updated_at = ?
-                                   WHERE id = ? AND status = 'pending'""",
+                                   WHERE id = ? AND status = 'submitting'""",
                                 (f"Retry {retry_count}/{max_retries} - {str(e)[:400]}",
                                  retry_count, now, item["id"]),
                             )
@@ -463,9 +513,9 @@ class QueueManager:
                     continue
                 seen.add(url)
 
-                # Skip if this URL is already pending or downloading
+                # Skip if this URL is already in the active queue
                 cursor = await db.execute(
-                    "SELECT id FROM downloads WHERE url = ? AND status IN ('pending', 'downloading', 'debrid', 'paused')",
+                    "SELECT id FROM downloads WHERE url = ? AND status IN ('pending', 'submitting', 'downloading', 'debrid', 'paused', 'error')",
                     (url,),
                 )
                 if await cursor.fetchone():
@@ -482,60 +532,7 @@ class QueueManager:
                 pos += 1
             await db.commit()
 
-        # Submit to aria2 immediately in background (don't block the HTTP response)
-        if ids:
-            asyncio.create_task(self._submit_pending_now())
-
         return ids
-
-    async def _submit_pending_now(self):
-        """Submit pending downloads to aria2 immediately (called after add)."""
-        try:
-            config = get_config()
-            max_concurrent = config["downloads"]["simultaneous"]
-            segments = config["downloads"].get("download_segments", 1)
-            now = datetime.now(timezone.utc).isoformat()
-
-            async with aiosqlite.connect(str(DB_PATH)) as db:
-                db.row_factory = aiosqlite.Row
-                cursor = await db.execute(
-                    "SELECT COUNT(*) FROM downloads WHERE status = 'downloading'"
-                )
-                (active_count,) = await cursor.fetchone()
-                slots = max_concurrent - active_count
-                if slots <= 0:
-                    return
-
-                cursor = await db.execute(
-                    """SELECT * FROM downloads
-                       WHERE status = 'pending' AND aria2_gid IS NULL
-                       ORDER BY position ASC, created_at ASC
-                       LIMIT ?""",
-                    (slots,),
-                )
-                pending = await cursor.fetchall()
-
-                for item in pending:
-                    try:
-                        direct_url = await alldebrid.process_url(item["url"])
-                        gid = await aria2.add_uri(direct_url, item["destination"], split=segments)
-                        cursor = await db.execute(
-                            "UPDATE downloads SET aria2_gid = ?, status = 'downloading', updated_at = ? WHERE id = ? AND status = 'pending'",
-                            (gid, now, item["id"]),
-                        )
-                        if cursor.rowcount == 0:
-                            # Another task already picked up this download; cancel the aria2 download
-                            try:
-                                await aria2.remove(gid)
-                            except Exception:
-                                pass
-                            continue
-                        await db.commit()
-                    except Exception as e:
-                        log(f"Immediate submit failed for {item['url'][:80]}: {e}")
-                        # Will be retried by the regular tick loop
-        except Exception as e:
-            log(f"_submit_pending_now error: {e}")
 
     async def add_package(self, name: str, urls: list, destination: str) -> dict:
         now = datetime.now(timezone.utc).isoformat()

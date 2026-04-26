@@ -66,5 +66,8 @@ def get_config() -> dict:
 
 def save_config(config: dict):
     CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
-    with open(CONFIG_PATH, "w") as f:
+    tmp_path = CONFIG_PATH.with_name(f"{CONFIG_PATH.name}.tmp")
+    with open(tmp_path, "w") as f:
         yaml.dump(config, f, default_flow_style=False, allow_unicode=True)
+    os.chmod(tmp_path, 0o600)
+    os.replace(tmp_path, CONFIG_PATH)

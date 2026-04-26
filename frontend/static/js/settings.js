@@ -42,7 +42,10 @@ async function testAllDebrid() {
 
 async function checkAllDebridStatus() {
   const key = document.getElementById("alldebrid-key").value.trim();
-  if (!key) { setAllDebridBadge("unknown", t("settings_not_configured")); return; }
+  if (!key && !window._alldebridKeyConfigured) {
+    setAllDebridBadge("unknown", t("settings_not_configured"));
+    return;
+  }
   setAllDebridBadge("checking", t("settings_checking"));
   try {
     const res = await API.post("/api/settings/test-alldebrid", {});
@@ -55,9 +58,15 @@ async function checkAllDebridStatus() {
 async function saveAllDebrid() {
   const key = document.getElementById("alldebrid-key").value.trim();
   const enabled = document.getElementById("alldebrid-enabled").checked;
+  const payload = { alldebrid_enabled: enabled };
+  if (key) payload.alldebrid_api_key = key;
   try {
-    await API.put("/api/settings/", { alldebrid_api_key: key, alldebrid_enabled: enabled });
+    await API.put("/api/settings/", payload);
     showToast(t("settings_alldebrid_saved"), "ok");
+    if (key) {
+      window._alldebridKeyConfigured = true;
+      document.getElementById("alldebrid-key").value = "";
+    }
     await checkAllDebridStatus();
   } catch (e) {
     showToast(t("error_prefix") + e.message, "error");
@@ -664,8 +673,9 @@ async function saveSettings() {
 
   if (document.getElementById("webhook-format").value === "signal") signalBuildUrl();
 
+  const newAllDebridKey = document.getElementById("alldebrid-key").value.trim();
   const payload = {
-    alldebrid_api_key: document.getElementById("alldebrid-key").value.trim() || undefined,
+    alldebrid_api_key: newAllDebridKey || undefined,
     alldebrid_enabled: document.getElementById("alldebrid-enabled").checked,
     simultaneous_downloads: Math.min(10, Math.max(1, parseInt(document.getElementById("simultaneous-input").value) || 3)),
     download_segments: Math.min(8, Math.max(1, parseInt(document.getElementById("segments-input").value) || 1)),
@@ -681,6 +691,10 @@ async function saveSettings() {
 
   try {
     await API.put("/api/settings/", payload);
+    if (newAllDebridKey) {
+      window._alldebridKeyConfigured = true;
+      document.getElementById("alldebrid-key").value = "";
+    }
     resultEl.textContent = t("settings_saved");
     resultEl.className = "inline-result ok";
     showToast(t("settings_all_saved"), "ok");
@@ -978,7 +992,12 @@ async function bootSettings() {
   try {
     const cfg = await API.get("/api/settings/");
 
-    document.getElementById("alldebrid-key").value      = cfg.alldebrid_api_key || "";
+    window._alldebridKeyConfigured = !!cfg.alldebrid_api_key_configured;
+    const adInput = document.getElementById("alldebrid-key");
+    adInput.value = "";
+    adInput.placeholder = window._alldebridKeyConfigured
+      ? "Configured - enter a new key to replace"
+      : (cfg.alldebrid_api_key || "");
     document.getElementById("alldebrid-enabled").checked = cfg.alldebrid_enabled || false;
     document.getElementById("default-dest").value        = cfg.default_destination || "";
     // Webhooks
