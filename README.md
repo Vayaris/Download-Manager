@@ -31,7 +31,7 @@ Latest stable release: `v1.10.13`
 - **Secure authentication** — login/password with 2FA (6-digit OTP), rate limiting, IP blocking
 - **Built-in updates** — check and install new versions from the Settings page, with changelog
 - **Runtime diagnostics** — queue, aria2, database and git health visible from Settings
-- **Plex refresh** — configure Plex and refresh libraries manually from Settings
+- **Plex refresh** — configure Plex in Settings, then refresh libraries manually from the Plex tab
 - **Collapsible settings** — keep advanced sections hidden until needed
 - **Admin CLI** — reset admin account, manage blocked IPs from the command line
 - **Systemd service** — auto-start, crash recovery
@@ -222,7 +222,7 @@ When adding links, packages or torrents, you can paste a destination path direct
 
 ### Plex Refresh
 
-Configure your Plex URL and token in **Settings → Plex**, then refresh a specific library manually after adding media. Download Manager only calls the Plex HTTP API; it does not restart or modify the Plex service.
+Enable Plex and configure your URL/token in **Settings → Plex**, then use the dedicated **Plex** tab to refresh each library manually after adding media. Download Manager only calls the Plex HTTP API; it does not restart or modify the Plex service.
 
 ### Webhook Notifications
 

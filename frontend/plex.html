@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="theme-color" content="#f5f3ed">
+  <title>Plex — Download Manager</title>
+  <link rel="manifest" href="/manifest.json">
+  <link rel="apple-touch-icon" href="/static/icons/icon-192.svg">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="/static/css/style.css?v=39">
+  <script>
+    (function() {
+      var t = localStorage.getItem('dm_theme') || 'light';
+      if (t === 'light' || t === 'dark') {
+        document.documentElement.setAttribute('data-theme', t);
+      }
+    })();
+  </script>
+</head>
+<body>
+
+<div id="login-modal" class="modal-overlay hidden">
+  <div class="modal-box login-box">
+    <div class="login-logo">
+      <svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+    </div>
+    <h2>Download Manager</h2>
+    <div id="login-form">
+      <p class="login-sub" data-i18n="login_subtitle">Sign in to access the dashboard</p>
+      <div class="form-group">
+        <input type="text" id="login-username" class="form-input" placeholder="Username" data-i18n-placeholder="login_username_placeholder" autocomplete="username">
+      </div>
+      <div class="form-group">
+        <input type="password" id="login-password" class="form-input" placeholder="Password" data-i18n-placeholder="login_password_placeholder" autocomplete="current-password">
+      </div>
+      <div id="otp-group" class="form-group hidden">
+        <input type="text" id="login-otp" class="form-input" placeholder="6-digit 2FA code" data-i18n-placeholder="login_otp_placeholder" autocomplete="one-time-code" maxlength="6" inputmode="numeric" pattern="[0-9]{6}" style="text-align:center;font-size:15px;letter-spacing:4px;font-family:var(--font-mono)">
+        <p class="form-hint" style="margin-top:6px;font-size:12px" data-i18n="login_otp_hint">Enter the code displayed in your authenticator app</p>
+      </div>
+      <div id="login-error" class="error-msg hidden"></div>
+      <button class="btn btn-primary full-width" onclick="doPlexLogin()" data-i18n="login_btn">Sign in</button>
+    </div>
+  </div>
+</div>
+
+<div class="app">
+  <header class="header">
+    <div class="header-left">
+      <div class="logo">
+        <div class="logo-icon">
+          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+        </div>
+        <span class="logo-text">Download Manager</span>
+      </div>
+
+      <nav class="header-nav">
+        <a href="/" class="nav-tab">
+          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+          <span data-i18n="nav_downloads">Downloads</span>
+        </a>
+        <a href="/plex-page" class="nav-tab active">
+          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="14" rx="2"/><path d="M8 20h8"/><path d="M12 18v2"/><path d="m10 8 5 3-5 3V8z"/></svg>
+          <span data-i18n="nav_plex">Plex</span>
+        </a>
+        <a href="/settings-page" class="nav-tab">
+          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+          <span data-i18n="nav_settings">Settings</span>
+        </a>
+      </nav>
+    </div>
+    <div class="header-right">
+      <button id="account-btn" class="btn-account" onclick="openAccountModal()" title="Mon compte">
+        <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+      </button>
+      <script>if(!localStorage.getItem("dm_token"))document.getElementById("account-btn").classList.add("hidden")</script>
+      <button class="theme-toggle" onclick="toggleTheme()" title="Basculer thème clair/sombre">
+        <svg class="icon-moon" xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+        <svg class="icon-sun" xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/></svg>
+      </button>
+    </div>
+  </header>
+
+  <main class="settings-wrap plex-page-wrap">
+    <div class="settings-header">
+      <div>
+        <h1 data-i18n="plex_page_title">Plex libraries</h1>
+        <p data-i18n="plex_page_subtitle">Refresh Plex libraries after adding media.</p>
+      </div>
+      <span class="conn-badge unknown" id="plex-page-status-badge">
+        <span class="b-dot"></span>
+        <span id="plex-page-status-text" data-i18n="settings_not_checked">Not checked</span>
+      </span>
+    </div>
+
+    <section class="settings-card">
+      <div class="plex-page-actions">
+        <div id="plex-page-summary" class="update-changelog">
+          <p class="form-hint" data-i18n="plex_page_loading">Loading Plex libraries...</p>
+        </div>
+        <div class="key-actions">
+          <button class="btn" onclick="loadPlexPage()" data-i18n="plex_btn_refresh_list">Refresh list</button>
+          <a class="btn" href="/settings-page" data-i18n="plex_open_settings">Plex settings</a>
+        </div>
+      </div>
+      <div id="plex-page-libraries" class="plex-libraries"></div>
+    </section>
+  </main>
+</div>
+
+<div id="toast" class="toast hidden"></div>
+
+<nav class="mobile-nav">
+  <a href="/">
+    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+    <span data-i18n="nav_downloads">Downloads</span>
+  </a>
+  <button id="pwa-install-btn" class="install-btn hidden" onclick="pwaInstall()">
+    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="5" y="2" width="14" height="20" rx="2" ry="2"/><line x1="12" y1="18" x2="12.01" y2="18"/></svg>
+    <span data-i18n="btn_install">Install</span>
+  </button>
+  <a href="/plex-page" class="active">
+    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="14" rx="2"/><path d="M8 20h8"/><path d="M12 18v2"/><path d="m10 8 5 3-5 3V8z"/></svg>
+    <span data-i18n="nav_plex">Plex</span>
+  </a>
+  <a href="/settings-page">
+    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06A2 2 0 0 1 5.34 19l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06A2 2 0 0 1 7.04 4.3l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06A2 2 0 0 1 19.7 7.04l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+    <span data-i18n="nav_settings">Settings</span>
+  </a>
+</nav>
+<script>
+let pwaDeferred=null;
+window.addEventListener("beforeinstallprompt",e=>{e.preventDefault();pwaDeferred=e;const b=document.getElementById("pwa-install-btn");if(b)b.classList.remove("hidden")});
+function pwaInstall(){if(pwaDeferred){pwaDeferred.prompt();pwaDeferred.userChoice.then(()=>{pwaDeferred=null;const b=document.getElementById("pwa-install-btn");if(b)b.classList.add("hidden")})}}
+</script>
+
+<script src="/static/js/theme.js?v=36"></script>
+<script src="/static/js/i18n.js?v=39"></script>
+<script src="/static/js/api.js?v=30"></script>
+<script src="/static/js/plex.js?v=1"></script>
+<script src="/static/js/account.js?v=28"></script>
+<script>if("serviceWorker"in navigator)navigator.serviceWorker.register("/sw.js").catch(()=>{})</script>
+</body>
+</html>

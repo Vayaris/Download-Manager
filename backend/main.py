@@ -76,7 +76,7 @@ app = FastAPI(title="Download Manager", lifespan=lifespan)
 class NoCacheStaticMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
         response = await call_next(request)
-        if request.url.path.startswith("/static/") or request.url.path in ("/", "/settings-page"):
+        if request.url.path.startswith("/static/") or request.url.path in ("/", "/plex-page", "/settings-page"):
             response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
             response.headers["Pragma"] = "no-cache"
         return response
@@ -114,6 +114,11 @@ async def index():
 @app.get("/settings-page")
 async def settings_page():
     return FileResponse(str(FRONTEND_DIR / "settings.html"))
+
+
+@app.get("/plex-page")
+async def plex_page():
+    return FileResponse(str(FRONTEND_DIR / "plex.html"))
 
 
 @app.get("/manifest.json")

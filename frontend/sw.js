@@ -1,9 +1,11 @@
-const CACHE_NAME = "dm-v2";
+const CACHE_NAME = "dm-v3";
 const PRECACHE = [
   "/",
+  "/plex-page",
   "/settings-page",
   "/static/css/style.css",
   "/static/js/app.js",
+  "/static/js/plex.js",
   "/static/js/settings.js",
   "/static/js/websocket.js",
   "/static/js/theme.js",

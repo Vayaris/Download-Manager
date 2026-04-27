@@ -936,6 +936,7 @@ tr:hover .btn-copy-path { opacity: 1; }
 ================================================================ */
 
 .settings-wrap { max-width: 860px; margin: 0 auto; }
+.plex-page-wrap { max-width: 920px; }
 
 .settings-card {
   background: var(--surface);
@@ -1274,6 +1275,13 @@ tr:hover .btn-copy-path { opacity: 1; }
   margin-top: 14px;
 }
 
+.plex-page-actions {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 14px;
+  align-items: start;
+}
+
 .plex-library-row {
   display: grid;
   grid-template-columns: 1fr auto;
@@ -1455,6 +1463,7 @@ tr:hover .btn-copy-path { opacity: 1; }
   .settings-card { padding: 16px; }
   .settings-wrap { padding: 0 4px; }
   .key-actions { flex-wrap: wrap; }
+  .plex-page-actions { grid-template-columns: 1fr; }
   .hosts-panel-header { flex-direction: column; }
   .hosts-panel-header .btn { width: 100%; justify-content: center; }
   .plex-library-row { grid-template-columns: 1fr; }

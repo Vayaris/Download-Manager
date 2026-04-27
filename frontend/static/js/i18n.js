@@ -229,6 +229,7 @@ const TRANSLATIONS = {
 
     // ---- HTML static text ----
     nav_downloads: "Downloads",
+    nav_plex: "Plex",
     nav_settings: "Settings",
     page_title: "Download Manager",
     input_links_placeholder: "Paste your download links here (one per line)",
@@ -372,6 +373,7 @@ const TRANSLATIONS = {
     // ---- Plex ----
     plex_title: "Plex",
     plex_subtitle: "Refresh a Plex library manually after adding media.",
+    plex_settings_subtitle: "Enable and configure Plex integration. Library refresh is available from the Plex tab.",
     plex_enabled: "Enable Plex integration",
     plex_url: "Plex URL",
     plex_token: "Plex token",
@@ -383,6 +385,14 @@ const TRANSLATIONS = {
     plex_btn_save: "Save",
     plex_btn_refresh_list: "Refresh list",
     plex_btn_refresh_library: "Refresh",
+    plex_open_tab: "Open Plex tab",
+    plex_open_settings: "Plex settings",
+    plex_page_title: "Plex libraries",
+    plex_page_subtitle: "Refresh Plex libraries after adding media.",
+    plex_page_loading: "Loading Plex libraries...",
+    plex_page_disabled: "Plex integration is disabled.",
+    plex_page_enable_hint: "Enable Plex integration in Settings to refresh libraries from this page.",
+    plex_page_config_hint: "Configure and test Plex in Settings before refreshing libraries.",
     plex_connected: "Connected",
     plex_unavailable: "Unavailable",
     plex_not_configured: "Not configured",
@@ -658,6 +668,7 @@ const TRANSLATIONS = {
 
     // ---- HTML static text ----
     nav_downloads: "Téléchargements",
+    nav_plex: "Plex",
     nav_settings: "Paramètres",
     page_title: "Download Manager",
     input_links_placeholder: "Collez vos liens de téléchargement ici (un par ligne)",
@@ -801,6 +812,7 @@ const TRANSLATIONS = {
     // ---- Plex ----
     plex_title: "Plex",
     plex_subtitle: "Rafraîchissez manuellement une bibliothèque Plex après l'ajout de médias.",
+    plex_settings_subtitle: "Activez et configurez l'intégration Plex. Le rafraîchissement des bibliothèques est disponible dans l'onglet Plex.",
     plex_enabled: "Activer l'intégration Plex",
     plex_url: "URL Plex",
     plex_token: "Token Plex",
@@ -812,6 +824,14 @@ const TRANSLATIONS = {
     plex_btn_save: "Sauvegarder",
     plex_btn_refresh_list: "Actualiser la liste",
     plex_btn_refresh_library: "Rafraîchir",
+    plex_open_tab: "Ouvrir l'onglet Plex",
+    plex_open_settings: "Paramètres Plex",
+    plex_page_title: "Bibliothèques Plex",
+    plex_page_subtitle: "Rafraîchissez les bibliothèques Plex après l'ajout de médias.",
+    plex_page_loading: "Chargement des bibliothèques Plex...",
+    plex_page_disabled: "L'intégration Plex est désactivée.",
+    plex_page_enable_hint: "Activez l'intégration Plex dans les paramètres pour rafraîchir les bibliothèques depuis cette page.",
+    plex_page_config_hint: "Configurez et testez Plex dans les paramètres avant de rafraîchir les bibliothèques.",
     plex_connected: "Connecté",
     plex_unavailable: "Indisponible",
     plex_not_configured: "Non configuré",
