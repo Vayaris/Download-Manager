@@ -81,16 +81,16 @@ function renderPlexPage(data) {
   list.innerHTML = libraries.map((library) => {
     const key = String(library.key || "");
     const last = formatPlexRefreshTime(lastRefreshes[key]);
-    const keyArg = JSON.stringify(key).replace(/</g, "\\u003c");
     return `
       <div class="plex-library-row">
         <div>
           <span class="plex-library-title">${escHtml(library.title || key)}</span>
           <span class="plex-library-meta">${escHtml(library.type || "")} · ${escHtml(t("plex_last_refresh", { time: last }))}</span>
         </div>
-        <button class="btn btn-sm" onclick="refreshPlexLibrary(${keyArg})">${escHtml(t("plex_btn_refresh_library"))}</button>
+        <button class="btn btn-sm plex-refresh-btn" type="button" data-plex-refresh-key="${escHtml(key)}">${escHtml(t("plex_btn_refresh_library"))}</button>
       </div>`;
   }).join("");
+  bindPlexRefreshButtons();
 }
 
 async function loadPlexPage() {
@@ -106,12 +106,28 @@ async function loadPlexPage() {
   }
 }
 
-async function refreshPlexLibrary(key) {
+function bindPlexRefreshButtons() {
+  document.querySelectorAll("[data-plex-refresh-key]").forEach((button) => {
+    button.addEventListener("click", onPlexRefreshClick);
+  });
+}
+
+async function onPlexRefreshClick(event) {
+  const button = event.currentTarget;
+  const key = button.getAttribute("data-plex-refresh-key");
+  if (!key) return;
+
+  const originalLabel = button.textContent;
+  button.disabled = true;
+  button.textContent = t("plex_btn_refreshing");
+
   try {
     await API.post(`/api/settings/plex/libraries/${encodeURIComponent(key)}/refresh`, {});
     showToast(t("plex_refresh_ok"), "ok");
     await loadPlexPage();
   } catch (e) {
+    button.disabled = false;
+    button.textContent = originalLabel;
     showToast(t("error_prefix") + e.message, "error");
   }
 }

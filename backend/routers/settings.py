@@ -1,4 +1,5 @@
 import ipaddress
+import logging
 import os
 import shutil
 import socket
@@ -16,6 +17,7 @@ from services.plex import plex
 from services.webhook import send_webhook
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 REPO = "Vayaris/Download-Manager"
 INSTALL_DIR = Path("/opt/download-manager")
@@ -267,6 +269,7 @@ async def refresh_plex_library(library_key: str, _=Depends(get_current_user)):
     cfg = get_config()
     url, token = _require_plex_config(cfg)
     try:
+        logger.info("Plex refresh requested for library key=%s", library_key)
         await plex.refresh_library(url, token, library_key)
     except Exception as e:
         raise HTTPException(status_code=502, detail=str(e)[:200])
@@ -276,6 +279,7 @@ async def refresh_plex_library(library_key: str, _=Depends(get_current_user)):
     last_refreshes = plex_cfg.setdefault("last_refreshes", {})
     last_refreshes[str(library_key)] = refreshed_at
     save_config(cfg)
+    logger.info("Plex refresh completed for library key=%s", library_key)
     return {"status": "refreshed", "library_key": library_key, "refreshed_at": refreshed_at}
 
 
