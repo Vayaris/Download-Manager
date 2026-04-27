@@ -30,6 +30,8 @@ async function testAllDebrid() {
       // Auto-enable when key is valid
       document.getElementById("alldebrid-enabled").checked = true;
       await API.put("/api/settings/", { alldebrid_enabled: true });
+      window._alldebridKeyConfigured = true;
+      await refreshAllDebridHosts();
     } else {
       setAllDebridBadge("error", t("settings_invalid_key"));
       showToast(t("settings_key_invalid"), "error");
@@ -68,6 +70,7 @@ async function saveAllDebrid() {
       document.getElementById("alldebrid-key").value = "";
     }
     await checkAllDebridStatus();
+    await refreshAllDebridHosts();
   } catch (e) {
     showToast(t("error_prefix") + e.message, "error");
   }
@@ -76,25 +79,94 @@ async function saveAllDebrid() {
 // ---- Other settings ----
 
 async function saveDownloadSettings() {
-  const simultaneous = Math.min(10, Math.max(1, parseInt(document.getElementById("simultaneous-input").value) || 3));
-  const segments = Math.min(8, Math.max(1, parseInt(document.getElementById("segments-input").value) || 1));
+  const simultaneous = Math.min(20, Math.max(1, parseInt(document.getElementById("simultaneous-input").value) || 3));
+  const segments = Math.min(16, Math.max(1, parseInt(document.getElementById("segments-input").value) || 1));
   const speedLimit = parseInt(document.getElementById("speed-limit").value) || 0;
+  const maxRetriesRaw = parseInt(document.getElementById("max-retries-input").value);
+  const retryDelayRaw = parseInt(document.getElementById("retry-delay-input").value);
+  const maxRetries = Math.min(20, Math.max(0, Number.isNaN(maxRetriesRaw) ? 3 : maxRetriesRaw));
+  const retryDelay = Math.min(3600, Math.max(0, Number.isNaN(retryDelayRaw) ? 5 : retryDelayRaw));
   const dest = document.getElementById("default-dest").value.trim() || undefined;
 
   // Clamp input values visually
   document.getElementById("simultaneous-input").value = simultaneous;
   document.getElementById("segments-input").value = segments;
+  document.getElementById("max-retries-input").value = maxRetries;
+  document.getElementById("retry-delay-input").value = retryDelay;
 
   try {
     await API.put("/api/settings/", {
       simultaneous_downloads: simultaneous,
       download_segments: segments,
       speed_limit: speedLimit,
+      max_retries: maxRetries,
+      retry_delay_seconds: retryDelay,
       default_destination: dest,
     });
     showToast(t("settings_downloads_saved"), "ok");
   } catch (e) {
     showToast(t("error_prefix") + e.message, "error");
+  }
+}
+
+let allDebridHosts = [];
+
+function renderAllDebridHosts() {
+  const list = document.getElementById("alldebrid-hosts-list");
+  const summary = document.getElementById("alldebrid-hosts-summary");
+  const searchEl = document.getElementById("alldebrid-hosts-search");
+  if (!list || !summary || !searchEl) return;
+
+  const query = searchEl.value.trim().toLowerCase();
+  const filtered = allDebridHosts.filter((host) => {
+    const haystack = [host.name, host.type, ...(host.domains || [])].join(" ").toLowerCase();
+    return !query || haystack.includes(query);
+  });
+  const available = allDebridHosts.filter((host) => host.status).length;
+
+  summary.textContent = t("settings_hosts_summary", {
+    available,
+    total: allDebridHosts.length,
+    shown: filtered.length,
+  });
+
+  if (!filtered.length) {
+    list.innerHTML = `<p class="form-hint">${t("settings_hosts_empty")}</p>`;
+    return;
+  }
+
+  list.innerHTML = filtered.map((host) => {
+    const domains = (host.domains || []).slice(0, 3).join(", ");
+    const title = domains ? `${host.name} - ${domains}` : host.name;
+    const type = host.type ? `<span class="host-chip-type">${escHtml(host.type)}</span>` : "";
+    return `<span class="host-chip ${host.status ? "" : "disabled"}" title="${escHtml(title)}">${escHtml(host.name)}${type}</span>`;
+  }).join("");
+}
+
+async function refreshAllDebridHosts() {
+  const panel = document.getElementById("alldebrid-hosts-panel");
+  const list = document.getElementById("alldebrid-hosts-list");
+  const summary = document.getElementById("alldebrid-hosts-summary");
+  if (!panel || !list || !summary) return;
+
+  if (!window._alldebridKeyConfigured || !document.getElementById("alldebrid-enabled").checked) {
+    panel.classList.add("hidden");
+    allDebridHosts = [];
+    return;
+  }
+
+  panel.classList.remove("hidden");
+  summary.textContent = t("settings_hosts_loading");
+  list.innerHTML = "";
+
+  try {
+    const res = await API.get("/api/settings/alldebrid/hosts");
+    allDebridHosts = Array.isArray(res.hosts) ? res.hosts : [];
+    renderAllDebridHosts();
+  } catch (e) {
+    allDebridHosts = [];
+    summary.textContent = t("settings_hosts_unavailable");
+    list.innerHTML = `<p class="form-hint" style="color:var(--red)">${escHtml(e.message)}</p>`;
   }
 }
 
@@ -674,12 +746,16 @@ async function saveSettings() {
   if (document.getElementById("webhook-format").value === "signal") signalBuildUrl();
 
   const newAllDebridKey = document.getElementById("alldebrid-key").value.trim();
+  const maxRetriesRaw = parseInt(document.getElementById("max-retries-input").value);
+  const retryDelayRaw = parseInt(document.getElementById("retry-delay-input").value);
   const payload = {
     alldebrid_api_key: newAllDebridKey || undefined,
     alldebrid_enabled: document.getElementById("alldebrid-enabled").checked,
-    simultaneous_downloads: Math.min(10, Math.max(1, parseInt(document.getElementById("simultaneous-input").value) || 3)),
-    download_segments: Math.min(8, Math.max(1, parseInt(document.getElementById("segments-input").value) || 1)),
+    simultaneous_downloads: Math.min(20, Math.max(1, parseInt(document.getElementById("simultaneous-input").value) || 3)),
+    download_segments: Math.min(16, Math.max(1, parseInt(document.getElementById("segments-input").value) || 1)),
     speed_limit: parseInt(document.getElementById("speed-limit").value) || 0,
+    max_retries: Math.min(20, Math.max(0, Number.isNaN(maxRetriesRaw) ? 3 : maxRetriesRaw)),
+    retry_delay_seconds: Math.min(3600, Math.max(0, Number.isNaN(retryDelayRaw) ? 5 : retryDelayRaw)),
     default_destination: document.getElementById("default-dest").value.trim() || undefined,
     webhook_enabled: document.getElementById("webhook-enabled").checked,
     webhook_url: document.getElementById("webhook-url").value.trim() || undefined,
@@ -695,6 +771,7 @@ async function saveSettings() {
       window._alldebridKeyConfigured = true;
       document.getElementById("alldebrid-key").value = "";
     }
+    await refreshAllDebridHosts();
     resultEl.textContent = t("settings_saved");
     resultEl.className = "inline-result ok";
     showToast(t("settings_all_saved"), "ok");
@@ -1064,8 +1141,11 @@ async function bootSettings() {
     document.getElementById("simultaneous-input").value = cfg.simultaneous_downloads || 3;
     document.getElementById("segments-input").value = cfg.download_segments || 1;
     document.getElementById("speed-limit").value = cfg.speed_limit || 0;
+    document.getElementById("max-retries-input").value = cfg.max_retries ?? 3;
+    document.getElementById("retry-delay-input").value = cfg.retry_delay_seconds ?? 5;
 
     await checkAllDebridStatus();
+    await refreshAllDebridHosts();
 
     // Load current version
     try {

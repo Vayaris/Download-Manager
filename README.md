@@ -2,7 +2,7 @@
 
 A web-based download manager with **AllDebrid** support, designed to run on **Linux** machines (Proxmox VM/LXC, dedicated servers, VPS).
 
-Latest stable release: `v1.10.11`
+Latest stable release: `v1.10.12`
 
 ![Python](https://img.shields.io/badge/Python-3.8+-3776AB?logo=python&logoColor=white)
 ![FastAPI](https://img.shields.io/badge/FastAPI-009688?logo=fastapi&logoColor=white)
@@ -17,13 +17,13 @@ Latest stable release: `v1.10.11`
 - **Modern web interface** — clean light default, polished dark mode, responsive layout, real-time updates via WebSocket
 - **Installable PWA** — add the app to your phone's home screen (Android / iOS)
 - **Optimized mobile view** — compact download cards, touch navigation, bottom navigation bar
-- **AllDebrid integration** — automatic link debriding (1fichier, Uptobox, etc.)
+- **AllDebrid integration** — automatic link debriding plus account hoster list in Settings
 - **Torrent / Magnet support** — upload `.torrent` files or paste magnet links via AllDebrid, with automatic polling and download start
 - **aria2 engine** — fast downloads, multi-segment (split), automatic resume
 - **Multi-segment downloads** — up to 16 connections per file (JDownloader-style) to maximize speed
 - **Speed limit** — throttle global bandwidth in MB/s
 - **Package system** — group your links by season, album, etc. with global progress tracking
-- **Automatic retry** — 5 attempts by default, with delay between retries
+- **Automatic retry** — configurable attempts and delay between retries
 - **Automatic history** — completed/failed downloads are automatically moved to history
 - **Webhook notifications** — Discord, Slack, Telegram, Gotify, ntfy, or generic JSON (with built-in setup guides)
 - **File browser** — select and create folders directly from the interface
@@ -140,9 +140,11 @@ alldebrid:
   enabled: false
 
 downloads:
-  simultaneous: 3           # 1-10 simultaneous downloads
+  simultaneous: 3           # 1-20 simultaneous downloads
   download_segments: 1      # 1-16 segments per file (multi-connection)
   speed_limit: 0            # MB/s (0 = unlimited)
+  max_retries: 3            # 0-20 retries for new downloads
+  retry_delay_seconds: 5    # 0-3600 seconds before retrying
   default_destination: "/opt/download-manager/downloads"
   allowed_paths:
     - "/mnt"
@@ -193,7 +195,7 @@ Throttle the global bandwidth of all downloads in MB/s. Useful to avoid saturati
 
 ### Automatic Retry
 
-Each download is automatically retried up to 5 times on error. A 10-second delay is applied between attempts. The counter is visible in the interface.
+Each new download uses the retry count configured in Settings. The retry delay is also configurable, and the counter is visible in the interface.
 
 ### Automatic History
 

@@ -22,7 +22,9 @@ DEFAULT_CONFIG = {
             "/opt/download-manager/downloads"
         ],
         "download_segments": 1,
-        "speed_limit": 0
+        "speed_limit": 0,
+        "max_retries": 3,
+        "retry_delay_seconds": 5
     },
     "auth": {
         "enabled": False,

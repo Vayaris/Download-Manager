@@ -374,11 +374,13 @@ class QueueManager:
                         await db.commit()
 
             # ---- Auto-retry errored downloads after a delay ---- #
+            retry_delay = max(0, min(3600, int(config["downloads"].get("retry_delay_seconds", 5) or 0)))
             cursor = await db.execute(
                 """SELECT id FROM downloads
                    WHERE status = 'error' AND retry_count > 0
                    AND retry_count < COALESCE(max_retries, 5)
-                   AND datetime(updated_at) <= datetime('now', '-10 seconds')"""
+                   AND datetime(updated_at) <= datetime('now', ?)""",
+                (f"-{retry_delay} seconds",),
             )
             retry_rows = await cursor.fetchall()
             for row in retry_rows:
@@ -591,6 +593,7 @@ class QueueManager:
             cursor = await db.execute("SELECT COALESCE(MAX(position), 0) FROM downloads")
             (max_pos,) = await cursor.fetchone()
             pos = max_pos + 1
+            max_retries = max(0, min(20, int(get_config()["downloads"].get("max_retries", 3) or 0)))
 
             for url in urls:
                 url = url.strip()
@@ -609,9 +612,9 @@ class QueueManager:
                 dl_id = str(uuid.uuid4())
                 await db.execute(
                     """INSERT INTO downloads
-                       (id, url, status, destination, created_at, updated_at, position, package_id)
-                       VALUES (?, ?, 'pending', ?, ?, ?, ?, ?)""",
-                    (dl_id, url, destination, now, now, pos, package_id),
+                       (id, url, status, destination, created_at, updated_at, position, package_id, max_retries)
+                       VALUES (?, ?, 'pending', ?, ?, ?, ?, ?, ?)""",
+                    (dl_id, url, destination, now, now, pos, package_id, max_retries),
                 )
                 ids.append(dl_id)
                 pos += 1

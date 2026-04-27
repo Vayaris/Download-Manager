@@ -1130,6 +1130,82 @@ tr:hover .btn-copy-path { opacity: 1; }
 .conn-badge.error .b-dot    { background: var(--red); }
 
 .key-actions { display: flex; gap: 6px; margin-top: 8px; }
+
+.advanced-settings {
+  margin: 18px 0 20px;
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface-2);
+}
+
+.advanced-settings summary {
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text);
+  user-select: none;
+}
+
+.advanced-settings[open] summary {
+  margin-bottom: 14px;
+}
+
+.hosts-panel {
+  margin-top: 18px;
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface-2);
+}
+
+.hosts-panel-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.hosts-title {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.hosts-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 10px;
+  max-height: 210px;
+  overflow: auto;
+}
+
+.host-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 100%;
+  padding: 5px 9px;
+  border-radius: var(--radius-full);
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text-2);
+  font-size: 12px;
+  line-height: 1.2;
+}
+
+.host-chip.disabled {
+  opacity: .55;
+}
+
+.host-chip-type {
+  color: var(--text-3);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: .4px;
+}
 .key-hint { font-size: 11.5px; color: var(--text-3); margin-top: 5px; }
 .key-hint a { color: var(--accent); }
 
@@ -1287,6 +1363,8 @@ tr:hover .btn-copy-path { opacity: 1; }
   .settings-card { padding: 16px; }
   .settings-wrap { padding: 0 4px; }
   .key-actions { flex-wrap: wrap; }
+  .hosts-panel-header { flex-direction: column; }
+  .hosts-panel-header .btn { width: 100%; justify-content: center; }
   .section-header { flex-wrap: wrap; gap: 8px; }
   .controls-bar { flex-wrap: wrap; gap: 6px; padding: 8px 0; }
   .controls-left { flex-wrap: wrap; gap: 4px; }

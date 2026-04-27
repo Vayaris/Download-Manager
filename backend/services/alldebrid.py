@@ -41,6 +41,37 @@ class AllDebridService:
         except Exception:
             return False
 
+    async def user_hosts(self, api_key: str) -> list[dict]:
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            resp = await client.get(
+                f"{ALLDEBRID_API}/v4.1/user/hosts",
+                headers={"Authorization": f"Bearer {api_key}"},
+                params={"agent": AGENT},
+            )
+            data = resp.json()
+            if data.get("status") != "success":
+                msg = data.get("error", {}).get("message", "Unknown error")
+                raise Exception(f"AllDebrid: {msg}")
+
+            hosts = data.get("data", {}).get("hosts", {})
+            normalized = []
+            for key, host in hosts.items():
+                if not isinstance(host, dict):
+                    continue
+                normalized.append({
+                    "id": key,
+                    "name": host.get("name") or key,
+                    "type": host.get("type", ""),
+                    "domains": host.get("domains", []),
+                    "status": bool(host.get("status", False)),
+                    "quota": host.get("quota"),
+                    "quotaMax": host.get("quotaMax"),
+                    "quotaType": host.get("quotaType"),
+                    "limitSimuDl": host.get("limitSimuDl"),
+                })
+
+            return sorted(normalized, key=lambda h: h["name"].lower())
+
     async def magnet_upload(self, magnets: list[str]) -> list[dict]:
         api_key = self._get_api_key()
         async with httpx.AsyncClient(timeout=30.0) as client:

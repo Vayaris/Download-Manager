@@ -11,7 +11,7 @@
   <link rel="apple-touch-icon" href="/static/icons/icon-192.svg">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link rel="stylesheet" href="/static/css/style.css?v=36">
+  <link rel="stylesheet" href="/static/css/style.css?v=37">
   <script>
     (function() {
       var t = localStorage.getItem('dm_theme') || 'light';
@@ -178,6 +178,18 @@
         <button class="btn" onclick="testAllDebrid()" data-i18n="settings_btn_test">Test</button>
         <button class="btn btn-primary" onclick="saveAllDebrid()" data-i18n="settings_btn_save_alldebrid">Save</button>
       </div>
+
+      <div id="alldebrid-hosts-panel" class="hosts-panel hidden">
+        <div class="hosts-panel-header">
+          <div>
+            <div class="hosts-title" data-i18n="settings_alldebrid_hosts_title">Supported hosters</div>
+            <div id="alldebrid-hosts-summary" class="form-hint">-</div>
+          </div>
+          <button type="button" class="btn btn-sm" onclick="refreshAllDebridHosts()" data-i18n="settings_hosts_refresh">Refresh</button>
+        </div>
+        <input type="search" id="alldebrid-hosts-search" class="form-input form-input-sm" placeholder="Search hoster..." data-i18n-placeholder="settings_hosts_search" oninput="renderAllDebridHosts()">
+        <div id="alldebrid-hosts-list" class="hosts-list"></div>
+      </div>
     </div>
 
     <!-- Téléchargements -->
@@ -190,17 +202,8 @@
       <div class="form-group">
         <label class="form-label" data-i18n="settings_simultaneous">Simultaneous downloads</label>
         <div style="display:flex;align-items:center;gap:8px">
-          <input type="number" id="simultaneous-input" class="form-input" style="max-width:80px" min="1" max="10" value="3">
-          <span style="color:var(--text-3);font-size:12px" data-i18n="settings_simultaneous_hint">between 1 and 10</span>
-        </div>
-      </div>
-
-      <div class="form-group">
-        <label class="form-label" data-i18n="settings_segments">Segments per file</label>
-        <p class="form-hint" style="margin-bottom:8px" data-i18n="settings_segments_hint">More segments = more speed (like JDownloader). 1 = single connection.</p>
-        <div style="display:flex;align-items:center;gap:8px">
-          <input type="number" id="segments-input" class="form-input" style="max-width:80px" min="1" max="8" value="1">
-          <span style="color:var(--text-3);font-size:12px" data-i18n="settings_segments_range">between 1 and 8</span>
+          <input type="number" id="simultaneous-input" class="form-input" style="max-width:80px" min="1" max="20" value="3">
+          <span style="color:var(--text-3);font-size:12px" data-i18n="settings_simultaneous_hint">between 1 and 20</span>
         </div>
       </div>
 
@@ -216,6 +219,35 @@
         <label class="form-label" data-i18n="settings_default_dest">Default destination</label>
         <input type="text" id="default-dest" class="form-input" placeholder="/opt/download-manager/downloads">
       </div>
+
+      <details class="advanced-settings">
+        <summary data-i18n="settings_advanced_downloads">Advanced download settings</summary>
+
+      <div class="form-group">
+        <label class="form-label" data-i18n="settings_segments">Segments per file</label>
+        <p class="form-hint" style="margin-bottom:8px" data-i18n="settings_segments_hint">More segments = more speed (like JDownloader). 1 = single connection.</p>
+        <div style="display:flex;align-items:center;gap:8px">
+          <input type="number" id="segments-input" class="form-input" style="max-width:80px" min="1" max="16" value="1">
+          <span style="color:var(--text-3);font-size:12px" data-i18n="settings_segments_range">between 1 and 16</span>
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label" data-i18n="settings_max_retries">Maximum retries</label>
+        <div style="display:flex;align-items:center;gap:8px">
+          <input type="number" id="max-retries-input" class="form-input" style="max-width:80px" min="0" max="20" value="3">
+          <span style="color:var(--text-3);font-size:12px" data-i18n="settings_max_retries_hint">0 to 20, 0 = no retry</span>
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label" data-i18n="settings_retry_delay">Retry delay</label>
+        <div style="display:flex;align-items:center;gap:8px">
+          <input type="number" id="retry-delay-input" class="form-input" style="max-width:100px" min="0" max="3600" value="5">
+          <span style="color:var(--text-3);font-size:12px" data-i18n="settings_retry_delay_hint">seconds before retry</span>
+        </div>
+      </div>
+      </details>
 
       <div class="key-actions">
         <button class="btn btn-primary" onclick="saveDownloadSettings()" data-i18n="settings_btn_save_downloads">Save</button>
@@ -636,10 +668,10 @@ function pwaInstall(){if(pwaDeferred){pwaDeferred.prompt();pwaDeferred.userChoic
 </script>
 
 <script src="/static/js/theme.js?v=36"></script>
-<script src="/static/js/i18n.js?v=35"></script>
+<script src="/static/js/i18n.js?v=37"></script>
 <script src="/static/js/api.js?v=30"></script>
 <script src="/static/js/filebrowser.js?v=35"></script>
-<script src="/static/js/settings.js?v=36"></script>
+<script src="/static/js/settings.js?v=37"></script>
 <script src="/static/js/account.js?v=28"></script>
 <script>if("serviceWorker"in navigator)navigator.serviceWorker.register("/sw.js").catch(()=>{})</script>
 </body>

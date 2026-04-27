@@ -58,6 +58,8 @@ async def get_settings(_=Depends(get_current_user)):
         "allowed_paths": cfg["downloads"]["allowed_paths"],
         "download_segments": cfg["downloads"].get("download_segments", 1),
         "speed_limit": cfg["downloads"].get("speed_limit", 0),
+        "max_retries": cfg["downloads"].get("max_retries", 3),
+        "retry_delay_seconds": cfg["downloads"].get("retry_delay_seconds", 5),
         "port": cfg["server"]["port"],
         "webhook_enabled": wh.get("enabled", False),
         "webhook_url": wh.get("url", ""),
@@ -75,7 +77,7 @@ async def update_settings(body: SettingsUpdate, _=Depends(get_current_user)):
         cfg["alldebrid"]["api_key"] = body.alldebrid_api_key
     if body.alldebrid_enabled is not None:
         cfg["alldebrid"]["enabled"] = body.alldebrid_enabled
-    if body.simultaneous_downloads is not None and 1 <= body.simultaneous_downloads <= 10:
+    if body.simultaneous_downloads is not None and 1 <= body.simultaneous_downloads <= 20:
         cfg["downloads"]["simultaneous"] = body.simultaneous_downloads
     if body.default_destination is not None:
         cfg["downloads"]["default_destination"] = body.default_destination
@@ -91,6 +93,10 @@ async def update_settings(body: SettingsUpdate, _=Depends(get_current_user)):
             asyncio.create_task(aria2.change_global_option({"max-overall-download-limit": limit_str}))
         except Exception:
             pass
+    if body.max_retries is not None and 0 <= body.max_retries <= 20:
+        cfg["downloads"]["max_retries"] = body.max_retries
+    if body.retry_delay_seconds is not None and 0 <= body.retry_delay_seconds <= 3600:
+        cfg["downloads"]["retry_delay_seconds"] = body.retry_delay_seconds
 
     # Webhooks
     if "webhooks" not in cfg:
@@ -134,6 +140,20 @@ async def test_alldebrid(_=Depends(get_current_user)):
         return {"valid": False, "message": "No API key configured"}
     valid = await alldebrid.test_key(api_key)
     return {"valid": valid, "message": "API key valid" if valid else "API key invalid"}
+
+
+@router.get("/alldebrid/hosts")
+async def alldebrid_hosts(_=Depends(get_current_user)):
+    cfg = get_config()
+    api_key = cfg["alldebrid"]["api_key"]
+    if not cfg["alldebrid"]["enabled"] or not api_key:
+        raise HTTPException(status_code=400, detail="AllDebrid not configured")
+    try:
+        hosts = await alldebrid.user_hosts(api_key)
+        available = sum(1 for host in hosts if host.get("status"))
+        return {"hosts": hosts, "available": available, "total": len(hosts)}
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=str(e))
 
 
 @router.post("/test-webhook")
