@@ -4,8 +4,8 @@
   "description": "Gestionnaire de téléchargements avec AllDebrid",
   "start_url": "/",
   "display": "standalone",
-  "background_color": "#0c0c0f",
-  "theme_color": "#7c5cfc",
+  "background_color": "#f5f3ed",
+  "theme_color": "#0f766e",
   "orientation": "any",
   "icons": [
     {

@@ -988,7 +988,53 @@ async function storageRemove(path) {
 
 // ---- Boot ----
 
+function initSettingsSections() {
+  document.querySelectorAll(".settings-card[data-settings-section]").forEach((card) => {
+    const title = card.querySelector(".card-title");
+    const section = card.getAttribute("data-settings-section");
+    if (!title || !section || title.dataset.collapseBound === "1") return;
+
+    const storageKey = "dm_settings_section_" + section;
+    const saved = localStorage.getItem(storageKey);
+    const defaultOpen = card.getAttribute("data-default-open") === "true";
+    const startOpen = saved ? saved === "open" : defaultOpen;
+
+    title.dataset.collapseBound = "1";
+    title.setAttribute("role", "button");
+    title.setAttribute("tabindex", "0");
+    title.setAttribute("aria-expanded", startOpen ? "true" : "false");
+
+    const chevron = document.createElement("span");
+    chevron.className = "settings-section-chevron";
+    chevron.setAttribute("aria-hidden", "true");
+    chevron.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>';
+    title.appendChild(chevron);
+
+    function setOpen(open, persist) {
+      card.classList.toggle("collapsed", !open);
+      title.setAttribute("aria-expanded", open ? "true" : "false");
+      if (persist) localStorage.setItem(storageKey, open ? "open" : "closed");
+    }
+
+    function toggle() {
+      setOpen(card.classList.contains("collapsed"), true);
+    }
+
+    title.addEventListener("click", toggle);
+    title.addEventListener("keydown", (event) => {
+      if (event.key === "Enter" || event.key === " ") {
+        event.preventDefault();
+        toggle();
+      }
+    });
+
+    setOpen(startOpen, false);
+  });
+}
+
 async function bootSettings() {
+  initSettingsSections();
+
   try {
     const cfg = await API.get("/api/settings/");
 

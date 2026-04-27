@@ -19,7 +19,7 @@ function toggleTheme() {
 
 // Init icons on page load
 (function() {
-  var theme = document.documentElement.getAttribute('data-theme') || 'dark';
+  var theme = document.documentElement.getAttribute('data-theme') || 'light';
   var btns = document.querySelectorAll('.theme-toggle');
   for (var i = 0; i < btns.length; i++) {
     var sun = btns[i].querySelector('.icon-sun');

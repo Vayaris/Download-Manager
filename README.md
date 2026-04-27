@@ -2,21 +2,21 @@
 
 A web-based download manager with **AllDebrid** support, designed to run on **Linux** machines (Proxmox VM/LXC, dedicated servers, VPS).
 
-Latest stable release: `v1.10.10`
+Latest stable release: `v1.10.11`
 
 ![Python](https://img.shields.io/badge/Python-3.8+-3776AB?logo=python&logoColor=white)
 ![FastAPI](https://img.shields.io/badge/FastAPI-009688?logo=fastapi&logoColor=white)
 ![aria2](https://img.shields.io/badge/aria2-Download_Engine-blue)
-![PWA](https://img.shields.io/badge/PWA-Installable-5A0FC8?logo=pwa&logoColor=white)
+![PWA](https://img.shields.io/badge/PWA-Installable-0f766e?logo=pwa&logoColor=white)
 ![License](https://img.shields.io/badge/License-MIT-green)
 
 ---
 
 ## Features
 
-- **Modern web interface** — light/dark theme, mobile responsive, real-time updates via WebSocket
+- **Modern web interface** — clean light default, polished dark mode, responsive layout, real-time updates via WebSocket
 - **Installable PWA** — add the app to your phone's home screen (Android / iOS)
-- **Optimized mobile view** — compact card layout, touch navigation, bottom navigation bar
+- **Optimized mobile view** — compact download cards, touch navigation, bottom navigation bar
 - **AllDebrid integration** — automatic link debriding (1fichier, Uptobox, etc.)
 - **Torrent / Magnet support** — upload `.torrent` files or paste magnet links via AllDebrid, with automatic polling and download start
 - **aria2 engine** — fast downloads, multi-segment (split), automatic resume
@@ -31,6 +31,7 @@ Latest stable release: `v1.10.10`
 - **Secure authentication** — login/password with 2FA (6-digit OTP), rate limiting, IP blocking
 - **Built-in updates** — check and install new versions from the Settings page, with changelog
 - **Runtime diagnostics** — queue, aria2, database and git health visible from Settings
+- **Collapsible settings** — keep advanced sections hidden until needed
 - **Admin CLI** — reset admin account, manage blocked IPs from the command line
 - **Systemd service** — auto-start, crash recovery
 - **Multi-language** — English and French, switchable from Settings
