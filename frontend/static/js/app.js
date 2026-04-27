@@ -408,11 +408,9 @@ let _pkgFileBrowserMode = false;
 
 function openPackageModal() {
   document.getElementById("package-modal").classList.remove("hidden");
-  const mainDest = document.getElementById("dest-path").value;
+  const mainDest = getDestinationValue("dest-path");
   if (mainDest) {
-    document.getElementById("pkg-dest-path").value = mainDest;
-    document.getElementById("pkg-dest-label").textContent = mainDest;
-    document.getElementById("pkg-dest-selector").classList.add("selected");
+    setDestinationValue("pkg-dest-path", mainDest);
   }
 }
 function closePackageModal() {
@@ -422,11 +420,9 @@ function closePackageModal() {
 function openFileBrowserForPackage() {
   _pkgFileBrowserMode = true;
   FileBrowser.elevate();
-  const startPath = document.getElementById("pkg-dest-path").value.trim() || undefined;
+  const startPath = getDestinationValue("pkg-dest-path") || undefined;
   FileBrowser.open((path) => {
-    document.getElementById("pkg-dest-path").value = path;
-    document.getElementById("pkg-dest-label").textContent = path;
-    document.getElementById("pkg-dest-selector").classList.add("selected");
+    setDestinationValue("pkg-dest-path", path);
     _pkgFileBrowserMode = false;
   }, startPath);
 }
@@ -434,7 +430,7 @@ function openFileBrowserForPackage() {
 async function addPackage() {
   const name = document.getElementById("pkg-name").value.trim();
   const links = document.getElementById("pkg-links").value.trim();
-  const dest = document.getElementById("pkg-dest-path").value.trim();
+  const dest = getDestinationValue("pkg-dest-path");
 
   if (!name) { showToast(t("pkg_name_required"), "error"); return; }
   if (!links) { showToast(t("pkg_links_required"), "error"); return; }
@@ -569,11 +565,9 @@ let _torrentFileBrowserMode = false;
 
 function openTorrentModal() {
   document.getElementById("torrent-modal").classList.remove("hidden");
-  const mainDest = document.getElementById("dest-path").value;
+  const mainDest = getDestinationValue("dest-path");
   if (mainDest) {
-    document.getElementById("torrent-dest-path").value = mainDest;
-    document.getElementById("torrent-dest-label").textContent = mainDest;
-    document.getElementById("torrent-dest-selector").classList.add("selected");
+    setDestinationValue("torrent-dest-path", mainDest);
   }
 }
 
@@ -593,11 +587,9 @@ function onTorrentFileSelected(input) {
 function openFileBrowserForTorrent() {
   _torrentFileBrowserMode = true;
   FileBrowser.elevate();
-  const startPath = document.getElementById("torrent-dest-path").value.trim() || undefined;
+  const startPath = getDestinationValue("torrent-dest-path") || undefined;
   FileBrowser.open((path) => {
-    document.getElementById("torrent-dest-path").value = path;
-    document.getElementById("torrent-dest-label").textContent = path;
-    document.getElementById("torrent-dest-selector").classList.add("selected");
+    setDestinationValue("torrent-dest-path", path);
     _torrentFileBrowserMode = false;
   }, startPath);
 }
@@ -612,7 +604,7 @@ async function submitTorrent() {
     return;
   }
 
-  let destination = document.getElementById("torrent-dest-path").value.trim();
+  let destination = getDestinationValue("torrent-dest-path");
   if (!destination) {
     try {
       const cfg = await API.get("/api/settings/");
@@ -738,12 +730,11 @@ async function removeTorrent(id) {
 
 async function addLinks() {
   const textarea  = document.getElementById("links-input");
-  const destInput = document.getElementById("dest-path");
   const rawUrls   = textarea.value.trim();
 
   if (!rawUrls) { showToast(t("links_empty"), "error"); return; }
 
-  let destination = destInput.value.trim();
+  let destination = getDestinationValue("dest-path");
   if (!destination) {
     try {
       const cfg = await API.get("/api/settings/");
@@ -1055,9 +1046,7 @@ async function loadInitial() {
 
     const destInput = document.getElementById("dest-path");
     if (!destInput.value && cfg.default_destination) {
-      destInput.value = cfg.default_destination;
-      document.getElementById("dest-label").textContent = cfg.default_destination;
-      document.getElementById("dest-selector").classList.add("selected");
+      setDestinationValue("dest-path", cfg.default_destination);
     }
   } catch {}
 

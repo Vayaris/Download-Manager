@@ -549,6 +549,36 @@ html { overflow-y: scroll; }
 }
 .dest-selector:hover .dest-browse-btn { color: var(--text); background: var(--surface-3); }
 
+.dest-input-group {
+  display: flex;
+  align-items: stretch;
+  min-width: 0;
+  flex: 1;
+}
+
+.dest-path-input {
+  min-height: 42px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  border-top-right-radius: 0;
+  border-bottom-right-radius: 0;
+}
+
+.dest-input-group .dest-browse-btn {
+  border: 1px solid var(--border);
+  border-left: 0;
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+  min-width: 44px;
+  height: 42px;
+  padding: 0 14px;
+  cursor: pointer;
+}
+
+.dest-input-group .dest-browse-btn:hover {
+  color: var(--text);
+  background: var(--surface-3);
+}
+
 .btn-add-links {
   padding: 10px 26px;
   font-size: 13.5px;

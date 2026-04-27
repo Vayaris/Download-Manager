@@ -131,7 +131,7 @@ const FileBrowser = (() => {
 
 function _getDefaultDest() {
   // Try to get default destination from existing inputs
-  const destInput = document.getElementById("dest-path");
+  const destInput = document.getElementById("dest-path-text") || document.getElementById("dest-path");
   if (destInput && destInput.value.trim()) return destInput.value.trim();
   // For settings page
   const defaultDest = document.getElementById("default-dest");
@@ -139,12 +139,50 @@ function _getDefaultDest() {
   return "";
 }
 
+function setDestinationValue(hiddenId, path) {
+  const value = (path || "").trim();
+  const hidden = document.getElementById(hiddenId);
+  if (hidden) hidden.value = value;
+
+  const input = document.querySelector(`[data-dest-hidden="${hiddenId}"]`);
+  if (input) input.value = value;
+
+  const selector = hiddenId === "dest-path"
+    ? document.getElementById("dest-selector")
+    : document.getElementById(hiddenId.replace("-path", "-selector"));
+  if (selector) selector.classList.toggle("selected", !!value);
+
+  const label = hiddenId === "dest-path"
+    ? document.getElementById("dest-label")
+    : document.getElementById(hiddenId.replace("-path", "-label"));
+  if (label) label.textContent = value || t("dest_choose");
+}
+
+function getDestinationValue(hiddenId) {
+  const input = document.querySelector(`[data-dest-hidden="${hiddenId}"]`);
+  const value = input ? input.value.trim() : "";
+  if (value) setDestinationValue(hiddenId, value);
+  const hidden = document.getElementById(hiddenId);
+  return (hidden ? hidden.value : value).trim();
+}
+
+function initDestinationInputs() {
+  document.querySelectorAll("[data-dest-hidden]").forEach(input => {
+    const hiddenId = input.dataset.destHidden;
+    input.addEventListener("input", () => setDestinationValue(hiddenId, input.value));
+    input.addEventListener("blur", () => setDestinationValue(hiddenId, input.value));
+    input.addEventListener("keydown", event => {
+      if (event.key === "Enter") {
+        event.preventDefault();
+        setDestinationValue(hiddenId, input.value);
+      }
+    });
+  });
+}
+
 function openFileBrowser() {
   FileBrowser.open((path) => {
-    document.getElementById("dest-path").value = path;
-    const label = document.getElementById("dest-label");
-    label.textContent = path;
-    document.getElementById("dest-selector").classList.add("selected");
+    setDestinationValue("dest-path", path);
   });
 }
 
@@ -181,3 +219,5 @@ async function createFolder() {
     showToast(msg, "error");
   }
 }
+
+initDestinationInputs();

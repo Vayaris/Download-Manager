@@ -67,13 +67,11 @@ async def browse(path: str = Query(default="/"), _=Depends(get_current_user)):
                 if not item.is_dir() or item.name.startswith("."):
                     continue
                 try:
-                    has_children = any(
-                        x.is_dir() and not x.name.startswith(".")
-                        for x in item.iterdir()
-                    )
-                    dirs.append({"name": item.name, "path": str(item), "has_children": has_children})
+                    # Keep browsing responsive while downloads write into folders:
+                    # do not scan each child directory recursively.
+                    dirs.append({"name": item.name, "path": str(item), "has_children": None})
                 except PermissionError:
-                    dirs.append({"name": item.name, "path": str(item), "has_children": False, "restricted": True})
+                    dirs.append({"name": item.name, "path": str(item), "has_children": None, "restricted": True})
         except PermissionError:
             pass
 

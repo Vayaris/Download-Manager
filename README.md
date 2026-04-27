@@ -2,6 +2,8 @@
 
 A web-based download manager with **AllDebrid** support, designed to run on **Linux** machines (Proxmox VM/LXC, dedicated servers, VPS).
 
+Latest stable release: `v1.10.10`
+
 ![Python](https://img.shields.io/badge/Python-3.8+-3776AB?logo=python&logoColor=white)
 ![FastAPI](https://img.shields.io/badge/FastAPI-009688?logo=fastapi&logoColor=white)
 ![aria2](https://img.shields.io/badge/aria2-Download_Engine-blue)
@@ -25,8 +27,10 @@ A web-based download manager with **AllDebrid** support, designed to run on **Li
 - **Automatic history** — completed/failed downloads are automatically moved to history
 - **Webhook notifications** — Discord, Slack, Telegram, Gotify, ntfy, or generic JSON (with built-in setup guides)
 - **File browser** — select and create folders directly from the interface
+- **Fast destination input** — paste `/mnt/...` paths directly or browse folders
 - **Secure authentication** — login/password with 2FA (6-digit OTP), rate limiting, IP blocking
 - **Built-in updates** — check and install new versions from the Settings page, with changelog
+- **Runtime diagnostics** — queue, aria2, database and git health visible from Settings
 - **Admin CLI** — reset admin account, manage blocked IPs from the command line
 - **Systemd service** — auto-start, crash recovery
 - **Multi-language** — English and French, switchable from Settings
@@ -194,6 +198,18 @@ Each download is automatically retried up to 5 times on error. A 10-second delay
 
 Completed or failed downloads are automatically moved to the "Completed" section. The download area only shows active / pending / paused files. When empty, it disappears.
 
+### Diagnostics
+
+The **Settings** page now includes a diagnostics panel with:
+- queue health and recent errors
+- aria2 runtime status
+- database table counts and download status distribution
+- git HEAD / dirty state for update checks
+
+### Fast Destination Input
+
+When adding links, packages or torrents, you can paste a destination path directly, for example `/mnt/media/Movies`, or use the folder browser button. The folder browser uses a lightweight directory listing so it stays responsive while downloads are writing files.
+
 ### Webhook Notifications
 
 Configure a webhook URL to receive notifications on events:
@@ -271,6 +287,8 @@ MIT
 
 Interface web de gestion de téléchargements avec support **AllDebrid**, conçue pour tourner sur des machines **Linux** (VM / LXC Proxmox, serveurs dédiés, VPS).
 
+Dernière version stable : `v1.10.10`
+
 ## Fonctionnalités
 
 - **Interface web moderne** — thème clair/sombre, responsive mobile, temps réel via WebSocket
@@ -283,9 +301,23 @@ Interface web de gestion de téléchargements avec support **AllDebrid**, conçu
 - **Retry automatique** — 5 tentatives par défaut
 - **Historique automatique** — les téléchargements terminés passent dans l'historique
 - **Notifications webhook** — Discord, Slack, Telegram, Gotify, ntfy
+- **Destination rapide** — collez directement un chemin `/mnt/...` ou parcourez les dossiers
 - **Authentification sécurisée** — login avec 2FA (OTP), rate limiting, blocage IP
 - **Mise à jour intégrée** — depuis la page Paramètres
+- **Diagnostics runtime** — santé de la queue, d'aria2, de la base et de git visibles dans les Paramètres
 - **Multi-langue** — anglais et français, changeable dans les Paramètres
+
+## Diagnostics
+
+La page **Paramètres** inclut maintenant un panneau de diagnostics avec :
+- la santé de la queue et les erreurs récentes
+- l'état runtime d'aria2
+- les compteurs de la base de données et la répartition des statuts
+- l'état git HEAD / dirty pour les vérifications de mise à jour
+
+## Destination rapide
+
+Lors de l'ajout de liens, paquets ou torrents, vous pouvez coller directement un chemin de destination, par exemple `/mnt/media/Films`, ou utiliser le bouton de navigation. Le navigateur de dossiers utilise un listing léger pour rester réactif pendant qu'un téléchargement écrit des fichiers.
 
 ## Installation rapide
 
