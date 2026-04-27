@@ -2,7 +2,7 @@
 
 A web-based download manager with **AllDebrid** support, designed to run on **Linux** machines (Proxmox VM/LXC, dedicated servers, VPS).
 
-Latest stable release: `v1.10.12`
+Latest stable release: `v1.10.13`
 
 ![Python](https://img.shields.io/badge/Python-3.8+-3776AB?logo=python&logoColor=white)
 ![FastAPI](https://img.shields.io/badge/FastAPI-009688?logo=fastapi&logoColor=white)
@@ -31,6 +31,7 @@ Latest stable release: `v1.10.12`
 - **Secure authentication** — login/password with 2FA (6-digit OTP), rate limiting, IP blocking
 - **Built-in updates** — check and install new versions from the Settings page, with changelog
 - **Runtime diagnostics** — queue, aria2, database and git health visible from Settings
+- **Plex refresh** — configure Plex and refresh libraries manually from Settings
 - **Collapsible settings** — keep advanced sections hidden until needed
 - **Admin CLI** — reset admin account, manage blocked IPs from the command line
 - **Systemd service** — auto-start, crash recovery
@@ -165,6 +166,12 @@ webhooks:
     - "download_complete"
     - "download_failed"
     - "package_complete"
+
+plex:
+  enabled: false
+  url: "http://127.0.0.1:32400"
+  token: ""                 # Stored server-side, never returned to the browser
+  last_refreshes: {}
 ```
 
 Most settings can be changed directly from the **Settings** page in the web interface.
@@ -212,6 +219,10 @@ The **Settings** page now includes a diagnostics panel with:
 ### Fast Destination Input
 
 When adding links, packages or torrents, you can paste a destination path directly, for example `/mnt/media/Movies`, or use the folder browser button. The folder browser uses a lightweight directory listing so it stays responsive while downloads are writing files.
+
+### Plex Refresh
+
+Configure your Plex URL and token in **Settings → Plex**, then refresh a specific library manually after adding media. Download Manager only calls the Plex HTTP API; it does not restart or modify the Plex service.
 
 ### Webhook Notifications
 

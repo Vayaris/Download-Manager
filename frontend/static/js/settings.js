@@ -170,6 +170,133 @@ async function refreshAllDebridHosts() {
   }
 }
 
+function setPlexBadge(state, text) {
+  const badge = document.getElementById("plex-status-badge");
+  const label = document.getElementById("plex-status-text");
+  if (!badge || !label) return;
+  badge.className = `conn-badge ${state}`;
+  label.textContent = text;
+}
+
+function formatPlexRefreshTime(value) {
+  if (!value) return t("plex_never_refreshed");
+  try {
+    return new Date(value).toLocaleString();
+  } catch {
+    return value;
+  }
+}
+
+function renderPlex(data) {
+  const enabled = document.getElementById("plex-enabled");
+  const url = document.getElementById("plex-url");
+  const token = document.getElementById("plex-token");
+  const summary = document.getElementById("plex-summary");
+  const list = document.getElementById("plex-libraries");
+  if (!enabled || !url || !token || !summary || !list) return;
+
+  enabled.checked = !!data.enabled;
+  url.value = data.url || "http://127.0.0.1:32400";
+  token.value = "";
+  token.placeholder = data.token_configured ? t("plex_token_configured") : t("plex_token_placeholder");
+
+  if (!data.enabled) {
+    setPlexBadge("unknown", t("plex_disabled"));
+    summary.classList.add("hidden");
+    list.innerHTML = "";
+    return;
+  }
+
+  if (data.connected) {
+    setPlexBadge("ok", t("plex_connected"));
+  } else {
+    setPlexBadge(data.token_configured ? "error" : "unknown", data.token_configured ? t("plex_unavailable") : t("plex_not_configured"));
+  }
+
+  const serverName = data.server && data.server.friendlyName ? data.server.friendlyName : "-";
+  summary.classList.remove("hidden");
+  summary.innerHTML = `
+    <div style="font-size:13px;color:var(--text-2);line-height:1.6">
+      <strong style="color:var(--text)">${escHtml(serverName)}</strong><br>
+      ${escHtml(t("plex_libraries_count", { n: data.library_count || 0 }))}
+      ${data.error ? `<br><span style="color:var(--red)">${escHtml(data.error)}</span>` : ""}
+    </div>`;
+
+  const libraries = Array.isArray(data.libraries) ? data.libraries : [];
+  if (!libraries.length) {
+    list.innerHTML = `<p class="form-hint">${escHtml(t("plex_no_libraries"))}</p>`;
+    return;
+  }
+
+  const lastRefreshes = data.last_refreshes || {};
+  list.innerHTML = libraries.map((library) => {
+    const key = String(library.key || "");
+    const last = formatPlexRefreshTime(lastRefreshes[key]);
+    const keyArg = JSON.stringify(key).replace(/</g, "\\u003c");
+    return `
+      <div class="plex-library-row">
+        <div>
+          <span class="plex-library-title">${escHtml(library.title || key)}</span>
+          <span class="plex-library-meta">${escHtml(library.type || "")} · ${escHtml(t("plex_last_refresh", { time: last }))}</span>
+        </div>
+        <button class="btn btn-sm" onclick="refreshPlexLibrary(${keyArg})">${escHtml(t("plex_btn_refresh_library"))}</button>
+      </div>`;
+  }).join("");
+}
+
+async function loadPlex() {
+  setPlexBadge("checking", t("settings_checking"));
+  try {
+    const data = await API.get("/api/settings/plex");
+    renderPlex(data);
+  } catch (e) {
+    setPlexBadge("error", t("plex_unavailable"));
+    const list = document.getElementById("plex-libraries");
+    if (list) list.innerHTML = `<p class="form-hint" style="color:var(--red)">${escHtml(e.message)}</p>`;
+  }
+}
+
+async function savePlex() {
+  const enabled = document.getElementById("plex-enabled").checked;
+  const url = document.getElementById("plex-url").value.trim() || "http://127.0.0.1:32400";
+  const token = document.getElementById("plex-token").value.trim();
+  const payload = { enabled, url };
+  if (token) payload.token = token;
+  try {
+    await API.put("/api/settings/plex", payload);
+    document.getElementById("plex-token").value = "";
+    showToast(t("plex_saved"), "ok");
+    await loadPlex();
+  } catch (e) {
+    showToast(t("error_prefix") + e.message, "error");
+    throw e;
+  }
+}
+
+async function testPlex() {
+  try {
+    await savePlex();
+    const res = await API.post("/api/settings/plex/test", {});
+    setPlexBadge("ok", t("plex_connected"));
+    showToast(t("plex_test_ok", { n: res.library_count || 0 }), "ok");
+    await loadPlex();
+  } catch (e) {
+    setPlexBadge("error", t("plex_unavailable"));
+    showToast(t("error_prefix") + e.message, "error");
+  }
+}
+
+async function refreshPlexLibrary(key) {
+  try {
+    const res = await API.post(`/api/settings/plex/libraries/${encodeURIComponent(key)}/refresh`, {});
+    showToast(t("plex_refresh_ok"), "ok");
+    await loadPlex();
+    return res;
+  } catch (e) {
+    showToast(t("error_prefix") + e.message, "error");
+  }
+}
+
 function toggleKeyVisibility() {
   const input = document.getElementById("alldebrid-key");
   input.type = input.type === "password" ? "text" : "password";
@@ -767,11 +894,20 @@ async function saveSettings() {
 
   try {
     await API.put("/api/settings/", payload);
+    const plexPayload = {
+      enabled: document.getElementById("plex-enabled").checked,
+      url: document.getElementById("plex-url").value.trim() || "http://127.0.0.1:32400",
+    };
+    const plexToken = document.getElementById("plex-token").value.trim();
+    if (plexToken) plexPayload.token = plexToken;
+    await API.put("/api/settings/plex", plexPayload);
     if (newAllDebridKey) {
       window._alldebridKeyConfigured = true;
       document.getElementById("alldebrid-key").value = "";
     }
+    document.getElementById("plex-token").value = "";
     await refreshAllDebridHosts();
+    await loadPlex();
     resultEl.textContent = t("settings_saved");
     resultEl.className = "inline-result ok";
     showToast(t("settings_all_saved"), "ok");
@@ -1161,6 +1297,9 @@ async function bootSettings() {
 
     // Load storage info
     await loadStorage();
+
+    // Load Plex status and libraries
+    await loadPlex();
 
     // Load runtime diagnostics
     await loadDiagnostics();

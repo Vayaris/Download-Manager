@@ -39,6 +39,12 @@ DEFAULT_CONFIG = {
         "url": "",
         "format": "generic",
         "events": ["download_complete", "download_failed", "package_complete"]
+    },
+    "plex": {
+        "enabled": False,
+        "url": "http://127.0.0.1:32400",
+        "token": "",
+        "last_refreshes": {}
     }
 }
 

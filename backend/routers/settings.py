@@ -6,11 +6,13 @@ import subprocess
 from pathlib import Path
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request
+from urllib.parse import urlparse
 
-from models import SettingsUpdate, StoragePathRequest, SignalCheckRequest, SignalDeployRequest, SignalRegisterRequest, SignalVerifyRequest, SignalResetRequest
+from models import SettingsUpdate, StoragePathRequest, PlexSettingsRequest, SignalCheckRequest, SignalDeployRequest, SignalRegisterRequest, SignalVerifyRequest, SignalResetRequest
 from auth import get_current_user, get_password_hash
 from config import get_config, save_config
 from services.alldebrid import alldebrid
+from services.plex import plex
 from services.webhook import send_webhook
 
 router = APIRouter()
@@ -42,6 +44,39 @@ def _git_head(path: Path) -> str:
         timeout=10,
     )
     return result.stdout.strip() if result.returncode == 0 else ""
+
+
+def _plex_public_config(cfg: dict, include_status: bool = False) -> dict:
+    plex_cfg = cfg.get("plex", {})
+    token = plex_cfg.get("token", "")
+    data = {
+        "enabled": bool(plex_cfg.get("enabled", False)),
+        "url": plex_cfg.get("url", "http://127.0.0.1:32400"),
+        "token_configured": bool(token),
+        "last_refreshes": plex_cfg.get("last_refreshes", {}),
+    }
+    if include_status:
+        data["configured"] = bool(token and plex_cfg.get("url"))
+    return data
+
+
+def _require_plex_config(cfg: dict) -> tuple[str, str]:
+    plex_cfg = cfg.get("plex", {})
+    if not plex_cfg.get("enabled"):
+        raise HTTPException(status_code=400, detail="Plex integration is disabled")
+    url = (plex_cfg.get("url") or "").strip()
+    token = (plex_cfg.get("token") or "").strip()
+    if not url or not token:
+        raise HTTPException(status_code=400, detail="Plex URL or token is missing")
+    return url, token
+
+
+def _validate_plex_url(url: str) -> str:
+    clean = (url or "").strip().rstrip("/")
+    parsed = urlparse(clean)
+    if parsed.scheme not in ("http", "https") or not parsed.netloc:
+        raise HTTPException(status_code=400, detail="Plex URL must use http or https")
+    return clean
 
 
 @router.get("/")
@@ -154,6 +189,94 @@ async def alldebrid_hosts(_=Depends(get_current_user)):
         return {"hosts": hosts, "available": available, "total": len(hosts)}
     except Exception as e:
         raise HTTPException(status_code=502, detail=str(e))
+
+
+@router.get("/plex")
+async def get_plex_settings(_=Depends(get_current_user)):
+    cfg = get_config()
+    data = _plex_public_config(cfg, include_status=True)
+    if data["enabled"] and data["token_configured"]:
+        try:
+            info = await plex.server_info(data["url"], cfg["plex"]["token"])
+            libraries = await plex.libraries(data["url"], cfg["plex"]["token"])
+            data.update({
+                "connected": True,
+                "server": info,
+                "library_count": len(libraries),
+                "libraries": libraries,
+            })
+        except Exception as e:
+            data.update({
+                "connected": False,
+                "error": str(e)[:200],
+                "library_count": 0,
+                "libraries": [],
+            })
+    else:
+        data.update({"connected": False, "library_count": 0, "libraries": []})
+    return data
+
+
+@router.put("/plex")
+async def update_plex_settings(body: PlexSettingsRequest, _=Depends(get_current_user)):
+    cfg = get_config()
+    plex_cfg = cfg.setdefault("plex", {
+        "enabled": False,
+        "url": "http://127.0.0.1:32400",
+        "token": "",
+        "last_refreshes": {},
+    })
+    if body.enabled is not None:
+        plex_cfg["enabled"] = body.enabled
+    if body.url is not None:
+        plex_cfg["url"] = _validate_plex_url(body.url)
+    if body.token is not None and body.token.strip():
+        plex_cfg["token"] = body.token.strip()
+    plex_cfg.setdefault("last_refreshes", {})
+    save_config(cfg)
+    return {"status": "saved", **_plex_public_config(cfg, include_status=True)}
+
+
+@router.post("/plex/test")
+async def test_plex(_=Depends(get_current_user)):
+    cfg = get_config()
+    url, token = _require_plex_config(cfg)
+    try:
+        info = await plex.server_info(url, token)
+        libraries = await plex.libraries(url, token)
+        return {"ok": True, "server": info, "library_count": len(libraries)}
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=str(e)[:200])
+
+
+@router.get("/plex/libraries")
+async def plex_libraries(_=Depends(get_current_user)):
+    cfg = get_config()
+    url, token = _require_plex_config(cfg)
+    try:
+        libraries = await plex.libraries(url, token)
+        return {"libraries": libraries, "total": len(libraries)}
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=str(e)[:200])
+
+
+@router.post("/plex/libraries/{library_key}/refresh")
+async def refresh_plex_library(library_key: str, _=Depends(get_current_user)):
+    from datetime import datetime, timezone
+
+    cfg = get_config()
+    url, token = _require_plex_config(cfg)
+    try:
+        await plex.refresh_library(url, token, library_key)
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=str(e)[:200])
+
+    refreshed_at = datetime.now(timezone.utc).isoformat()
+    plex_cfg = cfg.setdefault("plex", {})
+    last_refreshes = plex_cfg.setdefault("last_refreshes", {})
+    last_refreshes[str(library_key)] = refreshed_at
+    save_config(cfg)
+    return {"status": "refreshed", "library_key": library_key, "refreshed_at": refreshed_at}
 
 
 @router.post("/test-webhook")

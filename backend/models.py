@@ -76,6 +76,12 @@ class StoragePathRequest(BaseModel):
     path: str
 
 
+class PlexSettingsRequest(BaseModel):
+    enabled: Optional[bool] = None
+    url: Optional[str] = None
+    token: Optional[str] = None
+
+
 class SignalCheckRequest(BaseModel):
     host: str
     port: int
