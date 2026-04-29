@@ -24,12 +24,41 @@ class PlexService:
             return resp.json()
         except Exception:
             root = ElementTree.fromstring(resp.text)
+            directories = []
+            for child in root.findall("Directory"):
+                item = dict(child.attrib)
+                locations = []
+                for location in child.findall("Location"):
+                    path = (location.attrib.get("path") or "").strip()
+                    if path:
+                        locations.append({"path": path})
+                if locations:
+                    item["Location"] = locations
+                directories.append(item)
             return {
                 "MediaContainer": {
                     **root.attrib,
-                    "Directory": [child.attrib for child in root.findall("Directory")],
+                    "Directory": directories,
                 }
             }
+
+    @staticmethod
+    def _library_locations(item: dict[str, Any]) -> list[str]:
+        raw_locations = item.get("Location", [])
+        if isinstance(raw_locations, dict):
+            raw_locations = [raw_locations]
+        if not isinstance(raw_locations, list):
+            return []
+
+        locations = []
+        for location in raw_locations:
+            if isinstance(location, dict):
+                path = str(location.get("path", "")).strip()
+            else:
+                path = str(location).strip()
+            if path:
+                locations.append(path)
+        return locations
 
     async def server_info(self, url: str, token: str) -> dict[str, Any]:
         async with httpx.AsyncClient(timeout=5.0) as client:
@@ -46,7 +75,7 @@ class PlexService:
                 "version": media_container.get("version", ""),
             }
 
-    async def libraries(self, url: str, token: str) -> list[dict[str, str]]:
+    async def libraries(self, url: str, token: str) -> list[dict[str, Any]]:
         async with httpx.AsyncClient(timeout=8.0) as client:
             resp = await client.get(
                 f"{self._base_url(url)}/library/sections",
@@ -65,6 +94,7 @@ class PlexService:
                     "key": key,
                     "title": title,
                     "type": str(item.get("type", "")).strip(),
+                    "locations": self._library_locations(item),
                 })
             return libraries
 

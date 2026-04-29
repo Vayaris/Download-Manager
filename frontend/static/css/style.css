@@ -938,6 +938,23 @@ tr:hover .btn-copy-path { opacity: 1; }
 .settings-wrap { max-width: 860px; margin: 0 auto; }
 .plex-page-wrap { max-width: 920px; }
 
+.plex-page-wrap .settings-header {
+  margin-bottom: 14px;
+}
+
+.plex-title-line {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.plex-server-meta {
+  color: var(--text-3);
+  font-size: 13px;
+  font-weight: 600;
+}
+
 .settings-card {
   background: var(--surface);
   border: 1px solid var(--border);
@@ -1328,6 +1345,13 @@ tr:hover .btn-copy-path { opacity: 1; }
   margin-top: 18px;
 }
 
+.plex-suggestions-section {
+  padding: 12px;
+  border: 1px solid var(--green-border);
+  border-radius: var(--radius);
+  background: var(--green-dim);
+}
+
 .plex-section-header {
   display: flex;
   align-items: flex-end;
@@ -1350,6 +1374,42 @@ tr:hover .btn-copy-path { opacity: 1; }
 .plex-section-list {
   display: grid;
   gap: 8px;
+}
+
+.plex-suggestions-list {
+  display: grid;
+  gap: 8px;
+}
+
+.plex-suggestion-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: center;
+  padding: 12px;
+  border: 1px solid var(--green-border);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+
+.plex-suggestion-main {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.plex-suggestion-label {
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.plex-suggestion-path {
+  color: var(--text-3);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
 }
 
 .plex-library-row {
@@ -1632,6 +1692,8 @@ tr:hover .btn-copy-path { opacity: 1; }
   .plex-page-actions { grid-template-columns: 1fr; }
   .hosts-panel-header { flex-direction: column; }
   .hosts-panel-header .btn { width: 100%; justify-content: center; }
+  .plex-suggestion-row { grid-template-columns: 1fr; }
+  .plex-suggestion-row .btn { width: 100%; justify-content: center; }
   .plex-library-row { grid-template-columns: 1fr; }
   .plex-library-row .btn,
   .plex-library-row .plex-star-btn,

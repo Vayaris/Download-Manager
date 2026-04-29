@@ -11,7 +11,7 @@
   <link rel="apple-touch-icon" href="/static/icons/icon-192.svg">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link rel="stylesheet" href="/static/css/style.css?v=41">
+  <link rel="stylesheet" href="/static/css/style.css?v=44">
   <script>
     (function() {
       var t = localStorage.getItem('dm_theme') || 'light';
@@ -87,7 +87,10 @@
   <main class="settings-wrap plex-page-wrap">
     <div class="settings-header">
       <div>
-        <h1 data-i18n="plex_page_title">Plex libraries</h1>
+        <div class="plex-title-line">
+          <h1 data-i18n="plex_page_title">Plex libraries</h1>
+          <span id="plex-server-meta" class="plex-server-meta"></span>
+        </div>
         <p data-i18n="plex_page_subtitle">Refresh Plex libraries after adding media.</p>
       </div>
       <span class="conn-badge unknown" id="plex-page-status-badge">
@@ -103,11 +106,6 @@
           <span id="plex-page-count" class="plex-count-pill">0 / 0</span>
           <button class="btn btn-sm" onclick="loadPlexPage()" data-i18n="plex_btn_refresh_list">Refresh list</button>
           <a class="btn btn-sm" href="/settings-page" data-i18n="plex_open_settings">Plex settings</a>
-        </div>
-      </div>
-      <div class="plex-page-actions">
-        <div id="plex-page-summary" class="update-changelog">
-          <p class="form-hint" data-i18n="plex_page_loading">Loading Plex libraries...</p>
         </div>
       </div>
       <div id="plex-page-libraries" class="plex-libraries"></div>
@@ -142,9 +140,9 @@ function pwaInstall(){if(pwaDeferred){pwaDeferred.prompt();pwaDeferred.userChoic
 </script>
 
 <script src="/static/js/theme.js?v=36"></script>
-<script src="/static/js/i18n.js?v=41"></script>
+<script src="/static/js/i18n.js?v=42"></script>
 <script src="/static/js/api.js?v=30"></script>
-<script src="/static/js/plex.js?v=5"></script>
+<script src="/static/js/plex.js?v=7"></script>
 <script src="/static/js/account.js?v=28"></script>
 <script>if("serviceWorker"in navigator)navigator.serviceWorker.register("/sw.js").catch(()=>{})</script>
 </body>

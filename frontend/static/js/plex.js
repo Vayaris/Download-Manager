@@ -39,6 +39,7 @@ let _plexState = {
   connected: false,
   server: null,
   libraries: [],
+  suggestions: [],
   favoriteKeys: [],
   lastRefreshes: {},
   query: "",
@@ -52,7 +53,18 @@ function normalizePlexState(data) {
     key: String(library.key || "").trim(),
     title: String(library.title || "").trim(),
     type: String(library.type || "").trim(),
+    locations: Array.isArray(library.locations) ? library.locations.map((path) => String(path || "").trim()).filter(Boolean) : [],
   })).filter((library) => library.key && library.title) : [];
+  const suggestions = Array.isArray(data.suggestions) ? data.suggestions.map((item) => ({
+    historyId: String(item.history_id || "").trim(),
+    libraryKey: String(item.library_key || "").trim(),
+    libraryTitle: String(item.library_title || "").trim(),
+    libraryType: String(item.library_type || "").trim(),
+    downloadName: String(item.download_name || "").trim(),
+    destination: String(item.destination || "").trim(),
+    completedAt: String(item.completed_at || "").trim(),
+    matchedLocation: String(item.matched_location || "").trim(),
+  })).filter((item) => item.historyId && item.libraryKey && item.libraryTitle) : [];
   const byKey = new Map(libraries.map((library) => [library.key, library]));
   const favoriteKeys = Array.isArray(data.favorite_keys) ? data.favorite_keys.map((key) => String(key || "").trim()).filter((key) => byKey.has(key)) : [];
   const favoriteSet = new Set(favoriteKeys);
@@ -68,6 +80,7 @@ function normalizePlexState(data) {
     server: data.server || null,
     tokenConfigured: !!data.token_configured,
     libraries: sortedLibraries,
+    suggestions,
     favoriteKeys,
     favoriteSet,
     lastRefreshes: data.last_refreshes || {},
@@ -76,24 +89,33 @@ function normalizePlexState(data) {
   };
 }
 
+function formatPlexCompletedTime(value) {
+  if (!value) return "";
+  try {
+    return new Date(value).toLocaleString();
+  } catch {
+    return value;
+  }
+}
+
 function renderPlexSummary() {
-  const summary = document.getElementById("plex-page-summary");
   const badge = document.getElementById("plex-page-status-badge");
   const label = document.getElementById("plex-page-status-text");
   const count = document.getElementById("plex-page-count");
-  if (!summary || !badge || !label) return;
+  const serverMeta = document.getElementById("plex-server-meta");
+  if (!badge || !label) return;
 
   const state = _plexState;
   const total = state.libraries.length;
-  const favoriteCount = state.favoriteKeys.length;
   if (count) {
-    count.textContent = t("plex_page_counts", { favorites: favoriteCount, total });
+    count.textContent = t("plex_libraries_count", { n: total });
   }
+  if (serverMeta) serverMeta.textContent = "";
 
   if (!state.enabled) {
     badge.className = "conn-badge unknown";
     label.textContent = t("plex_disabled");
-    summary.innerHTML = `<p class="form-hint">${escHtml(t("plex_page_disabled"))}</p>`;
+    if (serverMeta) serverMeta.textContent = t("plex_page_disabled");
     return;
   }
 
@@ -101,21 +123,28 @@ function renderPlexSummary() {
     const message = state.error || (state.tokenConfigured ? t("plex_unavailable") : t("plex_not_configured"));
     badge.className = `conn-badge ${state.error ? "error" : "unknown"}`;
     label.textContent = state.error ? t("plex_unavailable") : (state.tokenConfigured ? t("plex_unavailable") : t("plex_not_configured"));
-    summary.innerHTML = `
-      <p class="form-hint" style="color:var(--red)">${escHtml(message)}</p>`;
+    if (serverMeta) serverMeta.textContent = message;
     return;
   }
 
   badge.className = "conn-badge ok";
   label.textContent = t("plex_connected");
   const serverName = state.server && state.server.friendlyName ? state.server.friendlyName : "-";
-  summary.innerHTML = `
-    <div class="plex-summary-grid">
-      <div>
-        <strong style="color:var(--text)">${escHtml(serverName)}</strong><br>
-        ${escHtml(t("plex_libraries_count", { n: total }))}
+  if (serverMeta) {
+    serverMeta.textContent = `${serverName} · ${t("plex_libraries_count", { n: total })}`;
+  }
+}
+
+function buildPlexSuggestionRow(item) {
+  const completed = formatPlexCompletedTime(item.completedAt);
+  return `
+    <div class="plex-suggestion-row">
+      <div class="plex-suggestion-main">
+        <span class="plex-suggestion-label">${escHtml(t("plex_suggestion_library", { library: item.libraryTitle }))}</span>
+        <span class="plex-library-meta">${escHtml(item.downloadName || t("plex_suggestion_unknown_download"))}${completed ? ` · ${escHtml(completed)}` : ""}</span>
+        ${item.matchedLocation ? `<span class="plex-suggestion-path">${escHtml(t("plex_suggestion_path", { path: item.matchedLocation }))}</span>` : ""}
       </div>
-      <div class="plex-summary-pill">${escHtml(t("plex_page_favorites_count", { n: favoriteCount }))}</div>
+      <button class="btn btn-sm plex-refresh-btn" type="button" data-plex-action="refresh" data-plex-key="${escHtml(item.libraryKey)}">${escHtml(t("plex_btn_refresh_library"))}</button>
     </div>`;
 }
 
@@ -165,13 +194,28 @@ function renderPlexLists() {
 
   const sections = [];
 
+  if (_plexState.connected && _plexState.suggestions.length && String(_plexState.query || "").trim() === "") {
+    sections.push(`
+      <section class="plex-section plex-suggestions-section">
+        <div class="plex-section-header">
+          <div>
+            <h2>${escHtml(t("plex_suggestions_title"))}</h2>
+            <p class="form-hint plex-subtle-hint">${escHtml(t("plex_suggestions_hint"))}</p>
+          </div>
+          <span class="plex-count-pill">${escHtml(t("plex_suggestions_count", { n: _plexState.suggestions.length }))}</span>
+        </div>
+        <div class="plex-suggestions-list">
+          ${_plexState.suggestions.map(buildPlexSuggestionRow).join("")}
+        </div>
+      </section>`);
+  }
+
   if (favoriteLibraries.length) {
     sections.push(`
       <section class="plex-section">
         <div class="plex-section-header">
           <div>
             <h2>${escHtml(t("plex_favorites_title"))}</h2>
-            <p class="form-hint plex-subtle-hint">${escHtml(t("plex_reorder_hint"))}</p>
           </div>
           <span class="plex-count-pill">${escHtml(t("plex_page_favorites_count", { n: favoriteLibraries.length }))}</span>
         </div>
@@ -187,7 +231,6 @@ function renderPlexLists() {
         <div class="plex-section-header">
           <div>
             <h2>${escHtml(t("plex_favorites_title"))}</h2>
-            <p class="form-hint plex-subtle-hint">${escHtml(t("plex_reorder_hint"))}</p>
           </div>
         </div>
         <div class="empty-state plex-empty-block">
@@ -225,11 +268,19 @@ async function loadPlexPage() {
   if (list) list.innerHTML = `<p class="form-hint">${escHtml(t("plex_page_loading"))}</p>`;
   try {
     const data = await API.get("/api/settings/plex");
+    if (data && data.enabled && data.connected) {
+      try {
+        const suggestions = await API.get("/api/settings/plex/suggestions");
+        data.suggestions = Array.isArray(suggestions.suggestions) ? suggestions.suggestions : [];
+      } catch {
+        data.suggestions = [];
+      }
+    }
     renderPlexPage(data);
   } catch (e) {
     setPlexPageBadge("error", t("plex_unavailable"));
-    const summary = document.getElementById("plex-page-summary");
-    if (summary) summary.innerHTML = `<p class="form-hint" style="color:var(--red)">${escHtml(e.message)}</p>`;
+    const serverMeta = document.getElementById("plex-server-meta");
+    if (serverMeta) serverMeta.textContent = e.message;
     if (list) list.innerHTML = `<p class="form-hint" style="color:var(--red)">${escHtml(e.message)}</p>`;
   }
 }

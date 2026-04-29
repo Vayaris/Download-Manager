@@ -4,14 +4,17 @@ import os
 import shutil
 import socket
 import subprocess
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
+import aiosqlite
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request
 from urllib.parse import urlparse
 
 from models import SettingsUpdate, StoragePathRequest, PlexSettingsRequest, SignalCheckRequest, SignalDeployRequest, SignalRegisterRequest, SignalVerifyRequest, SignalResetRequest
 from auth import get_current_user, get_password_hash
 from config import get_config, save_config
+from database import DB_PATH
 from services.alldebrid import alldebrid
 from services.plex import plex
 from services.webhook import send_webhook
@@ -94,6 +97,108 @@ def _normalize_plex_favorite_keys(keys: list[str] | None) -> list[str]:
         seen.add(clean)
         result.append(clean)
     return result
+
+
+def _parse_iso_datetime(value: str | None) -> datetime | None:
+    if not value:
+        return None
+    try:
+        clean = value.replace("Z", "+00:00")
+        parsed = datetime.fromisoformat(clean)
+        if parsed.tzinfo is None:
+            return parsed.replace(tzinfo=timezone.utc)
+        return parsed.astimezone(timezone.utc)
+    except Exception:
+        return None
+
+
+def _normalize_media_path(value: str | None) -> str:
+    clean = os.path.normpath(str(value or "").strip())
+    if clean == ".":
+        return ""
+    return clean.rstrip("/")
+
+
+def _path_is_inside(candidate: str, root: str) -> bool:
+    candidate_norm = _normalize_media_path(candidate)
+    root_norm = _normalize_media_path(root)
+    if not candidate_norm or not root_norm:
+        return False
+    return candidate_norm == root_norm or candidate_norm.startswith(root_norm + "/")
+
+
+async def _plex_refresh_suggestions(cfg: dict, limit: int = 20) -> list[dict]:
+    url, token = _require_plex_config(cfg)
+    libraries = await plex.libraries(url, token)
+    libraries_with_locations = [
+        library for library in libraries
+        if library.get("locations") and library.get("key") and library.get("title")
+    ]
+    if not libraries_with_locations:
+        return []
+
+    cutoff = datetime.now(timezone.utc) - timedelta(hours=24)
+    async with aiosqlite.connect(str(DB_PATH)) as db:
+        db.row_factory = aiosqlite.Row
+        cursor = await db.execute(
+            """SELECT id, name, destination, status, completed_at
+               FROM history
+               WHERE status = 'complete'
+               ORDER BY completed_at DESC
+               LIMIT 100"""
+        )
+        history_rows = [dict(row) for row in await cursor.fetchall()]
+
+    last_refreshes = cfg.get("plex", {}).get("last_refreshes", {})
+    suggestions: list[dict] = []
+    seen: set[tuple[str, str]] = set()
+
+    for row in history_rows:
+        completed_at = _parse_iso_datetime(row.get("completed_at"))
+        if not completed_at or completed_at < cutoff:
+            continue
+
+        destination = _normalize_media_path(row.get("destination"))
+        name = str(row.get("name") or "").strip()
+        candidates = [destination]
+        if destination and name:
+            candidates.insert(0, _normalize_media_path(os.path.join(destination, name)))
+
+        for library in libraries_with_locations:
+            library_key = str(library.get("key", "")).strip()
+            refreshed_at = _parse_iso_datetime(last_refreshes.get(library_key))
+            if refreshed_at and refreshed_at >= completed_at:
+                continue
+
+            matched_location = ""
+            for location in library.get("locations", []):
+                if any(_path_is_inside(candidate, location) for candidate in candidates):
+                    matched_location = _normalize_media_path(location)
+                    break
+
+            if not matched_location:
+                continue
+
+            unique_key = (str(row["id"]), library_key)
+            if unique_key in seen:
+                continue
+            seen.add(unique_key)
+            suggestions.append({
+                "history_id": row["id"],
+                "library_key": library_key,
+                "library_title": library.get("title", ""),
+                "library_type": library.get("type", ""),
+                "download_name": name or row["id"],
+                "destination": destination,
+                "completed_at": row.get("completed_at"),
+                "matched_location": matched_location,
+            })
+            break
+
+        if len(suggestions) >= limit:
+            break
+
+    return suggestions
 
 
 @router.get("/")
@@ -281,10 +386,20 @@ async def plex_libraries(_=Depends(get_current_user)):
         raise HTTPException(status_code=502, detail=str(e)[:200])
 
 
+@router.get("/plex/suggestions")
+async def plex_suggestions(_=Depends(get_current_user)):
+    cfg = get_config()
+    try:
+        suggestions = await _plex_refresh_suggestions(cfg)
+        return {"suggestions": suggestions, "total": len(suggestions), "window_hours": 24}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=str(e)[:200])
+
+
 @router.post("/plex/libraries/{library_key}/refresh")
 async def refresh_plex_library(library_key: str, _=Depends(get_current_user)):
-    from datetime import datetime, timezone
-
     cfg = get_config()
     url, token = _require_plex_config(cfg)
     try:
