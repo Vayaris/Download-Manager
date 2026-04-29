@@ -44,6 +44,7 @@ let _plexState = {
   query: "",
   error: "",
 };
+let _plexDrag = null;
 
 function normalizePlexState(data) {
   data = data || {};
@@ -131,13 +132,12 @@ function buildPlexRow(library, options = {}) {
   const key = library.key;
   const last = formatPlexRefreshTime(_plexState.lastRefreshes[key]);
   const favorite = !!options.favorite;
-  const moveUpDisabled = !!options.moveUpDisabled;
-  const moveDownDisabled = !!options.moveDownDisabled;
   const starTitle = favorite ? t("plex_favorite_remove") : t("plex_favorite_add");
   const starIcon = favorite ? "★" : "☆";
   return `
     <div class="plex-library-row ${favorite ? "is-favorite" : ""}" data-plex-key="${escHtml(key)}">
       <div class="plex-row-main">
+        ${favorite ? `<button class="plex-drag-handle" type="button" data-plex-drag-key="${escHtml(key)}" aria-label="${escHtml(t("plex_drag_handle"))}" title="${escHtml(t("plex_drag_handle"))}">☰</button>` : ""}
         <button class="plex-star-btn ${favorite ? "active" : ""}" type="button" data-plex-action="toggle-favorite" data-plex-key="${escHtml(key)}" aria-label="${escHtml(starTitle)}" title="${escHtml(starTitle)}">${starIcon}</button>
         <div class="plex-library-info">
           <span class="plex-library-title">${escHtml(library.title || key)}</span>
@@ -145,10 +145,6 @@ function buildPlexRow(library, options = {}) {
         </div>
       </div>
       <div class="plex-row-actions">
-        ${favorite ? `
-          <button class="btn btn-sm plex-order-btn" type="button" data-plex-action="move-up" data-plex-key="${escHtml(key)}" ${moveUpDisabled ? "disabled" : ""} aria-label="${escHtml(t('plex_move_up'))}">↑</button>
-          <button class="btn btn-sm plex-order-btn" type="button" data-plex-action="move-down" data-plex-key="${escHtml(key)}" ${moveDownDisabled ? "disabled" : ""} aria-label="${escHtml(t('plex_move_down'))}">↓</button>
-        ` : ""}
         <button class="btn btn-sm plex-refresh-btn" type="button" data-plex-action="refresh" data-plex-key="${escHtml(key)}">${escHtml(t("plex_btn_refresh_library"))}</button>
       </div>
     </div>`;
@@ -174,16 +170,14 @@ function renderPlexLists() {
       <section class="plex-section">
         <div class="plex-section-header">
           <div>
-            <h2 data-i18n="plex_favorites_title">Favorites</h2>
-            <p class="form-hint" data-i18n="plex_reorder_hint">Favorites stay at the top and can be reordered manually.</p>
+            <h2>${escHtml(t("plex_favorites_title"))}</h2>
+            <p class="form-hint plex-subtle-hint">${escHtml(t("plex_reorder_hint"))}</p>
           </div>
           <span class="plex-count-pill">${escHtml(t("plex_page_favorites_count", { n: favoriteLibraries.length }))}</span>
         </div>
-        <div class="plex-section-list">
+        <div class="plex-section-list" data-plex-favorites-list="1">
           ${favoriteLibraries.map((library, index) => buildPlexRow(library, {
             favorite: true,
-            moveUpDisabled: index === 0,
-            moveDownDisabled: index === favoriteLibraries.length - 1,
           })).join("")}
         </div>
       </section>`);
@@ -192,12 +186,12 @@ function renderPlexLists() {
       <section class="plex-section">
         <div class="plex-section-header">
           <div>
-            <h2 data-i18n="plex_favorites_title">Favorites</h2>
-            <p class="form-hint" data-i18n="plex_reorder_hint">Favorites stay at the top and can be reordered manually.</p>
+            <h2>${escHtml(t("plex_favorites_title"))}</h2>
+            <p class="form-hint plex-subtle-hint">${escHtml(t("plex_reorder_hint"))}</p>
           </div>
         </div>
         <div class="empty-state plex-empty-block">
-          <p data-i18n="plex_no_favorites">No favorites yet. Tap the star on a library to pin it here.</p>
+          <p>${escHtml(t("plex_no_favorites"))}</p>
         </div>
       </section>`);
   }
@@ -206,8 +200,8 @@ function renderPlexLists() {
     <section class="plex-section">
       <div class="plex-section-header">
         <div>
-          <h2 data-i18n="plex_all_title">All libraries</h2>
-          <p class="form-hint" data-i18n="plex_alpha_hint">The rest stays sorted alphabetically.</p>
+          <h2>${escHtml(t("plex_all_title"))}</h2>
+          <p class="form-hint plex-subtle-hint">${escHtml(t("plex_alpha_hint"))}</p>
         </div>
         <span class="plex-count-pill">${escHtml(t("plex_page_total_count", { n: otherLibraries.length }))}</span>
       </div>
@@ -254,6 +248,7 @@ function initPlexPageEvents() {
   if (list && !list.dataset.bound) {
     list.dataset.bound = "1";
     list.addEventListener("click", handlePlexAction);
+    list.addEventListener("pointerdown", startPlexFavoriteDrag);
   }
 }
 
@@ -262,16 +257,6 @@ async function savePlexFavoriteKeys(nextKeys) {
   _plexState.favoriteKeys = nextKeys.slice();
   renderPlexSummary();
   renderPlexLists();
-}
-
-function moveFavoriteKey(key, direction) {
-  const index = _plexState.favoriteKeys.indexOf(key);
-  if (index < 0) return;
-  const next = _plexState.favoriteKeys.slice();
-  const target = index + direction;
-  if (target < 0 || target >= next.length) return;
-  [next[index], next[target]] = [next[target], next[index]];
-  return next;
 }
 
 function getButtonLibraryKey(button) {
@@ -318,16 +303,101 @@ async function handlePlexAction(event) {
     return;
   }
 
-  if (action === "move-up" || action === "move-down") {
-    const direction = action === "move-up" ? -1 : 1;
-    const next = moveFavoriteKey(key, direction);
-    if (!next) return;
-    try {
-      await savePlexFavoriteKeys(next);
-    } catch (e) {
-      showToast(t("error_prefix") + e.message, "error");
-      await loadPlexPage();
+}
+
+function startPlexFavoriteDrag(event) {
+  const handle = event.target.closest("[data-plex-drag-key]");
+  if (!handle || _plexDrag) return;
+
+  const row = handle.closest(".plex-library-row");
+  const list = row && row.closest("[data-plex-favorites-list]");
+  const key = handle.getAttribute("data-plex-drag-key");
+  if (!row || !list || !key) return;
+
+  event.preventDefault();
+  handle.setPointerCapture?.(event.pointerId);
+  _plexDrag = {
+    key,
+    row,
+    list,
+    handle,
+    pointerId: event.pointerId,
+    originalKeys: getPlexFavoriteKeysFromDom(list),
+  };
+  row.classList.add("is-dragging");
+  list.classList.add("is-sorting");
+  document.body.classList.add("plex-drag-active");
+  window.addEventListener("pointermove", movePlexFavoriteDrag);
+  window.addEventListener("pointerup", endPlexFavoriteDrag);
+  window.addEventListener("pointercancel", cancelPlexFavoriteDrag);
+}
+
+function movePlexFavoriteDrag(event) {
+  if (!_plexDrag || event.pointerId !== _plexDrag.pointerId) return;
+  event.preventDefault();
+
+  const after = getPlexDragAfterRow(_plexDrag.list, event.clientY, _plexDrag.row);
+  if (after) {
+    _plexDrag.list.insertBefore(_plexDrag.row, after);
+  } else {
+    _plexDrag.list.appendChild(_plexDrag.row);
+  }
+}
+
+function getPlexDragAfterRow(list, y, draggedRow) {
+  const rows = [...list.querySelectorAll(".plex-library-row:not(.is-dragging)")].filter((row) => row !== draggedRow);
+  return rows.reduce((closest, row) => {
+    const box = row.getBoundingClientRect();
+    const offset = y - box.top - box.height / 2;
+    if (offset < 0 && offset > closest.offset) {
+      return { offset, row };
     }
+    return closest;
+  }, { offset: Number.NEGATIVE_INFINITY, row: null }).row;
+}
+
+function getPlexFavoriteKeysFromDom(list) {
+  return [...list.querySelectorAll(".plex-library-row")]
+    .map((row) => row.getAttribute("data-plex-key"))
+    .filter(Boolean);
+}
+
+function finishPlexFavoriteDrag() {
+  if (!_plexDrag) return null;
+  const drag = _plexDrag;
+  drag.row.classList.remove("is-dragging");
+  drag.list.classList.remove("is-sorting");
+  try { drag.handle.releasePointerCapture?.(drag.pointerId); } catch {}
+  document.body.classList.remove("plex-drag-active");
+  window.removeEventListener("pointermove", movePlexFavoriteDrag);
+  window.removeEventListener("pointerup", endPlexFavoriteDrag);
+  window.removeEventListener("pointercancel", cancelPlexFavoriteDrag);
+  _plexDrag = null;
+  return drag;
+}
+
+async function endPlexFavoriteDrag(event) {
+  if (!_plexDrag || event.pointerId !== _plexDrag.pointerId) return;
+  const drag = finishPlexFavoriteDrag();
+  const nextKeys = getPlexFavoriteKeysFromDom(drag.list);
+  if (nextKeys.join("|") === drag.originalKeys.join("|")) return;
+
+  try {
+    await savePlexFavoriteKeys(nextKeys);
+    showToast(t("plex_reorder_saved"), "ok");
+  } catch (e) {
+    showToast(t("error_prefix") + e.message, "error");
+    await loadPlexPage();
+  }
+}
+
+async function cancelPlexFavoriteDrag(event) {
+  if (!_plexDrag || event.pointerId !== _plexDrag.pointerId) return;
+  const drag = finishPlexFavoriteDrag();
+  try {
+    await savePlexFavoriteKeys(drag.originalKeys);
+  } catch {
+    await loadPlexPage();
   }
 }
 
