@@ -44,7 +44,8 @@ DEFAULT_CONFIG = {
         "enabled": False,
         "url": "http://127.0.0.1:32400",
         "token": "",
-        "last_refreshes": {}
+        "last_refreshes": {},
+        "favorite_keys": []
     }
 }
 

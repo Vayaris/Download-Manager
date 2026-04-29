@@ -56,6 +56,7 @@ def _plex_public_config(cfg: dict, include_status: bool = False) -> dict:
         "url": plex_cfg.get("url", "http://127.0.0.1:32400"),
         "token_configured": bool(token),
         "last_refreshes": plex_cfg.get("last_refreshes", {}),
+        "favorite_keys": plex_cfg.get("favorite_keys", []),
     }
     if include_status:
         data["configured"] = bool(token and plex_cfg.get("url"))
@@ -79,6 +80,20 @@ def _validate_plex_url(url: str) -> str:
     if parsed.scheme not in ("http", "https") or not parsed.netloc:
         raise HTTPException(status_code=400, detail="Plex URL must use http or https")
     return clean
+
+
+def _normalize_plex_favorite_keys(keys: list[str] | None) -> list[str]:
+    if keys is None:
+        return []
+    seen: set[str] = set()
+    result: list[str] = []
+    for key in keys:
+        clean = str(key).strip()
+        if not clean or clean in seen:
+            continue
+        seen.add(clean)
+        result.append(clean)
+    return result
 
 
 @router.get("/")
@@ -227,6 +242,7 @@ async def update_plex_settings(body: PlexSettingsRequest, _=Depends(get_current_
         "url": "http://127.0.0.1:32400",
         "token": "",
         "last_refreshes": {},
+        "favorite_keys": [],
     })
     if body.enabled is not None:
         plex_cfg["enabled"] = body.enabled
@@ -234,7 +250,10 @@ async def update_plex_settings(body: PlexSettingsRequest, _=Depends(get_current_
         plex_cfg["url"] = _validate_plex_url(body.url)
     if body.token is not None and body.token.strip():
         plex_cfg["token"] = body.token.strip()
+    if body.favorite_keys is not None:
+        plex_cfg["favorite_keys"] = _normalize_plex_favorite_keys(body.favorite_keys)
     plex_cfg.setdefault("last_refreshes", {})
+    plex_cfg.setdefault("favorite_keys", [])
     save_config(cfg)
     return {"status": "saved", **_plex_public_config(cfg, include_status=True)}
 

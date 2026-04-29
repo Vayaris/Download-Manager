@@ -80,6 +80,7 @@ class PlexSettingsRequest(BaseModel):
     enabled: Optional[bool] = None
     url: Optional[str] = None
     token: Optional[str] = None
+    favorite_keys: Optional[List[str]] = None
 
 
 class SignalCheckRequest(BaseModel):

@@ -34,63 +34,193 @@ function formatPlexRefreshTime(value) {
   }
 }
 
-function renderPlexPage(data) {
+let _plexState = {
+  enabled: false,
+  connected: false,
+  server: null,
+  libraries: [],
+  favoriteKeys: [],
+  lastRefreshes: {},
+  query: "",
+  error: "",
+};
+
+function normalizePlexState(data) {
+  const libraries = Array.isArray(data.libraries) ? data.libraries.map((library) => ({
+    key: String(library.key || "").trim(),
+    title: String(library.title || "").trim(),
+    type: String(library.type || "").trim(),
+  })).filter((library) => library.key && library.title) : [];
+  const byKey = new Map(libraries.map((library) => [library.key, library]));
+  const favoriteKeys = Array.isArray(data.favorite_keys) ? data.favorite_keys.map((key) => String(key || "").trim()).filter((key) => byKey.has(key)) : [];
+  const favoriteSet = new Set(favoriteKeys);
+  const sortedLibraries = libraries.slice().sort((a, b) => {
+    const at = a.title.toLocaleLowerCase();
+    const bt = b.title.toLocaleLowerCase();
+    if (at !== bt) return at.localeCompare(bt);
+    return a.key.localeCompare(b.key);
+  });
+  return {
+    enabled: !!data.enabled,
+    connected: !!data.connected,
+    server: data.server || null,
+    tokenConfigured: !!data.token_configured,
+    libraries: sortedLibraries,
+    favoriteKeys,
+    favoriteSet,
+    lastRefreshes: data.last_refreshes || {},
+    error: String(data.error || ""),
+  };
+}
+
+function renderPlexSummary() {
   const summary = document.getElementById("plex-page-summary");
-  const list = document.getElementById("plex-page-libraries");
-  if (!summary || !list) return;
+  const badge = document.getElementById("plex-page-status-badge");
+  const label = document.getElementById("plex-page-status-text");
+  const count = document.getElementById("plex-page-count");
+  if (!summary || !badge || !label) return;
 
-  if (!data.enabled) {
-    setPlexPageBadge("unknown", t("plex_disabled"));
+  const state = _plexState;
+  const total = state.libraries.length;
+  const favoriteCount = state.favoriteKeys.length;
+  if (count) {
+    count.textContent = t("plex_page_counts", { favorites: favoriteCount, total });
+  }
+
+  if (!state.enabled) {
+    badge.className = "conn-badge unknown";
+    label.textContent = t("plex_disabled");
     summary.innerHTML = `<p class="form-hint">${escHtml(t("plex_page_disabled"))}</p>`;
-    list.innerHTML = `
-      <div class="empty-state">
-        <p>${escHtml(t("plex_page_enable_hint"))}</p>
-        <a class="btn btn-primary" href="/settings-page">${escHtml(t("plex_open_settings"))}</a>
-      </div>`;
     return;
   }
 
-  if (!data.connected) {
-    const message = data.token_configured ? t("plex_unavailable") : t("plex_not_configured");
-    setPlexPageBadge(data.token_configured ? "error" : "unknown", message);
+  if (!state.connected) {
+    const message = state.error || (state.tokenConfigured ? t("plex_unavailable") : t("plex_not_configured"));
+    badge.className = `conn-badge ${state.error ? "error" : "unknown"}`;
+    label.textContent = state.error ? t("plex_unavailable") : (state.tokenConfigured ? t("plex_unavailable") : t("plex_not_configured"));
     summary.innerHTML = `
-      <p class="form-hint" style="color:var(--red)">${escHtml(data.error || message)}</p>`;
-    list.innerHTML = `
-      <div class="empty-state">
-        <p>${escHtml(t("plex_page_config_hint"))}</p>
-        <a class="btn btn-primary" href="/settings-page">${escHtml(t("plex_open_settings"))}</a>
-      </div>`;
+      <p class="form-hint" style="color:var(--red)">${escHtml(message)}</p>`;
     return;
   }
 
-  setPlexPageBadge("ok", t("plex_connected"));
-  const serverName = data.server && data.server.friendlyName ? data.server.friendlyName : "-";
+  badge.className = "conn-badge ok";
+  label.textContent = t("plex_connected");
+  const serverName = state.server && state.server.friendlyName ? state.server.friendlyName : "-";
   summary.innerHTML = `
-    <div style="font-size:13px;color:var(--text-2);line-height:1.6">
-      <strong style="color:var(--text)">${escHtml(serverName)}</strong><br>
-      ${escHtml(t("plex_libraries_count", { n: data.library_count || 0 }))}
+    <div class="plex-summary-grid">
+      <div>
+        <strong style="color:var(--text)">${escHtml(serverName)}</strong><br>
+        ${escHtml(t("plex_libraries_count", { n: total }))}
+      </div>
+      <div class="plex-summary-pill">${escHtml(t("plex_page_favorites_count", { n: favoriteCount }))}</div>
     </div>`;
+}
 
-  const libraries = Array.isArray(data.libraries) ? data.libraries : [];
-  if (!libraries.length) {
-    list.innerHTML = `<p class="form-hint">${escHtml(t("plex_no_libraries"))}</p>`;
-    return;
-  }
+function getPlexVisibleLibraries() {
+  const query = _plexState.query.trim().toLocaleLowerCase();
+  if (!query) return _plexState.libraries.slice();
+  return _plexState.libraries.filter((library) => {
+    const haystack = `${library.title} ${library.type} ${library.key}`.toLocaleLowerCase();
+    return haystack.includes(query);
+  });
+}
 
-  const lastRefreshes = data.last_refreshes || {};
-  list.innerHTML = libraries.map((library) => {
-    const key = String(library.key || "");
-    const last = formatPlexRefreshTime(lastRefreshes[key]);
-    return `
-      <div class="plex-library-row">
-        <div>
+function buildPlexRow(library, options = {}) {
+  const key = library.key;
+  const last = formatPlexRefreshTime(_plexState.lastRefreshes[key]);
+  const favorite = !!options.favorite;
+  const moveUpDisabled = !!options.moveUpDisabled;
+  const moveDownDisabled = !!options.moveDownDisabled;
+  const starTitle = favorite ? t("plex_favorite_remove") : t("plex_favorite_add");
+  const starIcon = favorite ? "★" : "☆";
+  return `
+    <div class="plex-library-row ${favorite ? "is-favorite" : ""}" data-plex-key="${escHtml(key)}">
+      <div class="plex-row-main">
+        <button class="plex-star-btn ${favorite ? "active" : ""}" type="button" data-plex-action="toggle-favorite" data-plex-key="${escHtml(key)}" aria-label="${escHtml(starTitle)}" title="${escHtml(starTitle)}">${starIcon}</button>
+        <div class="plex-library-info">
           <span class="plex-library-title">${escHtml(library.title || key)}</span>
           <span class="plex-library-meta">${escHtml(library.type || "")} · ${escHtml(t("plex_last_refresh", { time: last }))}</span>
         </div>
-        <button class="btn btn-sm plex-refresh-btn" type="button" data-plex-refresh-key="${escHtml(key)}">${escHtml(t("plex_btn_refresh_library"))}</button>
-      </div>`;
-  }).join("");
-  bindPlexRefreshButtons();
+      </div>
+      <div class="plex-row-actions">
+        ${favorite ? `
+          <button class="btn btn-sm plex-order-btn" type="button" data-plex-action="move-up" data-plex-key="${escHtml(key)}" ${moveUpDisabled ? "disabled" : ""} aria-label="${escHtml(t('plex_move_up'))}">↑</button>
+          <button class="btn btn-sm plex-order-btn" type="button" data-plex-action="move-down" data-plex-key="${escHtml(key)}" ${moveDownDisabled ? "disabled" : ""} aria-label="${escHtml(t('plex_move_down'))}">↓</button>
+        ` : ""}
+        <button class="btn btn-sm plex-refresh-btn" type="button" data-plex-action="refresh" data-plex-key="${escHtml(key)}">${escHtml(t("plex_btn_refresh_library"))}</button>
+      </div>
+    </div>`;
+}
+
+function renderPlexLists() {
+  const list = document.getElementById("plex-page-libraries");
+  if (!list) return;
+
+  const visibleLibraries = getPlexVisibleLibraries();
+  const visibleKeys = new Set(visibleLibraries.map((library) => library.key));
+  const favoriteLibraries = _plexState.favoriteKeys
+    .map((key) => _plexState.libraries.find((library) => library.key === key))
+    .filter(Boolean)
+    .filter((library) => visibleKeys.has(library.key));
+  const favoriteSet = new Set(favoriteLibraries.map((library) => library.key));
+  const otherLibraries = visibleLibraries.filter((library) => !favoriteSet.has(library.key));
+
+  const sections = [];
+
+  if (favoriteLibraries.length) {
+    sections.push(`
+      <section class="plex-section">
+        <div class="plex-section-header">
+          <div>
+            <h2 data-i18n="plex_favorites_title">Favorites</h2>
+            <p class="form-hint" data-i18n="plex_reorder_hint">Favorites stay at the top and can be reordered manually.</p>
+          </div>
+          <span class="plex-count-pill">${escHtml(t("plex_page_favorites_count", { n: favoriteLibraries.length }))}</span>
+        </div>
+        <div class="plex-section-list">
+          ${favoriteLibraries.map((library, index) => buildPlexRow(library, {
+            favorite: true,
+            moveUpDisabled: index === 0,
+            moveDownDisabled: index === favoriteLibraries.length - 1,
+          })).join("")}
+        </div>
+      </section>`);
+  } else if (_plexState.query.trim() === "") {
+    sections.push(`
+      <section class="plex-section">
+        <div class="plex-section-header">
+          <div>
+            <h2 data-i18n="plex_favorites_title">Favorites</h2>
+            <p class="form-hint" data-i18n="plex_reorder_hint">Favorites stay at the top and can be reordered manually.</p>
+          </div>
+        </div>
+        <div class="empty-state plex-empty-block">
+          <p data-i18n="plex_no_favorites">No favorites yet. Tap the star on a library to pin it here.</p>
+        </div>
+      </section>`);
+  }
+
+  sections.push(`
+    <section class="plex-section">
+      <div class="plex-section-header">
+        <div>
+          <h2 data-i18n="plex_all_title">All libraries</h2>
+          <p class="form-hint" data-i18n="plex_alpha_hint">The rest stays sorted alphabetically.</p>
+        </div>
+        <span class="plex-count-pill">${escHtml(t("plex_page_total_count", { n: otherLibraries.length }))}</span>
+      </div>
+      <div class="plex-section-list">
+        ${otherLibraries.length ? otherLibraries.map((library) => buildPlexRow(library)).join("") : `<div class="empty-state plex-empty-block"><p>${escHtml(t("plex_page_empty"))}</p></div>`}
+      </div>
+    </section>`);
+
+  list.innerHTML = sections.join("");
+}
+
+function renderPlexPage(data) {
+  _plexState = normalizePlexState(data);
+  renderPlexSummary();
+  renderPlexLists();
 }
 
 async function loadPlexPage() {
@@ -102,33 +232,100 @@ async function loadPlexPage() {
     renderPlexPage(data);
   } catch (e) {
     setPlexPageBadge("error", t("plex_unavailable"));
+    const summary = document.getElementById("plex-page-summary");
+    if (summary) summary.innerHTML = `<p class="form-hint" style="color:var(--red)">${escHtml(e.message)}</p>`;
     if (list) list.innerHTML = `<p class="form-hint" style="color:var(--red)">${escHtml(e.message)}</p>`;
   }
 }
 
-function bindPlexRefreshButtons() {
-  document.querySelectorAll("[data-plex-refresh-key]").forEach((button) => {
-    button.addEventListener("click", onPlexRefreshClick);
-  });
+function initPlexPageEvents() {
+  const search = document.getElementById("plex-search");
+  if (search && !search.dataset.bound) {
+    search.dataset.bound = "1";
+    search.addEventListener("input", () => {
+      _plexState.query = search.value || "";
+      renderPlexLists();
+    });
+  }
+
+  const list = document.getElementById("plex-page-libraries");
+  if (list && !list.dataset.bound) {
+    list.dataset.bound = "1";
+    list.addEventListener("click", handlePlexAction);
+  }
 }
 
-async function onPlexRefreshClick(event) {
-  const button = event.currentTarget;
-  const key = button.getAttribute("data-plex-refresh-key");
+async function savePlexFavoriteKeys(nextKeys) {
+  await API.put("/api/settings/plex", { favorite_keys: nextKeys });
+  _plexState.favoriteKeys = nextKeys.slice();
+  renderPlexSummary();
+  renderPlexLists();
+}
+
+function moveFavoriteKey(key, direction) {
+  const index = _plexState.favoriteKeys.indexOf(key);
+  if (index < 0) return;
+  const next = _plexState.favoriteKeys.slice();
+  const target = index + direction;
+  if (target < 0 || target >= next.length) return;
+  [next[index], next[target]] = [next[target], next[index]];
+  return next;
+}
+
+function getButtonLibraryKey(button) {
+  return button && button.getAttribute("data-plex-key") ? String(button.getAttribute("data-plex-key")) : "";
+}
+
+async function handlePlexAction(event) {
+  const button = event.target.closest("[data-plex-action]");
+  if (!button) return;
+  const action = button.getAttribute("data-plex-action");
+  const key = getButtonLibraryKey(button);
   if (!key) return;
 
-  const originalLabel = button.textContent;
-  button.disabled = true;
-  button.textContent = t("plex_btn_refreshing");
+  if (action === "refresh") {
+    const originalLabel = button.textContent;
+    button.disabled = true;
+    button.textContent = t("plex_btn_refreshing");
+    try {
+      await API.post(`/api/settings/plex/libraries/${encodeURIComponent(key)}/refresh`, {});
+      showToast(t("plex_refresh_ok"), "ok");
+      await loadPlexPage();
+    } catch (e) {
+      button.disabled = false;
+      button.textContent = originalLabel;
+      showToast(t("error_prefix") + e.message, "error");
+    }
+    return;
+  }
 
-  try {
-    await API.post(`/api/settings/plex/libraries/${encodeURIComponent(key)}/refresh`, {});
-    showToast(t("plex_refresh_ok"), "ok");
-    await loadPlexPage();
-  } catch (e) {
-    button.disabled = false;
-    button.textContent = originalLabel;
-    showToast(t("error_prefix") + e.message, "error");
+  if (action === "toggle-favorite") {
+    const current = _plexState.favoriteKeys.slice();
+    const exists = current.includes(key);
+    const next = exists ? current.filter((item) => item !== key) : [key, ...current];
+    try {
+      button.disabled = true;
+      await savePlexFavoriteKeys(next);
+      showToast(exists ? t("plex_favorite_removed") : t("plex_favorite_saved"), "ok");
+    } catch (e) {
+      showToast(t("error_prefix") + e.message, "error");
+      await loadPlexPage();
+    } finally {
+      button.disabled = false;
+    }
+    return;
+  }
+
+  if (action === "move-up" || action === "move-down") {
+    const direction = action === "move-up" ? -1 : 1;
+    const next = moveFavoriteKey(key, direction);
+    if (!next) return;
+    try {
+      await savePlexFavoriteKeys(next);
+    } catch (e) {
+      showToast(t("error_prefix") + e.message, "error");
+      await loadPlexPage();
+    }
   }
 }
 
@@ -223,6 +420,7 @@ document.addEventListener("keydown", (e) => {
 async function bootPlexPage() {
   if (typeof initI18n === "function") initI18n();
   if (typeof initAccountButton === "function") initAccountButton();
+  initPlexPageEvents();
   const authed = await checkPlexAuth();
   if (!authed) return;
   await loadPlexPage();
