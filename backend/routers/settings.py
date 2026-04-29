@@ -1,6 +1,7 @@
 import ipaddress
 import logging
 import os
+import re
 import shutil
 import socket
 import subprocess
@@ -802,6 +803,52 @@ def _get_current_version() -> str:
     return "0.0.0"
 
 
+def _parse_version_tag(value: str) -> tuple[int, int, int] | None:
+    match = re.fullmatch(r"v?(\d+)\.(\d+)\.(\d+)", (value or "").strip())
+    if not match:
+        return None
+    return tuple(int(part) for part in match.groups())
+
+
+async def _get_latest_github_version(client) -> dict:
+    resp = await client.get(
+        f"https://api.github.com/repos/{REPO}/tags",
+        params={"per_page": 100},
+        headers={"Accept": "application/vnd.github+json"},
+    )
+    if resp.status_code != 200:
+        raise HTTPException(status_code=502, detail=f"GitHub error ({resp.status_code})")
+
+    latest_tag = ""
+    latest_version = None
+    for item in resp.json():
+        name = str(item.get("name", "")).strip()
+        version = _parse_version_tag(name)
+        if version is None:
+            continue
+        if latest_version is None or version > latest_version:
+            latest_version = version
+            latest_tag = name
+
+    if latest_version is None:
+        raise HTTPException(status_code=502, detail="No valid version tag found")
+
+    body = ""
+    release_resp = await client.get(
+        f"https://api.github.com/repos/{REPO}/releases/tags/{latest_tag}",
+        headers={"Accept": "application/vnd.github+json"},
+    )
+    if release_resp.status_code == 200:
+        body = release_resp.json().get("body", "") or ""
+
+    return {
+        "tag": latest_tag,
+        "version": ".".join(str(part) for part in latest_version),
+        "version_tuple": latest_version,
+        "changelog": body,
+    }
+
+
 def _find_git_dir() -> Path:
     """Find the git repo directory (may differ from install dir)."""
     for d in [INSTALL_DIR, GIT_DIR, Path("/root/download-manager")]:
@@ -822,7 +869,6 @@ async def diagnostics(request: Request, _=Depends(get_current_user)):
     from database import DB_PATH
     from services.aria2_service import aria2
 
-    git_dir = _find_git_dir()
     db_info = {"tables": {}, "download_statuses": []}
     async with aiosqlite.connect(str(DB_PATH)) as db:
         for table in ("downloads", "packages", "torrents", "history", "users", "blocked_ips"):
@@ -861,11 +907,6 @@ async def diagnostics(request: Request, _=Depends(get_current_user)):
 
     return {
         "version": _get_current_version(),
-        "git": {
-            "dir": str(git_dir),
-            "head": _git_head(git_dir),
-            "dirty": _is_git_dirty(git_dir),
-        },
         "database": db_info,
         "aria2": aria2_info,
         "queue": queue_info,
@@ -877,35 +918,24 @@ async def check_update(_=Depends(get_current_user)):
     import httpx
 
     current = _get_current_version()
+    current_version = _parse_version_tag(current)
 
     try:
         async with httpx.AsyncClient(timeout=15.0) as client:
-            resp = await client.get(
-                f"https://api.github.com/repos/{REPO}/releases/latest",
-                headers={"Accept": "application/vnd.github+json"},
-            )
-            if resp.status_code == 404:
-                return {"update_available": False, "current": current, "message": "No release found"}
-            if resp.status_code != 200:
-                return {"update_available": False, "current": current, "message": f"GitHub error ({resp.status_code})"}
-
-            data = resp.json()
-            latest = data.get("tag_name", "").lstrip("v")
-            body = data.get("body", "")
-
-            if not latest:
-                return {"update_available": False, "current": current, "message": "Tag not found"}
-
-            update_available = latest != current
+            latest_info = await _get_latest_github_version(client)
+            update_available = current_version is not None and latest_info["version_tuple"] > current_version
             return {
                 "update_available": update_available,
                 "current": current,
-                "latest": latest,
-                "changelog": body,
+                "latest": latest_info["version"],
+                "latest_tag": latest_info["tag"],
+                "changelog": latest_info["changelog"],
                 "message": "Update available" if update_available else "Up to date",
             }
+    except HTTPException as e:
+        return {"update_available": False, "current": current, "message": e.detail, "error": True}
     except Exception as e:
-        return {"update_available": False, "current": current, "message": f"Error: {str(e)[:200]}"}
+        return {"update_available": False, "current": current, "message": f"Error: {str(e)[:200]}", "error": True}
 
 
 def _do_restart():
@@ -923,22 +953,16 @@ async def perform_update(background_tasks: BackgroundTasks, _=Depends(get_curren
     import httpx
 
     current = _get_current_version()
+    current_version = _parse_version_tag(current)
 
     try:
         # Fetch latest release info
         async with httpx.AsyncClient(timeout=15.0) as client:
-            resp = await client.get(
-                f"https://api.github.com/repos/{REPO}/releases/latest",
-                headers={"Accept": "application/vnd.github+json"},
-            )
-            if resp.status_code != 200:
-                raise HTTPException(status_code=502, detail="Unable to reach GitHub")
+            latest_info = await _get_latest_github_version(client)
+            latest = latest_info["version"]
+            changelog = latest_info["changelog"]
 
-            data = resp.json()
-            latest = data.get("tag_name", "").lstrip("v")
-            changelog = data.get("body", "")
-
-            if latest == current:
+            if current_version is None or latest_info["version_tuple"] <= current_version:
                 return {"success": True, "message": "Already up to date", "version": current, "changelog": ""}
 
         # Perform git pull from the project root

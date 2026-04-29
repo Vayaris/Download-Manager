@@ -1166,8 +1166,27 @@ function initSettingsSections() {
   });
 }
 
+function initInlineHelpDismiss() {
+  if (document.body.dataset.inlineHelpDismissBound === "1") return;
+  document.body.dataset.inlineHelpDismissBound = "1";
+
+  document.addEventListener("click", (event) => {
+    document.querySelectorAll("details.inline-help[open]").forEach((details) => {
+      if (!details.contains(event.target)) details.open = false;
+    });
+  });
+
+  document.addEventListener("keydown", (event) => {
+    if (event.key !== "Escape") return;
+    document.querySelectorAll("details.inline-help[open]").forEach((details) => {
+      details.open = false;
+    });
+  });
+}
+
 async function bootSettings() {
   initSettingsSections();
+  initInlineHelpDismiss();
 
   try {
     const cfg = await API.get("/api/settings/");
@@ -1231,6 +1250,66 @@ async function bootSettings() {
 
 // ---- Diagnostics ----
 
+function diagnosticsHelp(textKey) {
+  return `
+    <details class="inline-help diagnostics-help">
+      <summary aria-label="${escHtml(t("diagnostics_help_label"))}">i</summary>
+      <div class="inline-help-box">${escHtml(t(textKey))}</div>
+    </details>`;
+}
+
+function diagnosticsBadge(level, labelKey) {
+  return `<span class="diagnostics-badge ${escHtml(level)}">${escHtml(t(labelKey))}</span>`;
+}
+
+function diagnosticsMetric(labelKey, value, helpKey) {
+  return `
+    <div class="diagnostics-metric">
+      <span>${escHtml(t(labelKey))}</span>
+      ${diagnosticsHelp(helpKey)}
+      <strong>${escHtml(String(value))}</strong>
+    </div>`;
+}
+
+function diagnosticsSection(titleKey, level, badgeKey, summary, metricsHtml) {
+  return `
+    <section class="diagnostics-item diagnostics-${escHtml(level)}">
+      <div class="diagnostics-item-head">
+        <div>
+          <strong>${escHtml(t(titleKey))}</strong>
+          <p>${escHtml(summary)}</p>
+        </div>
+        ${diagnosticsBadge(level, badgeKey)}
+      </div>
+      <div class="diagnostics-metrics">${metricsHtml}</div>
+    </section>`;
+}
+
+function diagnosticsTableLabel(name) {
+  const map = {
+    downloads: "diagnostics_table_downloads",
+    packages: "diagnostics_table_packages",
+    torrents: "diagnostics_table_torrents",
+    history: "diagnostics_table_history",
+    users: "diagnostics_table_users",
+    blocked_ips: "diagnostics_table_blocked_ips",
+  };
+  return t(map[name] || "diagnostics_table_unknown", { name });
+}
+
+function diagnosticsStatusLabel(status) {
+  const map = {
+    pending: "diagnostics_status_pending",
+    submitting: "diagnostics_status_submitting",
+    downloading: "diagnostics_status_downloading",
+    paused: "diagnostics_status_paused",
+    error: "diagnostics_status_error",
+    failed: "diagnostics_status_failed",
+    complete: "diagnostics_status_complete",
+  };
+  return t(map[status] || "diagnostics_status_unknown", { status });
+}
+
 function renderDiagnostics(data) {
   const panel = document.getElementById("diagnostics-panel");
   if (!panel) return;
@@ -1240,34 +1319,54 @@ function renderDiagnostics(data) {
   const db = data.database || {};
   const tables = db.tables || {};
   const statuses = db.download_statuses || [];
-  const git = data.git || {};
   const recent = queue.recent_errors || [];
 
-  const statusHtml = statuses.length
-    ? statuses.map(s => `${escHtml(s.status)}: ${escHtml(s.count)}`).join(" · ")
-    : "none";
-  const tableHtml = Object.entries(tables)
-    .map(([name, count]) => `${escHtml(name)}: ${escHtml(count)}`)
-    .join(" · ");
-  const errorsHtml = recent.length
-    ? recent.slice(0, 5).map(e => `<div>${escHtml(e.at || "")} · ${escHtml(e.source || "")}: ${escHtml(e.message || "")}</div>`).join("")
-    : "<div>none</div>";
+  const tick = Number(queue.last_tick_seconds || 0);
+  const tempErrors = Number(queue.temporary_aria2_errors || 0);
+  const blockedIps = Number(tables.blocked_ips || 0);
+  const queueLevel = !queue.running || tick > 5 || tempErrors >= 10 ? "bad" : (tick > 2 || tempErrors > 0 ? "warn" : "ok");
+  const queueBadge = queueLevel === "bad" ? "diagnostics_state_bad" : (queueLevel === "warn" ? "diagnostics_state_warn" : "diagnostics_state_ok");
+  const queueSummary = queueLevel === "bad" ? t("diagnostics_queue_bad") : (queueLevel === "warn" ? t("diagnostics_queue_warn") : t("diagnostics_queue_ok"));
+
+  const ariaLevel = aria2.ok ? "ok" : "bad";
+  const dbLevel = blockedIps > 0 ? "warn" : "ok";
+  const errorsLevel = recent.length ? "warn" : "ok";
+
+  const tableMetrics = Object.entries(tables).map(([name, count]) =>
+    diagnosticsMetric("diagnostics_metric_table", `${diagnosticsTableLabel(name)}: ${count}`, "diagnostics_help_db_tables")
+  ).join("");
+  const statusMetrics = statuses.length ? statuses.map((item) =>
+    diagnosticsMetric("diagnostics_metric_status", `${diagnosticsStatusLabel(item.status)}: ${item.count}`, "diagnostics_help_db_statuses")
+  ).join("") : diagnosticsMetric("diagnostics_metric_status", t("diagnostics_none"), "diagnostics_help_db_statuses");
+  const recentErrors = recent.length
+    ? recent.slice(0, 5).map((error) => `
+        <div class="diagnostics-error-line">
+          <span>${escHtml(error.at || "")}</span>
+          <strong>${escHtml(error.source || "")}</strong>
+          <span>${escHtml(error.message || "")}</span>
+        </div>`).join("")
+    : `<div class="diagnostics-error-line">${escHtml(t("diagnostics_no_recent_errors"))}</div>`;
 
   panel.innerHTML = `
-    <div style="display:grid;gap:10px;font-size:13px;color:var(--text-2);line-height:1.5">
-      <div><strong style="color:var(--text)">${t("diagnostics_queue")}</strong><br>
-        running: ${queue.running ? "yes" : "no"} · last tick: ${escHtml(queue.last_tick_seconds || 0)}s · active: ${escHtml(queue.active_downloads || 0)} · pending: ${escHtml(queue.pending_downloads || 0)} · temp aria2 errors: ${escHtml(queue.temporary_aria2_errors || 0)}
-      </div>
-      <div><strong style="color:var(--text)">${t("diagnostics_aria2")}</strong><br>
-        ${aria2.ok ? `ok · active: ${escHtml(aria2.active || 0)} · waiting: ${escHtml(aria2.waiting || 0)} · stopped: ${escHtml(aria2.stopped || 0)}` : `error · ${escHtml(aria2.error || "")}`}
-      </div>
-      <div><strong style="color:var(--text)">${t("diagnostics_database")}</strong><br>
-        ${tableHtml || "none"}<br>${statusHtml}
-      </div>
-      <div><strong style="color:var(--text)">${t("diagnostics_git")}</strong><br>
-        ${escHtml(git.head || "")} · dirty: ${git.dirty ? "yes" : "no"}
-      </div>
-      <div><strong style="color:var(--text)">Recent errors</strong><br>${errorsHtml}</div>
+    <div class="diagnostics-list">
+      ${diagnosticsSection("diagnostics_queue", queueLevel, queueBadge, queueSummary, [
+        diagnosticsMetric("diagnostics_metric_running", queue.running ? t("diagnostics_yes") : t("diagnostics_no"), "diagnostics_help_queue_running"),
+        diagnosticsMetric("diagnostics_metric_last_tick", `${tick}s`, "diagnostics_help_queue_tick"),
+        diagnosticsMetric("diagnostics_metric_active", queue.active_downloads || 0, "diagnostics_help_queue_active"),
+        diagnosticsMetric("diagnostics_metric_pending", queue.pending_downloads || 0, "diagnostics_help_queue_pending"),
+        diagnosticsMetric("diagnostics_metric_temp_errors", tempErrors, "diagnostics_help_queue_temp_errors"),
+      ].join(""))}
+      ${diagnosticsSection("diagnostics_aria2", ariaLevel, aria2.ok ? "diagnostics_state_ok" : "diagnostics_state_bad", aria2.ok ? t("diagnostics_aria2_ok") : t("diagnostics_aria2_bad"), aria2.ok ? [
+        diagnosticsMetric("diagnostics_metric_active", aria2.active || 0, "diagnostics_help_aria_active"),
+        diagnosticsMetric("diagnostics_metric_waiting", aria2.waiting || 0, "diagnostics_help_aria_waiting"),
+        diagnosticsMetric("diagnostics_metric_stopped", aria2.stopped || 0, "diagnostics_help_aria_stopped"),
+      ].join("") : diagnosticsMetric("diagnostics_metric_error", aria2.error || t("diagnostics_unknown_error"), "diagnostics_help_aria_error"))}
+      ${diagnosticsSection("diagnostics_database", dbLevel, dbLevel === "warn" ? "diagnostics_state_warn" : "diagnostics_state_ok", dbLevel === "warn" ? t("diagnostics_database_warn") : t("diagnostics_database_ok"), tableMetrics + statusMetrics)}
+      ${diagnosticsSection("diagnostics_recent_errors", errorsLevel, errorsLevel === "warn" ? "diagnostics_state_warn" : "diagnostics_state_ok", errorsLevel === "warn" ? t("diagnostics_errors_warn") : t("diagnostics_errors_ok"), `
+        <div class="diagnostics-errors">
+          ${diagnosticsHelp("diagnostics_help_recent_errors")}
+          ${recentErrors}
+        </div>`)}
     </div>`;
 }
 
@@ -1314,6 +1413,14 @@ async function checkForUpdate() {
   try {
     const res = await API.get("/api/settings/check-update");
     document.getElementById("current-version").textContent = "v" + res.current;
+
+    if (res.error) {
+      setUpdateBadge("error", res.message || t("settings_error"));
+      document.getElementById("btn-do-update").classList.add("hidden");
+      document.getElementById("update-info").classList.add("hidden");
+      showToast(res.message || t("settings_error"), "error");
+      return;
+    }
 
     if (res.update_available) {
       setUpdateBadge("error", t("update_available", { v: res.latest }));
