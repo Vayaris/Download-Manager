@@ -2,7 +2,7 @@
 
 A web-based download manager with **AllDebrid** support, designed to run on **Linux** machines (Proxmox VM/LXC, dedicated servers, VPS).
 
-Latest stable release: `v1.10.15`
+Latest stable release: `v1.10.16`
 
 ![Python](https://img.shields.io/badge/Python-3.8+-3776AB?logo=python&logoColor=white)
 ![FastAPI](https://img.shields.io/badge/FastAPI-009688?logo=fastapi&logoColor=white)
@@ -19,6 +19,7 @@ Latest stable release: `v1.10.15`
 - **Optimized mobile view** — compact download cards, touch navigation, bottom navigation bar
 - **AllDebrid integration** — automatic link debriding plus account hoster list in Settings
 - **Torrent / Magnet support** — upload `.torrent` files or paste magnet links via AllDebrid, with automatic polling and download start
+- **Silent `.nfo` filter** — optional setting enabled by default to skip `.nfo` files from torrents or link batches without showing them in the queue
 - **aria2 engine** — fast downloads, multi-segment (split), automatic resume
 - **Multi-segment downloads** — up to 16 connections per file (JDownloader-style) to maximize speed
 - **Speed limit** — throttle global bandwidth in MB/s
@@ -146,6 +147,7 @@ downloads:
   speed_limit: 0            # MB/s (0 = unlimited)
   max_retries: 3            # 0-20 retries for new downloads
   retry_delay_seconds: 5    # 0-3600 seconds before retrying
+  skip_nfo_files: true      # Skip .nfo files silently
   default_destination: "/opt/download-manager/downloads"
   allowed_paths:
     - "/mnt"
@@ -187,6 +189,7 @@ Add torrents directly from the interface:
 - **.torrent file** — upload a file via the modal with drag & drop
 - The torrent is sent to AllDebrid for debriding. If already cached, downloads start instantly. Otherwise, the "Active torrents" section shows real-time progress (speed, seeders).
 - Once ready, a package is automatically created with all files.
+- `.nfo` files are skipped silently by default, so they are not downloaded and do not appear as blocked or failed items.
 
 ### Package System
 
@@ -301,7 +304,7 @@ MIT
 
 Interface web de gestion de téléchargements avec support **AllDebrid**, conçue pour tourner sur des machines **Linux** (VM / LXC Proxmox, serveurs dédiés, VPS).
 
-Dernière version stable : `v1.10.15`
+Dernière version stable : `v1.10.16`
 
 ## Fonctionnalités
 
@@ -309,6 +312,7 @@ Dernière version stable : `v1.10.15`
 - **PWA installable** — ajoutez l'app sur l'écran d'accueil de votre téléphone (Android / iOS)
 - **AllDebrid intégré** — débridage automatique des liens hébergeurs
 - **Support Torrent / Magnet** — upload de fichiers `.torrent` ou liens magnet via AllDebrid
+- **Filtre `.nfo` silencieux** — option activée par défaut pour ignorer les `.nfo` sans les afficher dans la file
 - **aria2 sous le capot** — téléchargements rapides, multi-segments, reprise automatique
 - **Multi-segments** — jusqu'à 16 connexions par fichier pour maximiser la vitesse
 - **Système de paquets** — groupez vos liens par saison, album, etc.
