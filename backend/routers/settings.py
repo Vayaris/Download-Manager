@@ -218,6 +218,7 @@ async def get_settings(_=Depends(get_current_user)):
         "speed_limit": cfg["downloads"].get("speed_limit", 0),
         "max_retries": cfg["downloads"].get("max_retries", 3),
         "retry_delay_seconds": cfg["downloads"].get("retry_delay_seconds", 5),
+        "skip_nfo_files": cfg["downloads"].get("skip_nfo_files", True),
         "port": cfg["server"]["port"],
         "webhook_enabled": wh.get("enabled", False),
         "webhook_url": wh.get("url", ""),
@@ -255,6 +256,8 @@ async def update_settings(body: SettingsUpdate, _=Depends(get_current_user)):
         cfg["downloads"]["max_retries"] = body.max_retries
     if body.retry_delay_seconds is not None and 0 <= body.retry_delay_seconds <= 3600:
         cfg["downloads"]["retry_delay_seconds"] = body.retry_delay_seconds
+    if body.skip_nfo_files is not None:
+        cfg["downloads"]["skip_nfo_files"] = bool(body.skip_nfo_files)
 
     # Webhooks
     if "webhooks" not in cfg:

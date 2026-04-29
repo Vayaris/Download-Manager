@@ -1,6 +1,6 @@
 import httpx
 from typing import Optional
-from urllib.parse import urlparse
+from urllib.parse import unquote, urlparse
 from config import get_config
 
 ALLDEBRID_API = "https://api.alldebrid.com"
@@ -113,8 +113,24 @@ class AllDebridService:
                 raise Exception(f"AllDebrid: {msg}")
             return data["data"]["magnets"]
 
+    @staticmethod
+    def _looks_like_nfo(value: str) -> bool:
+        if not value:
+            return False
+        parsed = urlparse(str(value))
+        path = unquote(parsed.path or str(value)).lower().rstrip("/")
+        return path.rsplit("/", 1)[-1].endswith(".nfo")
+
+    @classmethod
+    def _is_nfo_node(cls, node: dict) -> bool:
+        for key in ("n", "name", "filename", "file", "path", "l"):
+            if cls._looks_like_nfo(str(node.get(key, ""))):
+                return True
+        return False
+
     async def magnet_files(self, magnet_id: int) -> list[str]:
         api_key = self._get_api_key()
+        skip_nfo = bool(get_config()["downloads"].get("skip_nfo_files", True))
         async with httpx.AsyncClient(timeout=15.0) as client:
             resp = await client.get(
                 f"{ALLDEBRID_API}/v4/magnet/files",
@@ -128,16 +144,17 @@ class AllDebridService:
             links = []
             magnets_data = data["data"]["magnets"]
             for magnet in magnets_data:
-                self._extract_links(magnet.get("files", []), links)
+                self._extract_links(magnet.get("files", []), links, skip_nfo=skip_nfo)
             return links
 
-    def _extract_links(self, nodes, links):
+    def _extract_links(self, nodes, links, skip_nfo: bool = True):
         for node in nodes:
             if isinstance(node, dict):
                 if "l" in node and node["l"]:
-                    links.append(node["l"])
+                    if not (skip_nfo and self._is_nfo_node(node)):
+                        links.append(node["l"])
                 if "e" in node:
-                    self._extract_links(node["e"], links)
+                    self._extract_links(node["e"], links, skip_nfo=skip_nfo)
 
     async def magnet_delete(self, magnet_id: int):
         api_key = self._get_api_key()

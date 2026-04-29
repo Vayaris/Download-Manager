@@ -5,6 +5,7 @@ import uuid
 from collections import deque
 from datetime import datetime, timezone
 from typing import Optional
+from urllib.parse import unquote, urlparse
 
 
 def log(msg):
@@ -18,6 +19,14 @@ from database import DB_PATH
 from services.aria2_service import Aria2RpcError, aria2
 from services.alldebrid import alldebrid
 from services.webhook import send_webhook
+
+
+def _looks_like_nfo(value: str) -> bool:
+    if not value:
+        return False
+    parsed = urlparse(str(value))
+    path = unquote(parsed.path or str(value)).lower().rstrip("/")
+    return path.rsplit("/", 1)[-1].endswith(".nfo")
 
 
 def _is_missing_aria2_gid_error(exc: Exception) -> bool:
@@ -588,6 +597,7 @@ class QueueManager:
         now = datetime.now(timezone.utc).isoformat()
         ids = []
         seen = set()
+        skip_nfo = bool(get_config()["downloads"].get("skip_nfo_files", True))
         async with aiosqlite.connect(str(DB_PATH)) as db:
             db.row_factory = aiosqlite.Row
             cursor = await db.execute("SELECT COALESCE(MAX(position), 0) FROM downloads")
@@ -597,7 +607,7 @@ class QueueManager:
 
             for url in urls:
                 url = url.strip()
-                if not url or url in seen:
+                if not url or url in seen or (skip_nfo and _looks_like_nfo(url)):
                     continue
                 seen.add(url)
 

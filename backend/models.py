@@ -30,6 +30,7 @@ class SettingsUpdate(BaseModel):
     speed_limit: Optional[int] = None
     max_retries: Optional[int] = None
     retry_delay_seconds: Optional[int] = None
+    skip_nfo_files: Optional[bool] = None
     webhook_enabled: Optional[bool] = None
     webhook_url: Optional[str] = None
     webhook_format: Optional[str] = None

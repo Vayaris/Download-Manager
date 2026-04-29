@@ -86,6 +86,7 @@ async function saveDownloadSettings() {
   const retryDelayRaw = parseInt(document.getElementById("retry-delay-input").value);
   const maxRetries = Math.min(20, Math.max(0, Number.isNaN(maxRetriesRaw) ? 3 : maxRetriesRaw));
   const retryDelay = Math.min(3600, Math.max(0, Number.isNaN(retryDelayRaw) ? 5 : retryDelayRaw));
+  const skipNfo = document.getElementById("skip-nfo-files").checked;
   const dest = document.getElementById("default-dest").value.trim() || undefined;
 
   // Clamp input values visually
@@ -101,6 +102,7 @@ async function saveDownloadSettings() {
       speed_limit: speedLimit,
       max_retries: maxRetries,
       retry_delay_seconds: retryDelay,
+      skip_nfo_files: skipNfo,
       default_destination: dest,
     });
     showToast(t("settings_downloads_saved"), "ok");
@@ -1219,6 +1221,7 @@ async function bootSettings() {
     document.getElementById("speed-limit").value = cfg.speed_limit || 0;
     document.getElementById("max-retries-input").value = cfg.max_retries ?? 3;
     document.getElementById("retry-delay-input").value = cfg.retry_delay_seconds ?? 5;
+    document.getElementById("skip-nfo-files").checked = cfg.skip_nfo_files !== false;
 
     await checkAllDebridStatus();
     await refreshAllDebridHosts();

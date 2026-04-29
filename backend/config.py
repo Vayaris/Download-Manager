@@ -24,7 +24,8 @@ DEFAULT_CONFIG = {
         "download_segments": 1,
         "speed_limit": 0,
         "max_retries": 3,
-        "retry_delay_seconds": 5
+        "retry_delay_seconds": 5,
+        "skip_nfo_files": True
     },
     "auth": {
         "enabled": False,
