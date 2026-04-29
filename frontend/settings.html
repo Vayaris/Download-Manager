@@ -160,22 +160,6 @@
       </div>
     </div>
 
-    <!-- Language -->
-    <div class="settings-card">
-      <div class="card-header">
-        <h3 data-i18n="settings_language">Language</h3>
-      </div>
-      <div class="card-body">
-        <div class="form-group">
-          <select id="lang-select" class="form-input" onchange="setLanguage(this.value)" style="max-width:200px">
-            <option value="en">English</option>
-            <option value="fr">Français</option>
-          </select>
-          <script>document.getElementById("lang-select").value=localStorage.getItem("dm_lang")||"en"</script>
-        </div>
-      </div>
-    </div>
-
     <!-- AllDebrid -->
     <div class="settings-card" data-settings-section="alldebrid" data-default-open="true">
       <h2 class="card-title">
@@ -722,7 +706,7 @@ function pwaInstall(){if(pwaDeferred){pwaDeferred.prompt();pwaDeferred.userChoic
 <script src="/static/js/api.js?v=30"></script>
 <script src="/static/js/filebrowser.js?v=35"></script>
 <script src="/static/js/settings.js?v=42"></script>
-<script src="/static/js/account.js?v=28"></script>
+<script src="/static/js/account.js?v=29"></script>
 <script>if("serviceWorker"in navigator)navigator.serviceWorker.register("/sw.js").catch(()=>{})</script>
 </body>
 </html>

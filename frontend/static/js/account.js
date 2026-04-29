@@ -81,6 +81,20 @@
         </div>
       </div>
 
+      <!-- Language -->
+      <div class="acct-section">
+        <h4 class="acct-section-title">
+          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M2 12h20"/><path d="M12 2a15.3 15.3 0 0 1 0 20"/><path d="M12 2a15.3 15.3 0 0 0 0 20"/></svg>
+          <span data-i18n="settings_language">Language</span>
+        </h4>
+        <div class="form-group">
+          <select id="acct-lang-select" class="form-input" onchange="setLanguage(this.value)">
+            <option value="en">English</option>
+            <option value="fr">Français</option>
+          </select>
+        </div>
+      </div>
+
       <!-- Logout -->
       <div class="acct-section" style="border-top:1px solid var(--border);padding-top:16px;margin-top:8px">
         <button class="btn btn-danger full-width" onclick="acctLogout()">
@@ -107,6 +121,8 @@
 
 function openAccountModal() {
   document.getElementById("account-modal").classList.remove("hidden");
+  const langSelect = document.getElementById("acct-lang-select");
+  if (langSelect) langSelect.value = localStorage.getItem("dm_lang") || "en";
   acctLoadUserInfo();
 }
 
