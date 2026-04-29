@@ -46,6 +46,7 @@ let _plexState = {
 };
 
 function normalizePlexState(data) {
+  data = data || {};
   const libraries = Array.isArray(data.libraries) ? data.libraries.map((library) => ({
     key: String(library.key || "").trim(),
     title: String(library.title || "").trim(),
@@ -69,6 +70,7 @@ function normalizePlexState(data) {
     favoriteKeys,
     favoriteSet,
     lastRefreshes: data.last_refreshes || {},
+    query: typeof _plexState.query === "string" ? _plexState.query : "",
     error: String(data.error || ""),
   };
 }
@@ -117,7 +119,7 @@ function renderPlexSummary() {
 }
 
 function getPlexVisibleLibraries() {
-  const query = _plexState.query.trim().toLocaleLowerCase();
+  const query = String(_plexState.query || "").trim().toLocaleLowerCase();
   if (!query) return _plexState.libraries.slice();
   return _plexState.libraries.filter((library) => {
     const haystack = `${library.title} ${library.type} ${library.key}`.toLocaleLowerCase();
@@ -185,7 +187,7 @@ function renderPlexLists() {
           })).join("")}
         </div>
       </section>`);
-  } else if (_plexState.query.trim() === "") {
+  } else if (String(_plexState.query || "").trim() === "") {
     sections.push(`
       <section class="plex-section">
         <div class="plex-section-header">
