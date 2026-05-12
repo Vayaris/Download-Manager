@@ -50,8 +50,11 @@ const TRANSLATIONS = {
     // ---- Torrent ----
     torrent_nothing: "Paste a magnet link or select a .torrent file",
     torrent_added: "{{n}} torrent(s) added",
+    torrent_batch_added: "{{n}} torrent(s) added to package \"{{name}}\"",
     torrent_deleted: "Torrent deleted",
-    torrent_dropzone: "Click or drag a .torrent file here",
+    torrent_dropzone: "Click or drag .torrent files here",
+    torrent_files_selected: "{{n}} .torrent files selected",
+    torrent_files_ignored: "Only .torrent files were kept",
 
     // ---- Downloads ----
     links_empty: "Paste at least one link.",
@@ -313,7 +316,7 @@ const TRANSLATIONS = {
     btn_remove_all: "Remove all",
     torrent_modal_title: "Add a torrent",
     torrent_magnet_label: "Magnet links (one per line)",
-    torrent_file_label: ".torrent file",
+    torrent_file_label: ".torrent file(s)",
     torrent_or: "— or —",
     btn_cancel: "Cancel",
     btn_add_torrent: "Add",
@@ -569,8 +572,11 @@ const TRANSLATIONS = {
     // ---- Torrent ----
     torrent_nothing: "Collez un lien magnet ou sélectionnez un fichier .torrent",
     torrent_added: "{{n}} torrent(s) ajouté(s)",
+    torrent_batch_added: "{{n}} torrent(s) ajouté(s) au paquet \"{{name}}\"",
     torrent_deleted: "Torrent supprimé",
-    torrent_dropzone: "Cliquez ou glissez un fichier .torrent ici",
+    torrent_dropzone: "Cliquez ou glissez des fichiers .torrent ici",
+    torrent_files_selected: "{{n}} fichiers .torrent sélectionnés",
+    torrent_files_ignored: "Seuls les fichiers .torrent ont été gardés",
 
     // ---- Downloads ----
     links_empty: "Collez au moins un lien.",
@@ -832,7 +838,7 @@ const TRANSLATIONS = {
     btn_remove_all: "Tout supprimer",
     torrent_modal_title: "Ajouter un torrent",
     torrent_magnet_label: "Liens magnet (un par ligne)",
-    torrent_file_label: "Fichier .torrent",
+    torrent_file_label: "Fichier(s) .torrent",
     torrent_or: "— ou —",
     btn_cancel: "Annuler",
     btn_add_torrent: "Ajouter",

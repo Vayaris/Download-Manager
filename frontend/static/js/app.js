@@ -578,10 +578,20 @@ function closeTorrentModal() {
   document.getElementById("torrent-file-label").textContent = t("torrent_dropzone");
 }
 
-function onTorrentFileSelected(input) {
-  if (input.files && input.files[0]) {
-    document.getElementById("torrent-file-label").textContent = input.files[0].name;
+function updateTorrentFileLabel(files) {
+  const list = Array.from(files || []).filter(file => file.name.toLowerCase().endsWith(".torrent"));
+  if (list.length === 0) {
+    document.getElementById("torrent-file-label").textContent = t("torrent_dropzone");
+  } else if (list.length === 1) {
+    document.getElementById("torrent-file-label").textContent = list[0].name;
+  } else {
+    document.getElementById("torrent-file-label").textContent = t("torrent_files_selected", { n: list.length });
   }
+  return list;
+}
+
+function onTorrentFileSelected(input) {
+  updateTorrentFileLabel(input.files);
 }
 
 function openFileBrowserForTorrent() {
@@ -597,7 +607,8 @@ function openFileBrowserForTorrent() {
 async function submitTorrent() {
   const magnetRaw = document.getElementById("torrent-magnets").value.trim();
   const fileInput = document.getElementById("torrent-file-input");
-  const hasFile = fileInput.files && fileInput.files[0];
+  const torrentFiles = updateTorrentFileLabel(fileInput.files);
+  const hasFile = torrentFiles.length > 0;
 
   if (!magnetRaw && !hasFile) {
     showToast(t("torrent_nothing"), "error");
@@ -614,33 +625,22 @@ async function submitTorrent() {
     }
   }
 
-  // Magnet links take priority if both filled
-  if (magnetRaw) {
-    const magnets = magnetRaw.split("\n").map(u => u.trim()).filter(Boolean);
-    try {
-      const result = await API.post("/api/torrents/", { magnets, destination });
-      showToast(t("torrent_added", { n: result.added }), "ok");
-      closeTorrentModal();
-    } catch (e) {
-      showToast(t("error_prefix") + e.message, "error");
-    }
-  } else {
-    const formData = new FormData();
-    formData.append("file", fileInput.files[0]);
-    formData.append("destination", destination);
+  const formData = new FormData();
+  formData.append("magnets", magnetRaw);
+  formData.append("destination", destination);
+  torrentFiles.forEach(file => formData.append("files", file));
 
-    try {
-      const token = API.token;
-      const headers = {};
-      if (token) headers["Authorization"] = `Bearer ${token}`;
-      const resp = await fetch("/api/torrents/upload", { method: "POST", headers, body: formData });
-      if (!resp.ok) throw new Error(await resp.text());
-      const result = await resp.json();
-      showToast(t("torrent_added", { n: result.added }), "ok");
-      closeTorrentModal();
-    } catch (e) {
-      showToast(t("error_prefix") + e.message, "error");
-    }
+  try {
+    const token = API.token;
+    const headers = {};
+    if (token) headers["Authorization"] = `Bearer ${token}`;
+    const resp = await fetch("/api/torrents/batch", { method: "POST", headers, body: formData });
+    if (!resp.ok) throw new Error(await resp.text());
+    const result = await resp.json();
+    showToast(t("torrent_batch_added", { n: result.added, name: result.package_name || "Lot torrents" }), "ok");
+    closeTorrentModal();
+  } catch (e) {
+    showToast(t("error_prefix") + e.message, "error");
   }
 }
 
@@ -658,8 +658,12 @@ async function submitTorrent() {
       const files = e.dataTransfer.files;
       if (files && files[0]) {
         const input = document.getElementById("torrent-file-input");
-        input.files = files;
-        document.getElementById("torrent-file-label").textContent = files[0].name;
+        const torrents = Array.from(files).filter(file => file.name.toLowerCase().endsWith(".torrent"));
+        if (torrents.length !== files.length) showToast(t("torrent_files_ignored"), "error");
+        const transfer = new DataTransfer();
+        torrents.forEach(file => transfer.items.add(file));
+        input.files = transfer.files;
+        updateTorrentFileLabel(input.files);
       }
     });
   });

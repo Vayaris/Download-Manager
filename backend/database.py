@@ -96,6 +96,7 @@ async def init_db():
                 speed           INTEGER DEFAULT 0,
                 seeders         INTEGER DEFAULT 0,
                 status_message  TEXT,
+                package_id      TEXT,
                 created_at      TEXT,
                 updated_at      TEXT
             )
@@ -109,5 +110,9 @@ async def init_db():
             await db.execute("ALTER TABLE downloads ADD COLUMN max_retries INTEGER DEFAULT 5")
         if "package_id" not in columns:
             await db.execute("ALTER TABLE downloads ADD COLUMN package_id TEXT")
+
+        torrent_columns = [row[1] for row in await (await db.execute("PRAGMA table_info(torrents)")).fetchall()]
+        if "package_id" not in torrent_columns:
+            await db.execute("ALTER TABLE torrents ADD COLUMN package_id TEXT")
 
         await db.commit()

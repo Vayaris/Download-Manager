@@ -188,12 +188,12 @@ class QueueManager:
                             await self._move_to_history(db, row["id"], now)
                             if not row["package_id"]:
                                 await db.execute("DELETE FROM downloads WHERE id = ?", (row["id"],))
-                            # Webhook
-                            asyncio.create_task(send_webhook("download_failed", {
-                                "name": name_update, "destination": row["destination"],
-                                "size": parsed["size"], "error_msg": parsed["error_msg"],
-                                "status": "failed",
-                            }))
+                            if not row["package_id"]:
+                                asyncio.create_task(send_webhook("download_failed", {
+                                    "name": name_update, "destination": row["destination"],
+                                    "size": parsed["size"], "error_msg": parsed["error_msg"],
+                                    "status": "failed",
+                                }))
                         else:
                             # Retry: reset to pending
                             await db.execute(
@@ -228,11 +228,11 @@ class QueueManager:
                             # Standalone download — remove from downloads table
                             await db.execute("DELETE FROM downloads WHERE id = ?", (row["id"],))
 
-                        # Webhook
-                        asyncio.create_task(send_webhook("download_complete", {
-                            "name": name_update, "destination": row["destination"],
-                            "size": parsed["size"], "status": "complete",
-                        }))
+                        if not row["package_id"]:
+                            asyncio.create_task(send_webhook("download_complete", {
+                                "name": name_update, "destination": row["destination"],
+                                "size": parsed["size"], "status": "complete",
+                            }))
 
                         # Check if package is complete
                         if row["package_id"]:
@@ -367,11 +367,12 @@ class QueueManager:
                             await self._move_to_history(db, item["id"], now)
                             if not item["package_id"]:
                                 await db.execute("DELETE FROM downloads WHERE id = ? AND status = 'failed'", (item["id"],))
-                            asyncio.create_task(send_webhook("download_failed", {
-                                "name": item["name"] or item["url"],
-                                "destination": item["destination"],
-                                "error_msg": str(e)[:400], "status": "failed",
-                            }))
+                            if not item["package_id"]:
+                                asyncio.create_task(send_webhook("download_failed", {
+                                    "name": item["name"] or item["url"],
+                                    "destination": item["destination"],
+                                    "error_msg": str(e)[:400], "status": "failed",
+                                }))
                         else:
                             await db.execute(
                                 """UPDATE downloads SET status = 'error',
@@ -476,14 +477,24 @@ class QueueManager:
                     # Ready — get files and create package
                     links = await alldebrid.magnet_files(row["alldebrid_id"])
                     if not links:
+                        if row["package_id"]:
+                            await db.execute("DELETE FROM torrents WHERE id = ?", (row["id"],))
+                            await db.commit()
+                            await self._check_package_complete(db, row["package_id"], now)
+                            continue
                         raise Exception("AllDebrid returned no files for ready torrent")
-                    await self.add_package(
-                        row["name"] or "Torrent",
-                        links,
-                        row["destination"],
-                    )
+                    if row["package_id"]:
+                        await self.add_downloads(links, row["destination"], package_id=row["package_id"])
+                    else:
+                        await self.add_package(
+                            row["name"] or "Torrent",
+                            links,
+                            row["destination"],
+                        )
                     await db.execute("DELETE FROM torrents WHERE id = ?", (row["id"],))
                     await db.commit()
+                    if row["package_id"]:
+                        await self._check_package_complete(db, row["package_id"], now)
                     try:
                         await alldebrid.magnet_delete(row["alldebrid_id"])
                     except Exception:
@@ -553,11 +564,25 @@ class QueueManager:
 
     async def _check_package_complete(self, db, package_id: str, now: str):
         cursor = await db.execute(
+            "SELECT COUNT(*) FROM torrents WHERE package_id = ? AND status IN ('processing', 'ready_importing')",
+            (package_id,),
+        )
+        (pending_torrents,) = await cursor.fetchone()
+        if pending_torrents:
+            return
+
+        cursor = await db.execute(
             "SELECT COUNT(*) FROM downloads WHERE package_id = ? AND status NOT IN ('complete', 'failed')",
             (package_id,),
         )
         (remaining,) = await cursor.fetchone()
         if remaining == 0:
+            cursor = await db.execute(
+                "SELECT COUNT(*) FROM downloads WHERE package_id = ?",
+                (package_id,),
+            )
+            (total_downloads,) = await cursor.fetchone()
+
             # All downloads in package are done
             cursor = await db.execute(
                 "SELECT COUNT(*) FROM downloads WHERE package_id = ? AND status = 'failed'",
@@ -577,7 +602,7 @@ class QueueManager:
             await db.commit()
 
             # Webhook
-            if pkg:
+            if pkg and total_downloads > 0:
                 asyncio.create_task(send_webhook("package_complete", {
                     "name": pkg["name"], "package_name": pkg["name"],
                     "destination": pkg["destination"], "status": pkg_status,
@@ -632,7 +657,7 @@ class QueueManager:
 
         return ids
 
-    async def add_package(self, name: str, urls: list, destination: str) -> dict:
+    async def create_package(self, name: str, destination: str) -> str:
         now = datetime.now(timezone.utc).isoformat()
         pkg_id = str(uuid.uuid4())
 
@@ -643,6 +668,10 @@ class QueueManager:
             )
             await db.commit()
 
+        return pkg_id
+
+    async def add_package(self, name: str, urls: list, destination: str) -> dict:
+        pkg_id = await self.create_package(name, destination)
         ids = await self.add_downloads(urls, destination, package_id=pkg_id)
         return {"package_id": pkg_id, "download_ids": ids}
 

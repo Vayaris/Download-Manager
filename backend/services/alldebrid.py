@@ -87,12 +87,18 @@ class AllDebridService:
             return data["data"]["magnets"]
 
     async def magnet_upload_file(self, file_bytes: bytes, filename: str) -> list[dict]:
+        return await self.magnet_upload_files([(filename, file_bytes)])
+
+    async def magnet_upload_files(self, files_data: list[tuple[str, bytes]]) -> list[dict]:
         api_key = self._get_api_key()
         async with httpx.AsyncClient(timeout=60.0) as client:
             resp = await client.post(
                 f"{ALLDEBRID_API}/v4/magnet/upload/file",
                 params={"agent": AGENT, "apikey": api_key},
-                files=[("files[]", (filename, file_bytes, "application/x-bittorrent"))],
+                files=[
+                    ("files[]", (filename, file_bytes, "application/x-bittorrent"))
+                    for filename, file_bytes in files_data
+                ],
             )
             data = resp.json()
             if data.get("status") != "success":

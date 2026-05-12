@@ -2,7 +2,7 @@
 
 A web-based download manager with **AllDebrid** support, designed to run on **Linux** machines (Proxmox VM/LXC, dedicated servers, VPS).
 
-Latest stable release: `v1.10.16`
+Latest stable release: `v1.10.17`
 
 ![Python](https://img.shields.io/badge/Python-3.8+-3776AB?logo=python&logoColor=white)
 ![FastAPI](https://img.shields.io/badge/FastAPI-009688?logo=fastapi&logoColor=white)
@@ -18,7 +18,8 @@ Latest stable release: `v1.10.16`
 - **Installable PWA** — add the app to your phone's home screen (Android / iOS)
 - **Optimized mobile view** — compact download cards, touch navigation, bottom navigation bar
 - **AllDebrid integration** — automatic link debriding plus account hoster list in Settings
-- **Torrent / Magnet support** — upload `.torrent` files or paste magnet links via AllDebrid, with automatic polling and download start
+- **Torrent / Magnet support** — upload one or many `.torrent` files, or paste magnet links via AllDebrid, with automatic polling and download start
+- **Batch torrent packages** — files and magnets added together from the torrent modal are grouped into one package
 - **Silent `.nfo` filter** — optional setting enabled by default to skip `.nfo` files from torrents or link batches without showing them in the queue
 - **aria2 engine** — fast downloads, multi-segment (split), automatic resume
 - **Multi-segment downloads** — up to 16 connections per file (JDownloader-style) to maximize speed
@@ -26,7 +27,7 @@ Latest stable release: `v1.10.16`
 - **Package system** — group your links by season, album, etc. with global progress tracking
 - **Automatic retry** — configurable attempts and delay between retries
 - **Automatic history** — completed/failed downloads are automatically moved to history
-- **Webhook notifications** — Discord, Slack, Telegram, Gotify, ntfy, or generic JSON (with built-in setup guides)
+- **Webhook notifications** — Discord, Slack, Telegram, Gotify, ntfy, Signal, or generic JSON, with one notification when a package finishes
 - **File browser** — select and create folders directly from the interface
 - **Fast destination input** — paste `/mnt/...` paths directly or browse folders
 - **Secure authentication** — login/password with 2FA (6-digit OTP), rate limiting, IP blocking
@@ -186,7 +187,8 @@ Most settings can be changed directly from the **Settings** page in the web inte
 
 Add torrents directly from the interface:
 - **Magnet link** — paste one or more magnet links (auto-detected in the main textarea)
-- **.torrent file** — upload a file via the modal with drag & drop
+- **.torrent files** — upload one or many files via the modal with drag & drop
+- When multiple `.torrent` files or magnets are submitted together from the torrent modal, they are grouped into one automatic package.
 - The torrent is sent to AllDebrid for debriding. If already cached, downloads start instantly. Otherwise, the "Active torrents" section shows real-time progress (speed, seeders).
 - Once ready, a package is automatically created with all files.
 - `.nfo` files are skipped silently by default, so they are not downloaded and do not appear as blocked or failed items.
@@ -233,7 +235,7 @@ Configure a webhook URL to receive notifications on events:
 - **Download completed** / **failed**
 - **Package completed**
 
-Supported formats: Discord (embed), Slack (block), Telegram (Markdown), Gotify, ntfy, or generic JSON. Built-in setup guides are provided for each service.
+Supported formats: Discord (embed), Slack (block), Telegram (Markdown), Gotify, ntfy, Signal, or generic JSON. Built-in setup guides are provided for each service. Downloads inside a package do not send individual notifications; only the final package completion notification is sent.
 
 ### Authentication and 2FA
 
@@ -304,21 +306,22 @@ MIT
 
 Interface web de gestion de téléchargements avec support **AllDebrid**, conçue pour tourner sur des machines **Linux** (VM / LXC Proxmox, serveurs dédiés, VPS).
 
-Dernière version stable : `v1.10.16`
+Dernière version stable : `v1.10.17`
 
 ## Fonctionnalités
 
 - **Interface web moderne** — thème clair/sombre, responsive mobile, temps réel via WebSocket
 - **PWA installable** — ajoutez l'app sur l'écran d'accueil de votre téléphone (Android / iOS)
 - **AllDebrid intégré** — débridage automatique des liens hébergeurs
-- **Support Torrent / Magnet** — upload de fichiers `.torrent` ou liens magnet via AllDebrid
+- **Support Torrent / Magnet** — upload d'un ou plusieurs fichiers `.torrent` ou liens magnet via AllDebrid
+- **Lots torrent en paquet** — les fichiers et magnets ajoutés ensemble depuis la modale torrent sont regroupés dans un seul paquet
 - **Filtre `.nfo` silencieux** — option activée par défaut pour ignorer les `.nfo` sans les afficher dans la file
 - **aria2 sous le capot** — téléchargements rapides, multi-segments, reprise automatique
 - **Multi-segments** — jusqu'à 16 connexions par fichier pour maximiser la vitesse
 - **Système de paquets** — groupez vos liens par saison, album, etc.
 - **Retry automatique** — 5 tentatives par défaut
 - **Historique automatique** — les téléchargements terminés passent dans l'historique
-- **Notifications webhook** — Discord, Slack, Telegram, Gotify, ntfy
+- **Notifications webhook** — Discord, Slack, Telegram, Gotify, ntfy, Signal, avec une seule notification quand un paquet est terminé
 - **Destination rapide** — collez directement un chemin `/mnt/...` ou parcourez les dossiers
 - **Authentification sécurisée** — login avec 2FA (OTP), rate limiting, blocage IP
 - **Mise à jour intégrée** — depuis la page Paramètres
