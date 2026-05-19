@@ -84,6 +84,14 @@ class PlexSettingsRequest(BaseModel):
     favorite_keys: Optional[List[str]] = None
 
 
+class MediaSettingsRequest(BaseModel):
+    provider: Optional[str] = None
+    enabled: Optional[bool] = None
+    url: Optional[str] = None
+    token: Optional[str] = None
+    favorite_keys: Optional[List[str]] = None
+
+
 class SignalCheckRequest(BaseModel):
     host: str
     port: int

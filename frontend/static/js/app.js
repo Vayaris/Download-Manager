@@ -1038,6 +1038,11 @@ function showToast(msg, type = "ok") {
   _toastTimer = setTimeout(() => el.classList.add("hidden"), 3500);
 }
 
+function updateMediaNavLabel(provider) {
+  const label = provider === "jellyfin" ? "Jellyfin" : "Plex";
+  document.querySelectorAll("[data-media-nav-label]").forEach((el) => { el.textContent = label; });
+}
+
 // ---- Initial load ----
 
 async function loadInitial() {
@@ -1052,6 +1057,7 @@ async function loadInitial() {
     if (!destInput.value && cfg.default_destination) {
       setDestinationValue("dest-path", cfg.default_destination);
     }
+    updateMediaNavLabel(cfg.media_provider);
   } catch {}
 
   loadPackages();

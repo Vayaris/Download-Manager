@@ -2,7 +2,7 @@
 
 A web-based download manager with **AllDebrid** support, designed to run on **Linux** machines (Proxmox VM/LXC, dedicated servers, VPS).
 
-Latest stable release: `v1.10.17`
+Latest stable release: `v1.10.18`
 
 ![Python](https://img.shields.io/badge/Python-3.8+-3776AB?logo=python&logoColor=white)
 ![FastAPI](https://img.shields.io/badge/FastAPI-009688?logo=fastapi&logoColor=white)
@@ -33,7 +33,7 @@ Latest stable release: `v1.10.17`
 - **Secure authentication** — login/password with 2FA (6-digit OTP), rate limiting, IP blocking
 - **Built-in updates** — check and install new versions from the Settings page, with changelog
 - **Runtime diagnostics** — queue, aria2, database and git health visible from Settings
-- **Plex refresh** — configure Plex in Settings, then refresh libraries manually from the Plex tab
+- **Media server refresh** — configure Plex or Jellyfin in Settings, then refresh libraries manually from the media tab
 - **Collapsible settings** — keep advanced sections hidden until needed
 - **Admin CLI** — reset admin account, manage blocked IPs from the command line
 - **Systemd service** — auto-start, crash recovery
@@ -225,9 +225,13 @@ The **Settings** page now includes a diagnostics panel with:
 
 When adding links, packages or torrents, you can paste a destination path directly, for example `/mnt/media/Movies`, or use the folder browser button. The folder browser uses a lightweight directory listing so it stays responsive while downloads are writing files.
 
-### Plex Refresh
+### Media Server Refresh
 
-Enable Plex and configure your URL/token in **Settings → Plex**, then use the dedicated **Plex** tab to refresh each library manually after adding media. Download Manager only calls the Plex HTTP API; it does not restart or modify the Plex service.
+Enable one media server in **Settings → Media server**:
+- **Plex** uses a Plex token and refreshes libraries through the Plex HTTP API.
+- **Jellyfin** uses an API key from the Jellyfin admin dashboard and refreshes selected libraries through the Jellyfin HTTP API.
+
+Only one media server is active at a time. The media tab displays the active server and lets you refresh each library manually after adding media.
 
 ### Webhook Notifications
 
@@ -306,7 +310,7 @@ MIT
 
 Interface web de gestion de téléchargements avec support **AllDebrid**, conçue pour tourner sur des machines **Linux** (VM / LXC Proxmox, serveurs dédiés, VPS).
 
-Dernière version stable : `v1.10.17`
+Dernière version stable : `v1.10.18`
 
 ## Fonctionnalités
 
@@ -322,6 +326,7 @@ Dernière version stable : `v1.10.17`
 - **Retry automatique** — 5 tentatives par défaut
 - **Historique automatique** — les téléchargements terminés passent dans l'historique
 - **Notifications webhook** — Discord, Slack, Telegram, Gotify, ntfy, Signal, avec une seule notification quand un paquet est terminé
+- **Rafraîchissement média** — configurez Plex ou Jellyfin dans les Paramètres, puis rafraîchissez les bibliothèques depuis l'onglet média
 - **Destination rapide** — collez directement un chemin `/mnt/...` ou parcourez les dossiers
 - **Authentification sécurisée** — login avec 2FA (OTP), rate limiting, blocage IP
 - **Mise à jour intégrée** — depuis la page Paramètres

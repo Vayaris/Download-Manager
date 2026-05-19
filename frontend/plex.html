@@ -6,7 +6,7 @@
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="theme-color" content="#f5f3ed">
-  <title>Plex — Download Manager</title>
+  <title>Media — Download Manager</title>
   <link rel="manifest" href="/manifest.json">
   <link rel="apple-touch-icon" href="/static/icons/icon-192.svg">
   <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -64,7 +64,7 @@
         </a>
         <a href="/plex-page" class="nav-tab active">
           <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="14" rx="2"/><path d="M8 20h8"/><path d="M12 18v2"/><path d="m10 8 5 3-5 3V8z"/></svg>
-          <span data-i18n="nav_plex">Plex</span>
+          <span data-media-nav-label="1" data-i18n="nav_plex">Plex</span>
         </a>
         <a href="/settings-page" class="nav-tab">
           <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
@@ -88,10 +88,10 @@
     <div class="settings-header">
       <div>
         <div class="plex-title-line">
-          <h1 data-i18n="plex_page_title">Plex libraries</h1>
+          <h1 data-media-page-title="1" data-i18n="plex_page_title">Plex libraries</h1>
           <span id="plex-server-meta" class="plex-server-meta"></span>
         </div>
-        <p data-i18n="plex_page_subtitle">Refresh Plex libraries after adding media.</p>
+        <p data-media-page-subtitle="1" data-i18n="plex_page_subtitle">Refresh Plex libraries after adding media.</p>
       </div>
       <span class="conn-badge unknown" id="plex-page-status-badge">
         <span class="b-dot"></span>
@@ -105,7 +105,7 @@
         <div class="plex-page-toolbar-actions">
           <span id="plex-page-count" class="plex-count-pill">0 / 0</span>
           <button class="btn btn-sm" onclick="loadPlexPage()" data-i18n="plex_btn_refresh_list">Refresh list</button>
-          <a class="btn btn-sm" href="/settings-page" data-i18n="plex_open_settings">Plex settings</a>
+          <a class="btn btn-sm" href="/settings-page" data-media-settings-link="1" data-i18n="plex_open_settings">Plex settings</a>
         </div>
       </div>
       <div id="plex-page-libraries" class="plex-libraries"></div>
@@ -126,7 +126,7 @@
   </button>
   <a href="/plex-page" class="active">
     <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="14" rx="2"/><path d="M8 20h8"/><path d="M12 18v2"/><path d="m10 8 5 3-5 3V8z"/></svg>
-    <span data-i18n="nav_plex">Plex</span>
+    <span data-media-provider-label="1" data-i18n="nav_plex">Plex</span>
   </a>
   <a href="/settings-page">
     <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06A2 2 0 0 1 5.34 19l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06A2 2 0 0 1 7.04 4.3l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06A2 2 0 0 1 19.7 7.04l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
@@ -140,9 +140,9 @@ function pwaInstall(){if(pwaDeferred){pwaDeferred.prompt();pwaDeferred.userChoic
 </script>
 
 <script src="/static/js/theme.js?v=36"></script>
-<script src="/static/js/i18n.js?v=42"></script>
+<script src="/static/js/i18n.js?v=46"></script>
 <script src="/static/js/api.js?v=30"></script>
-<script src="/static/js/plex.js?v=7"></script>
+<script src="/static/js/plex.js?v=8"></script>
 <script src="/static/js/account.js?v=29"></script>
 <script>if("serviceWorker"in navigator)navigator.serviceWorker.register("/sw.js").catch(()=>{})</script>
 </body>

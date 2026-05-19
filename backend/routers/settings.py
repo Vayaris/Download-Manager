@@ -12,11 +12,12 @@ import aiosqlite
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request
 from urllib.parse import urlparse
 
-from models import SettingsUpdate, StoragePathRequest, PlexSettingsRequest, SignalCheckRequest, SignalDeployRequest, SignalRegisterRequest, SignalVerifyRequest, SignalResetRequest
+from models import SettingsUpdate, StoragePathRequest, PlexSettingsRequest, MediaSettingsRequest, SignalCheckRequest, SignalDeployRequest, SignalRegisterRequest, SignalVerifyRequest, SignalResetRequest
 from auth import get_current_user, get_password_hash
 from config import get_config, save_config
 from database import DB_PATH
 from services.alldebrid import alldebrid
+from services.jellyfin import jellyfin
 from services.plex import plex
 from services.webhook import send_webhook
 
@@ -67,6 +68,84 @@ def _plex_public_config(cfg: dict, include_status: bool = False) -> dict:
     return data
 
 
+def _active_media_provider(cfg: dict) -> str:
+    if cfg.get("jellyfin", {}).get("enabled"):
+        return "jellyfin"
+    if cfg.get("plex", {}).get("enabled"):
+        return "plex"
+    active = str(cfg.get("media", {}).get("active", "plex")).strip().lower()
+    return active if active in ("plex", "jellyfin") else "plex"
+
+
+def _media_defaults(provider: str) -> dict:
+    if provider == "jellyfin":
+        return {
+            "enabled": False,
+            "url": "http://127.0.0.1:8096",
+            "token": "",
+            "last_refreshes": {},
+            "favorite_keys": [],
+        }
+    return {
+        "enabled": False,
+        "url": "http://127.0.0.1:32400",
+        "token": "",
+        "last_refreshes": {},
+        "favorite_keys": [],
+    }
+
+
+def _media_service(provider: str):
+    return jellyfin if provider == "jellyfin" else plex
+
+
+def _validate_media_url(url: str, provider: str = "media") -> str:
+    clean = (url or "").strip().rstrip("/")
+    parsed = urlparse(clean)
+    if parsed.scheme not in ("http", "https") or not parsed.netloc:
+        raise HTTPException(status_code=400, detail=f"{provider.title()} URL must use http or https")
+    return clean
+
+
+def _media_public_config(cfg: dict, include_status: bool = False) -> dict:
+    provider = _active_media_provider(cfg)
+    media_cfg = cfg.get(provider, {})
+    token = media_cfg.get("token", "")
+    data = {
+        "provider": provider,
+        "enabled": bool(media_cfg.get("enabled", False)),
+        "url": media_cfg.get("url", _media_defaults(provider)["url"]),
+        "token_configured": bool(token),
+        "last_refreshes": media_cfg.get("last_refreshes", {}),
+        "favorite_keys": media_cfg.get("favorite_keys", []),
+        "providers": {
+            "plex": _plex_public_config(cfg, include_status=False),
+            "jellyfin": {
+                "enabled": bool(cfg.get("jellyfin", {}).get("enabled", False)),
+                "url": cfg.get("jellyfin", {}).get("url", "http://127.0.0.1:8096"),
+                "token_configured": bool(cfg.get("jellyfin", {}).get("token", "")),
+                "last_refreshes": cfg.get("jellyfin", {}).get("last_refreshes", {}),
+                "favorite_keys": cfg.get("jellyfin", {}).get("favorite_keys", []),
+            },
+        },
+    }
+    if include_status:
+        data["configured"] = bool(token and media_cfg.get("url"))
+    return data
+
+
+def _require_media_config(cfg: dict) -> tuple[str, str, str]:
+    provider = _active_media_provider(cfg)
+    media_cfg = cfg.get(provider, {})
+    if not media_cfg.get("enabled"):
+        raise HTTPException(status_code=400, detail=f"{provider.title()} integration is disabled")
+    url = (media_cfg.get("url") or "").strip()
+    token = (media_cfg.get("token") or "").strip()
+    if not url or not token:
+        raise HTTPException(status_code=400, detail=f"{provider.title()} URL or token is missing")
+    return provider, url, token
+
+
 def _require_plex_config(cfg: dict) -> tuple[str, str]:
     plex_cfg = cfg.get("plex", {})
     if not plex_cfg.get("enabled"):
@@ -79,11 +158,7 @@ def _require_plex_config(cfg: dict) -> tuple[str, str]:
 
 
 def _validate_plex_url(url: str) -> str:
-    clean = (url or "").strip().rstrip("/")
-    parsed = urlparse(clean)
-    if parsed.scheme not in ("http", "https") or not parsed.netloc:
-        raise HTTPException(status_code=400, detail="Plex URL must use http or https")
-    return clean
+    return _validate_media_url(url, "Plex")
 
 
 def _normalize_plex_favorite_keys(keys: list[str] | None) -> list[str]:
@@ -128,9 +203,9 @@ def _path_is_inside(candidate: str, root: str) -> bool:
     return candidate_norm == root_norm or candidate_norm.startswith(root_norm + "/")
 
 
-async def _plex_refresh_suggestions(cfg: dict, limit: int = 20) -> list[dict]:
-    url, token = _require_plex_config(cfg)
-    libraries = await plex.libraries(url, token)
+async def _media_refresh_suggestions(cfg: dict, limit: int = 20) -> list[dict]:
+    provider, url, token = _require_media_config(cfg)
+    libraries = await _media_service(provider).libraries(url, token)
     libraries_with_locations = [
         library for library in libraries
         if library.get("locations") and library.get("key") and library.get("title")
@@ -150,7 +225,7 @@ async def _plex_refresh_suggestions(cfg: dict, limit: int = 20) -> list[dict]:
         )
         history_rows = [dict(row) for row in await cursor.fetchall()]
 
-    last_refreshes = cfg.get("plex", {}).get("last_refreshes", {})
+    last_refreshes = cfg.get(provider, {}).get("last_refreshes", {})
     suggestions: list[dict] = []
     seen: set[tuple[str, str]] = set()
 
@@ -202,6 +277,14 @@ async def _plex_refresh_suggestions(cfg: dict, limit: int = 20) -> list[dict]:
     return suggestions
 
 
+async def _plex_refresh_suggestions(cfg: dict, limit: int = 20) -> list[dict]:
+    scoped = dict(cfg)
+    scoped["plex"] = {**cfg.get("plex", {}), "enabled": True}
+    scoped["jellyfin"] = {**cfg.get("jellyfin", {}), "enabled": False}
+    scoped["media"] = {"active": "plex"}
+    return await _media_refresh_suggestions(scoped, limit=limit)
+
+
 @router.get("/")
 async def get_settings(_=Depends(get_current_user)):
     cfg = get_config()
@@ -219,6 +302,7 @@ async def get_settings(_=Depends(get_current_user)):
         "max_retries": cfg["downloads"].get("max_retries", 3),
         "retry_delay_seconds": cfg["downloads"].get("retry_delay_seconds", 5),
         "skip_nfo_files": cfg["downloads"].get("skip_nfo_files", True),
+        "media_provider": _active_media_provider(cfg),
         "port": cfg["server"]["port"],
         "webhook_enabled": wh.get("enabled", False),
         "webhook_url": wh.get("url", ""),
@@ -317,6 +401,117 @@ async def alldebrid_hosts(_=Depends(get_current_user)):
         raise HTTPException(status_code=502, detail=str(e))
 
 
+@router.get("/media")
+async def get_media_settings(_=Depends(get_current_user)):
+    cfg = get_config()
+    data = _media_public_config(cfg, include_status=True)
+    provider = data["provider"]
+    if data["enabled"] and data["token_configured"]:
+        try:
+            service = _media_service(provider)
+            info = await service.server_info(data["url"], cfg[provider]["token"])
+            libraries = await service.libraries(data["url"], cfg[provider]["token"])
+            data.update({
+                "connected": True,
+                "server": info,
+                "library_count": len(libraries),
+                "libraries": libraries,
+            })
+        except Exception as e:
+            data.update({
+                "connected": False,
+                "error": str(e)[:200],
+                "library_count": 0,
+                "libraries": [],
+            })
+    else:
+        data.update({"connected": False, "library_count": 0, "libraries": []})
+    return data
+
+
+@router.put("/media")
+async def update_media_settings(body: MediaSettingsRequest, _=Depends(get_current_user)):
+    cfg = get_config()
+    provider = (body.provider or _active_media_provider(cfg)).strip().lower()
+    if provider not in ("plex", "jellyfin"):
+        raise HTTPException(status_code=400, detail="Media provider must be plex or jellyfin")
+
+    media_cfg = cfg.setdefault(provider, _media_defaults(provider))
+    other = "jellyfin" if provider == "plex" else "plex"
+    cfg.setdefault(other, _media_defaults(other))
+    cfg.setdefault("media", {})["active"] = provider
+
+    if body.enabled is not None:
+        media_cfg["enabled"] = bool(body.enabled)
+        if body.enabled:
+            cfg[other]["enabled"] = False
+    if body.url is not None:
+        media_cfg["url"] = _validate_media_url(body.url, provider)
+    if body.token is not None and body.token.strip():
+        media_cfg["token"] = body.token.strip()
+    if body.favorite_keys is not None:
+        media_cfg["favorite_keys"] = _normalize_plex_favorite_keys(body.favorite_keys)
+    media_cfg.setdefault("last_refreshes", {})
+    media_cfg.setdefault("favorite_keys", [])
+    save_config(cfg)
+    return {"status": "saved", **_media_public_config(cfg, include_status=True)}
+
+
+@router.post("/media/test")
+async def test_media(_=Depends(get_current_user)):
+    cfg = get_config()
+    provider, url, token = _require_media_config(cfg)
+    try:
+        service = _media_service(provider)
+        info = await service.server_info(url, token)
+        libraries = await service.libraries(url, token)
+        return {"ok": True, "provider": provider, "server": info, "library_count": len(libraries)}
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=str(e)[:200])
+
+
+@router.get("/media/libraries")
+async def media_libraries(_=Depends(get_current_user)):
+    cfg = get_config()
+    provider, url, token = _require_media_config(cfg)
+    try:
+        libraries = await _media_service(provider).libraries(url, token)
+        return {"provider": provider, "libraries": libraries, "total": len(libraries)}
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=str(e)[:200])
+
+
+@router.get("/media/suggestions")
+async def media_suggestions(_=Depends(get_current_user)):
+    cfg = get_config()
+    try:
+        suggestions = await _media_refresh_suggestions(cfg)
+        return {"suggestions": suggestions, "total": len(suggestions), "window_hours": 24}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=str(e)[:200])
+
+
+@router.post("/media/libraries/{library_key}/refresh")
+async def refresh_media_library(library_key: str, _=Depends(get_current_user)):
+    cfg = get_config()
+    provider, url, token = _require_media_config(cfg)
+    try:
+        logger.info("%s refresh requested for library key=%s", provider.title(), library_key)
+        await _media_service(provider).refresh_library(url, token, library_key)
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=str(e)[:200])
+
+    refreshed_at = datetime.now(timezone.utc).isoformat()
+    media_cfg = cfg.setdefault(provider, {})
+    last_refreshes = media_cfg.setdefault("last_refreshes", {})
+    last_refreshes[str(library_key)] = refreshed_at
+    save_config(cfg)
+    logger.info("%s refresh completed for library key=%s", provider.title(), library_key)
+    return {"status": "refreshed", "provider": provider, "library_key": library_key, "refreshed_at": refreshed_at}
+
+
 @router.get("/plex")
 async def get_plex_settings(_=Depends(get_current_user)):
     cfg = get_config()
@@ -355,6 +550,9 @@ async def update_plex_settings(body: PlexSettingsRequest, _=Depends(get_current_
     })
     if body.enabled is not None:
         plex_cfg["enabled"] = body.enabled
+        if body.enabled:
+            cfg.setdefault("jellyfin", _media_defaults("jellyfin"))["enabled"] = False
+            cfg.setdefault("media", {})["active"] = "plex"
     if body.url is not None:
         plex_cfg["url"] = _validate_plex_url(body.url)
     if body.token is not None and body.token.strip():

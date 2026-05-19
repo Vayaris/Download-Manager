@@ -35,6 +35,7 @@ function formatPlexRefreshTime(value) {
 }
 
 let _plexState = {
+  provider: "plex",
   enabled: false,
   connected: false,
   server: null,
@@ -75,6 +76,7 @@ function normalizePlexState(data) {
     return a.key.localeCompare(b.key);
   });
   return {
+    provider: data.provider || "plex",
     enabled: !!data.enabled,
     connected: !!data.connected,
     server: data.server || null,
@@ -107,6 +109,15 @@ function renderPlexSummary() {
 
   const state = _plexState;
   const total = state.libraries.length;
+  const providerName = state.provider === "jellyfin" ? "Jellyfin" : "Plex";
+  document.querySelectorAll("[data-media-provider-label], [data-media-nav-label]").forEach((el) => { el.textContent = providerName; });
+  const title = document.querySelector("[data-media-page-title]");
+  if (title) title.textContent = t("media_page_title", { provider: providerName });
+  const subtitle = document.querySelector("[data-media-page-subtitle]");
+  if (subtitle) subtitle.textContent = t("media_page_subtitle", { provider: providerName });
+  document.querySelectorAll("[data-media-settings-link]").forEach((el) => {
+    el.textContent = t("media_open_settings", { provider: providerName });
+  });
   if (count) {
     count.textContent = t("plex_libraries_count", { n: total });
   }
@@ -115,7 +126,7 @@ function renderPlexSummary() {
   if (!state.enabled) {
     badge.className = "conn-badge unknown";
     label.textContent = t("plex_disabled");
-    if (serverMeta) serverMeta.textContent = t("plex_page_disabled");
+    if (serverMeta) serverMeta.textContent = t("media_page_disabled", { provider: providerName });
     return;
   }
 
@@ -267,10 +278,10 @@ async function loadPlexPage() {
   const list = document.getElementById("plex-page-libraries");
   if (list) list.innerHTML = `<p class="form-hint">${escHtml(t("plex_page_loading"))}</p>`;
   try {
-    const data = await API.get("/api/settings/plex");
+    const data = await API.get("/api/settings/media");
     if (data && data.enabled && data.connected) {
       try {
-        const suggestions = await API.get("/api/settings/plex/suggestions");
+        const suggestions = await API.get("/api/settings/media/suggestions");
         data.suggestions = Array.isArray(suggestions.suggestions) ? suggestions.suggestions : [];
       } catch {
         data.suggestions = [];
@@ -304,7 +315,7 @@ function initPlexPageEvents() {
 }
 
 async function savePlexFavoriteKeys(nextKeys) {
-  await API.put("/api/settings/plex", { favorite_keys: nextKeys });
+  await API.put("/api/settings/media", { provider: _plexState.provider, favorite_keys: nextKeys });
   _plexState.favoriteKeys = nextKeys.slice();
   renderPlexSummary();
   renderPlexLists();
@@ -326,8 +337,8 @@ async function handlePlexAction(event) {
     button.disabled = true;
     button.textContent = t("plex_btn_refreshing");
     try {
-      await API.post(`/api/settings/plex/libraries/${encodeURIComponent(key)}/refresh`, {});
-      showToast(t("plex_refresh_ok"), "ok");
+      await API.post(`/api/settings/media/libraries/${encodeURIComponent(key)}/refresh`, {});
+      showToast(t(_plexState.provider === "jellyfin" ? "jellyfin_refresh_ok" : "plex_refresh_ok"), "ok");
       await loadPlexPage();
     } catch (e) {
       button.disabled = false;
@@ -463,7 +474,7 @@ async function checkPlexAuth() {
     const token = getAuthToken();
     if (!token) { showPlexLogin(); return false; }
 
-    const check = await fetch("/api/settings/plex", {
+    const check = await fetch("/api/settings/media", {
       headers: { "Authorization": `Bearer ${token}` },
     });
     if (check.status === 401) {

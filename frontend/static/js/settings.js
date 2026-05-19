@@ -172,53 +172,88 @@ async function refreshAllDebridHosts() {
   }
 }
 
-function renderPlexSettings(data) {
-  const enabled = document.getElementById("plex-enabled");
-  const url = document.getElementById("plex-url");
-  const token = document.getElementById("plex-token");
-  if (!enabled || !url || !token) return;
-
-  enabled.checked = !!data.enabled;
-  url.value = data.url || "http://127.0.0.1:32400";
-  token.value = "";
-  token.placeholder = data.token_configured ? t("plex_token_configured") : t("plex_token_placeholder");
+function toggleMediaProviderFields() {
+  const provider = document.getElementById("media-provider")?.value || "plex";
+  document.getElementById("plex-fields")?.classList.toggle("hidden", provider !== "plex");
+  document.getElementById("jellyfin-fields")?.classList.toggle("hidden", provider !== "jellyfin");
+  document.querySelectorAll("[data-media-nav-label]").forEach((el) => {
+    el.textContent = provider === "jellyfin" ? "Jellyfin" : "Plex";
+  });
 }
 
-async function loadPlexSettings() {
+function renderMediaSettings(data) {
+  const provider = document.getElementById("media-provider");
+  const enabled = document.getElementById("media-enabled");
+  const url = document.getElementById("plex-url");
+  const token = document.getElementById("plex-token");
+  const jellyfinUrl = document.getElementById("jellyfin-url");
+  const jellyfinToken = document.getElementById("jellyfin-token");
+  if (!provider || !enabled || !url || !token || !jellyfinUrl || !jellyfinToken) return;
+
+  const active = data.provider || "plex";
+  const providers = data.providers || {};
+  const plexData = providers.plex || (active === "plex" ? data : {});
+  const jellyfinData = providers.jellyfin || (active === "jellyfin" ? data : {});
+
+  provider.value = active;
+  enabled.checked = !!data.enabled;
+  url.value = plexData.url || "http://127.0.0.1:32400";
+  token.value = "";
+  token.placeholder = plexData.token_configured ? t("plex_token_configured") : t("plex_token_placeholder");
+  jellyfinUrl.value = jellyfinData.url || "http://127.0.0.1:8096";
+  jellyfinToken.value = "";
+  jellyfinToken.placeholder = jellyfinData.token_configured ? t("jellyfin_token_configured") : t("jellyfin_token_placeholder");
+  toggleMediaProviderFields();
+}
+
+async function loadMediaSettings() {
   try {
-    const data = await API.get("/api/settings/plex");
-    renderPlexSettings(data);
+    const data = await API.get("/api/settings/media");
+    renderMediaSettings(data);
   } catch (e) {
     showToast(t("error_prefix") + e.message, "error");
   }
 }
 
-async function savePlex() {
-  const enabled = document.getElementById("plex-enabled").checked;
-  const url = document.getElementById("plex-url").value.trim() || "http://127.0.0.1:32400";
-  const token = document.getElementById("plex-token").value.trim();
-  const payload = { enabled, url };
+async function saveMedia() {
+  const provider = document.getElementById("media-provider").value || "plex";
+  const enabled = document.getElementById("media-enabled").checked;
+  const isJellyfin = provider === "jellyfin";
+  const url = (isJellyfin
+    ? document.getElementById("jellyfin-url").value.trim()
+    : document.getElementById("plex-url").value.trim()) || (isJellyfin ? "http://127.0.0.1:8096" : "http://127.0.0.1:32400");
+  const token = (isJellyfin
+    ? document.getElementById("jellyfin-token").value.trim()
+    : document.getElementById("plex-token").value.trim());
+  const payload = { provider, enabled, url };
   if (token) payload.token = token;
   try {
-    await API.put("/api/settings/plex", payload);
+    await API.put("/api/settings/media", payload);
     document.getElementById("plex-token").value = "";
-    showToast(t("plex_saved"), "ok");
-    await loadPlexSettings();
+    document.getElementById("jellyfin-token").value = "";
+    showToast(t("media_saved"), "ok");
+    await loadMediaSettings();
   } catch (e) {
     showToast(t("error_prefix") + e.message, "error");
     throw e;
   }
 }
 
-async function testPlex() {
+async function testMedia() {
   try {
-    await savePlex();
-    const res = await API.post("/api/settings/plex/test", {});
-    showToast(t("plex_test_ok", { n: res.library_count || 0 }), "ok");
+    await saveMedia();
+    const res = await API.post("/api/settings/media/test", {});
+    const key = res.provider === "jellyfin" ? "jellyfin_test_ok" : "plex_test_ok";
+    showToast(t(key, { n: res.library_count || 0 }), "ok");
   } catch (e) {
     showToast(t("error_prefix") + e.message, "error");
   }
 }
+
+const renderPlexSettings = renderMediaSettings;
+const loadPlexSettings = loadMediaSettings;
+const savePlex = saveMedia;
+const testPlex = testMedia;
 
 function toggleKeyVisibility() {
   const input = document.getElementById("alldebrid-key");
@@ -817,20 +852,15 @@ async function saveSettings() {
 
   try {
     await API.put("/api/settings/", payload);
-    const plexPayload = {
-      enabled: document.getElementById("plex-enabled").checked,
-      url: document.getElementById("plex-url").value.trim() || "http://127.0.0.1:32400",
-    };
-    const plexToken = document.getElementById("plex-token").value.trim();
-    if (plexToken) plexPayload.token = plexToken;
-    await API.put("/api/settings/plex", plexPayload);
+    await saveMedia();
     if (newAllDebridKey) {
       window._alldebridKeyConfigured = true;
       document.getElementById("alldebrid-key").value = "";
     }
     document.getElementById("plex-token").value = "";
+    document.getElementById("jellyfin-token").value = "";
     await refreshAllDebridHosts();
-    await loadPlexSettings();
+    await loadMediaSettings();
     resultEl.textContent = t("settings_saved");
     resultEl.className = "inline-result ok";
     showToast(t("settings_all_saved"), "ok");
