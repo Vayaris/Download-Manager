@@ -43,6 +43,18 @@ async def _process_ready_into_package(magnet_id: int, destination: str, package_
     return len(ids)
 
 
+async def _process_ready_without_package(magnet_id: int, destination: str, qm) -> int:
+    links = await alldebrid.magnet_files(magnet_id)
+    if not links:
+        return 0
+    ids = await qm.add_downloads(links, destination)
+    try:
+        await alldebrid.magnet_delete(magnet_id)
+    except Exception:
+        pass
+    return len(ids)
+
+
 async def _insert_torrent(db, mag: dict, destination: str, now: str, package_id: Optional[str] = None) -> dict:
     t_id = str(uuid.uuid4())
     name = mag.get("name", "Torrent")
@@ -207,9 +219,11 @@ async def upload_torrent_batch(
         raise HTTPException(status_code=502, detail="No torrent was accepted by AllDebrid")
 
     now = datetime.now(timezone.utc).isoformat()
-    package_name = f"Lot torrents - {datetime.now().strftime('%Y-%m-%d %H:%M')}"
     qm = _qm(request)
-    package_id = await qm.create_package(package_name, destination)
+    source_count = len(magnet_links) + len(files_data)
+    use_package = source_count >= 2
+    package_name = f"Lot torrents - {datetime.now().strftime('%Y-%m-%d %H:%M')}" if use_package else None
+    package_id = await qm.create_package(package_name, destination) if use_package else None
     added = []
 
     async with aiosqlite.connect(str(DB_PATH)) as db:
@@ -218,7 +232,11 @@ async def upload_torrent_batch(
             name = mag.get("name", "Torrent")
             if mag.get("ready", False):
                 try:
-                    imported = await _process_ready_into_package(ad_id, destination, package_id, qm)
+                    imported = await (
+                        _process_ready_into_package(ad_id, destination, package_id, qm)
+                        if use_package
+                        else _process_ready_without_package(ad_id, destination, qm)
+                    )
                     added.append({"id": ad_id, "name": name, "ready": True, "imported": imported})
                 except Exception:
                     added.append(await _insert_torrent(db, mag, destination, now, package_id=package_id))
@@ -226,7 +244,10 @@ async def upload_torrent_batch(
                 added.append(await _insert_torrent(db, mag, destination, now, package_id=package_id))
         await db.commit()
 
-    return {"added": len(added), "package_id": package_id, "package_name": package_name, "torrents": added}
+    response = {"added": len(added), "torrents": added}
+    if use_package:
+        response.update({"package_id": package_id, "package_name": package_name})
+    return response
 
 
 @router.get("/")

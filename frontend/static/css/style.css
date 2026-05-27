@@ -2098,6 +2098,10 @@ tr:hover .btn-copy-path { opacity: 1; }
 .mkdir-wrap {
   display: flex; align-items: center; gap: 6px; flex: 1;
 }
+.mkdir-wrap .form-input {
+  direction: ltr;
+  unicode-bidi: plaintext;
+}
 
 /* ---- Path history ---- */
 .fb-history {

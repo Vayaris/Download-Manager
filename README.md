@@ -2,7 +2,7 @@
 
 A web-based download manager with **AllDebrid** support, designed to run on **Linux** machines (Proxmox VM/LXC, dedicated servers, VPS).
 
-Latest stable release: `v1.10.18`
+Latest stable release: `v1.10.19`
 
 ![Python](https://img.shields.io/badge/Python-3.8+-3776AB?logo=python&logoColor=white)
 ![FastAPI](https://img.shields.io/badge/FastAPI-009688?logo=fastapi&logoColor=white)
@@ -20,6 +20,7 @@ Latest stable release: `v1.10.18`
 - **AllDebrid integration** — automatic link debriding plus account hoster list in Settings
 - **Torrent / Magnet support** — upload one or many `.torrent` files, or paste magnet links via AllDebrid, with automatic polling and download start
 - **Batch torrent packages** — files and magnets added together from the torrent modal are grouped into one package
+- **Smarter media suggestions** — completed packages only suggest one Plex/Jellyfin library refresh per library
 - **Silent `.nfo` filter** — optional setting enabled by default to skip `.nfo` files from torrents or link batches without showing them in the queue
 - **aria2 engine** — fast downloads, multi-segment (split), automatic resume
 - **Multi-segment downloads** — up to 16 connections per file (JDownloader-style) to maximize speed
@@ -310,7 +311,7 @@ MIT
 
 Interface web de gestion de téléchargements avec support **AllDebrid**, conçue pour tourner sur des machines **Linux** (VM / LXC Proxmox, serveurs dédiés, VPS).
 
-Dernière version stable : `v1.10.18`
+Dernière version stable : `v1.10.19`
 
 ## Fonctionnalités
 
@@ -319,6 +320,7 @@ Dernière version stable : `v1.10.18`
 - **AllDebrid intégré** — débridage automatique des liens hébergeurs
 - **Support Torrent / Magnet** — upload d'un ou plusieurs fichiers `.torrent` ou liens magnet via AllDebrid
 - **Lots torrent en paquet** — les fichiers et magnets ajoutés ensemble depuis la modale torrent sont regroupés dans un seul paquet
+- **Suggestions média plus propres** — un paquet terminé ne propose qu'un seul rafraîchissement Plex/Jellyfin par bibliothèque
 - **Filtre `.nfo` silencieux** — option activée par défaut pour ignorer les `.nfo` sans les afficher dans la file
 - **aria2 sous le capot** — téléchargements rapides, multi-segments, reprise automatique
 - **Multi-segments** — jusqu'à 16 connexions par fichier pour maximiser la vitesse

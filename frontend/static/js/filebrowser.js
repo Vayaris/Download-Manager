@@ -192,9 +192,16 @@ function selectCurrentPath() { FileBrowser.confirm(); }
 // ---- Mkdir ----
 
 function showMkdirInput() {
-  document.getElementById("mkdir-input-wrap").classList.remove("hidden");
-  document.getElementById("mkdir-name").value = "";
-  document.getElementById("mkdir-name").focus();
+  const wrap = document.getElementById("mkdir-input-wrap");
+  const input = document.getElementById("mkdir-name");
+  wrap.classList.remove("hidden");
+  input.value = "";
+  input.setAttribute("dir", "ltr");
+  input.setAttribute("autocomplete", "off");
+  input.setAttribute("autocorrect", "off");
+  input.setAttribute("autocapitalize", "none");
+  input.setAttribute("spellcheck", "false");
+  setTimeout(() => input.focus(), 0);
 }
 
 function hideMkdirInput() {
@@ -202,7 +209,8 @@ function hideMkdirInput() {
 }
 
 async function createFolder() {
-  const name = document.getElementById("mkdir-name").value.trim();
+  const input = document.getElementById("mkdir-name");
+  const name = String(input.value || "").trim();
   if (!name) { showToast(t("fb_folder_required"), "error"); return; }
 
   const currentPath = FileBrowser.getCurrentPath();

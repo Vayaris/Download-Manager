@@ -637,7 +637,10 @@ async function submitTorrent() {
     const resp = await fetch("/api/torrents/batch", { method: "POST", headers, body: formData });
     if (!resp.ok) throw new Error(await resp.text());
     const result = await resp.json();
-    showToast(t("torrent_batch_added", { n: result.added, name: result.package_name || "Lot torrents" }), "ok");
+    const message = result.package_name
+      ? t("torrent_batch_added", { n: result.added, name: result.package_name })
+      : t("torrent_added", { n: result.added });
+    showToast(message, "ok");
     closeTorrentModal();
   } catch (e) {
     showToast(t("error_prefix") + e.message, "error");

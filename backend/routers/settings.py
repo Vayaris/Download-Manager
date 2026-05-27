@@ -217,7 +217,7 @@ async def _media_refresh_suggestions(cfg: dict, limit: int = 20) -> list[dict]:
     async with aiosqlite.connect(str(DB_PATH)) as db:
         db.row_factory = aiosqlite.Row
         cursor = await db.execute(
-            """SELECT id, name, destination, status, completed_at
+            """SELECT id, name, destination, status, package_name, completed_at
                FROM history
                WHERE status = 'complete'
                ORDER BY completed_at DESC
@@ -255,16 +255,17 @@ async def _media_refresh_suggestions(cfg: dict, limit: int = 20) -> list[dict]:
             if not matched_location:
                 continue
 
-            unique_key = (str(row["id"]), library_key)
+            package_name = str(row.get("package_name") or "").strip()
+            unique_key = (f"pkg:{package_name}" if package_name else f"history:{row['id']}", library_key)
             if unique_key in seen:
                 continue
             seen.add(unique_key)
             suggestions.append({
-                "history_id": row["id"],
+                "history_id": package_name or row["id"],
                 "library_key": library_key,
                 "library_title": library.get("title", ""),
                 "library_type": library.get("type", ""),
-                "download_name": name or row["id"],
+                "download_name": package_name or name or row["id"],
                 "destination": destination,
                 "completed_at": row.get("completed_at"),
                 "matched_location": matched_location,
