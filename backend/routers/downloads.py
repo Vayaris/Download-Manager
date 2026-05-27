@@ -40,12 +40,6 @@ async def add_downloads(body: AddDownloadsRequest, request: Request, _=Depends(g
     return {"added": len(ids), "ids": ids}
 
 
-@router.delete("/{download_id}")
-async def remove_download(download_id: str, request: Request, _=Depends(get_current_user)):
-    await _qm(request).remove_download(download_id)
-    return {"status": "removed"}
-
-
 @router.post("/{download_id}/pause")
 async def pause_download(download_id: str, request: Request, _=Depends(get_current_user)):
     await _qm(request).pause_download(download_id)
@@ -203,3 +197,9 @@ async def clear_history(_=Depends(get_current_user)):
         await db.execute("DELETE FROM history")
         await db.commit()
     return {"status": "cleared"}
+
+
+@router.delete("/{download_id}")
+async def remove_download(download_id: str, request: Request, _=Depends(get_current_user)):
+    await _qm(request).remove_download(download_id)
+    return {"status": "removed"}
