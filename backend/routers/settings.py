@@ -18,6 +18,13 @@ from config import get_config, save_config
 from database import DB_PATH
 from services.alldebrid import alldebrid
 from services.jellyfin import jellyfin
+from services.media_refresh import (
+    MediaRefreshError,
+    media_auto_public_fields,
+    media_defaults as _service_media_defaults,
+    media_refresh_suggestions as _service_media_refresh_suggestions,
+    refresh_library_from_config,
+)
 from services.plex import plex
 from services.webhook import send_webhook
 
@@ -62,6 +69,7 @@ def _plex_public_config(cfg: dict, include_status: bool = False) -> dict:
         "token_configured": bool(token),
         "last_refreshes": plex_cfg.get("last_refreshes", {}),
         "favorite_keys": plex_cfg.get("favorite_keys", []),
+        **media_auto_public_fields(plex_cfg),
     }
     if include_status:
         data["configured"] = bool(token and plex_cfg.get("url"))
@@ -78,21 +86,7 @@ def _active_media_provider(cfg: dict) -> str:
 
 
 def _media_defaults(provider: str) -> dict:
-    if provider == "jellyfin":
-        return {
-            "enabled": False,
-            "url": "http://127.0.0.1:8096",
-            "token": "",
-            "last_refreshes": {},
-            "favorite_keys": [],
-        }
-    return {
-        "enabled": False,
-        "url": "http://127.0.0.1:32400",
-        "token": "",
-        "last_refreshes": {},
-        "favorite_keys": [],
-    }
+    return _service_media_defaults(provider)
 
 
 def _media_service(provider: str):
@@ -118,6 +112,7 @@ def _media_public_config(cfg: dict, include_status: bool = False) -> dict:
         "token_configured": bool(token),
         "last_refreshes": media_cfg.get("last_refreshes", {}),
         "favorite_keys": media_cfg.get("favorite_keys", []),
+        **media_auto_public_fields(media_cfg),
         "providers": {
             "plex": _plex_public_config(cfg, include_status=False),
             "jellyfin": {
@@ -126,6 +121,7 @@ def _media_public_config(cfg: dict, include_status: bool = False) -> dict:
                 "token_configured": bool(cfg.get("jellyfin", {}).get("token", "")),
                 "last_refreshes": cfg.get("jellyfin", {}).get("last_refreshes", {}),
                 "favorite_keys": cfg.get("jellyfin", {}).get("favorite_keys", []),
+                **media_auto_public_fields(cfg.get("jellyfin", {})),
             },
         },
     }
@@ -452,8 +448,16 @@ async def update_media_settings(body: MediaSettingsRequest, _=Depends(get_curren
         media_cfg["token"] = body.token.strip()
     if body.favorite_keys is not None:
         media_cfg["favorite_keys"] = _normalize_plex_favorite_keys(body.favorite_keys)
+    if body.auto_refresh_enabled is not None:
+        previous = bool(media_cfg.get("auto_refresh_enabled", False))
+        media_cfg["auto_refresh_enabled"] = bool(body.auto_refresh_enabled)
+        if body.auto_refresh_enabled and not previous:
+            media_cfg["auto_refresh_enabled_at"] = datetime.now(timezone.utc).isoformat()
     media_cfg.setdefault("last_refreshes", {})
     media_cfg.setdefault("favorite_keys", [])
+    media_cfg.setdefault("auto_refreshes", {})
+    media_cfg.setdefault("auto_refresh_enabled", False)
+    media_cfg.setdefault("auto_refresh_enabled_at", None)
     save_config(cfg)
     return {"status": "saved", **_media_public_config(cfg, include_status=True)}
 
@@ -486,8 +490,10 @@ async def media_libraries(_=Depends(get_current_user)):
 async def media_suggestions(_=Depends(get_current_user)):
     cfg = get_config()
     try:
-        suggestions = await _media_refresh_suggestions(cfg)
+        suggestions = await _service_media_refresh_suggestions(cfg)
         return {"suggestions": suggestions, "total": len(suggestions), "window_hours": 24}
+    except MediaRefreshError as e:
+        raise HTTPException(status_code=400, detail=str(e))
     except HTTPException:
         raise
     except Exception as e:
@@ -497,20 +503,12 @@ async def media_suggestions(_=Depends(get_current_user)):
 @router.post("/media/libraries/{library_key}/refresh")
 async def refresh_media_library(library_key: str, _=Depends(get_current_user)):
     cfg = get_config()
-    provider, url, token = _require_media_config(cfg)
     try:
-        logger.info("%s refresh requested for library key=%s", provider.title(), library_key)
-        await _media_service(provider).refresh_library(url, token, library_key)
+        return await refresh_library_from_config(cfg, library_key)
+    except MediaRefreshError as e:
+        raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=502, detail=str(e)[:200])
-
-    refreshed_at = datetime.now(timezone.utc).isoformat()
-    media_cfg = cfg.setdefault(provider, {})
-    last_refreshes = media_cfg.setdefault("last_refreshes", {})
-    last_refreshes[str(library_key)] = refreshed_at
-    save_config(cfg)
-    logger.info("%s refresh completed for library key=%s", provider.title(), library_key)
-    return {"status": "refreshed", "provider": provider, "library_key": library_key, "refreshed_at": refreshed_at}
 
 
 @router.get("/plex")

@@ -184,11 +184,12 @@ function toggleMediaProviderFields() {
 function renderMediaSettings(data) {
   const provider = document.getElementById("media-provider");
   const enabled = document.getElementById("media-enabled");
+  const autoRefreshEnabled = document.getElementById("media-auto-refresh-enabled");
   const url = document.getElementById("plex-url");
   const token = document.getElementById("plex-token");
   const jellyfinUrl = document.getElementById("jellyfin-url");
   const jellyfinToken = document.getElementById("jellyfin-token");
-  if (!provider || !enabled || !url || !token || !jellyfinUrl || !jellyfinToken) return;
+  if (!provider || !enabled || !autoRefreshEnabled || !url || !token || !jellyfinUrl || !jellyfinToken) return;
 
   const active = data.provider || "plex";
   const providers = data.providers || {};
@@ -197,6 +198,7 @@ function renderMediaSettings(data) {
 
   provider.value = active;
   enabled.checked = !!data.enabled;
+  autoRefreshEnabled.checked = !!data.auto_refresh_enabled;
   url.value = plexData.url || "http://127.0.0.1:32400";
   token.value = "";
   token.placeholder = plexData.token_configured ? t("plex_token_configured") : t("plex_token_placeholder");
@@ -218,6 +220,7 @@ async function loadMediaSettings() {
 async function saveMedia() {
   const provider = document.getElementById("media-provider").value || "plex";
   const enabled = document.getElementById("media-enabled").checked;
+  const autoRefreshEnabled = document.getElementById("media-auto-refresh-enabled").checked;
   const isJellyfin = provider === "jellyfin";
   const url = (isJellyfin
     ? document.getElementById("jellyfin-url").value.trim()
@@ -225,7 +228,7 @@ async function saveMedia() {
   const token = (isJellyfin
     ? document.getElementById("jellyfin-token").value.trim()
     : document.getElementById("plex-token").value.trim());
-  const payload = { provider, enabled, url };
+  const payload = { provider, enabled, url, auto_refresh_enabled: autoRefreshEnabled };
   if (token) payload.token = token;
   try {
     await API.put("/api/settings/media", payload);

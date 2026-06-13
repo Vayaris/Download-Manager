@@ -1463,6 +1463,33 @@ tr:hover .btn-copy-path { opacity: 1; }
   margin-top: 18px;
 }
 
+.plex-auto-refresh-section {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  align-items: center;
+  gap: 14px;
+  padding: 16px;
+  background: linear-gradient(135deg, var(--green-dim), var(--surface-2));
+  border: 1px solid var(--green-border);
+  border-radius: var(--radius);
+}
+
+.plex-auto-refresh-icon {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 12px;
+  background: var(--green);
+  color: #fff;
+  font-weight: 800;
+}
+
+.plex-auto-refresh-section h2 {
+  margin: 0 0 4px;
+  font-size: 15px;
+}
+
 .plex-suggestions-section {
   padding: 12px;
   border: 1px solid var(--green-border);

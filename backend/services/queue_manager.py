@@ -18,6 +18,7 @@ from config import get_config
 from database import DB_PATH
 from services.aria2_service import Aria2RpcError, aria2
 from services.alldebrid import alldebrid
+from services.media_refresh import auto_refresh_recommended_libraries
 from services.webhook import send_webhook
 
 
@@ -55,6 +56,9 @@ class QueueManager:
         self._ws_manager = None
         self._running = False
         self._last_torrent_check = 0
+        self._media_auto_refresh_pending = True
+        self._media_auto_refresh_running = False
+        self._media_auto_refresh_retry_at = 0.0
         self._recent_errors = deque(maxlen=20)
         self._health = {
             "running": False,
@@ -455,6 +459,59 @@ class QueueManager:
                     "torrents": torrents_list,
                 })
 
+        await self._maybe_auto_refresh_media()
+
+    async def _is_media_auto_refresh_idle(self) -> bool:
+        async with aiosqlite.connect(str(DB_PATH)) as db:
+            cursor = await db.execute("SELECT COUNT(*) FROM downloads WHERE status NOT IN ('complete', 'failed')")
+            (download_count,) = await cursor.fetchone()
+            if download_count:
+                return False
+
+            cursor = await db.execute("SELECT COUNT(*) FROM packages")
+            (package_count,) = await cursor.fetchone()
+            if package_count:
+                return False
+
+            cursor = await db.execute(
+                "SELECT COUNT(*) FROM torrents WHERE status IN ('processing', 'ready_importing')"
+            )
+            (torrent_count,) = await cursor.fetchone()
+            return torrent_count == 0
+
+    async def _maybe_auto_refresh_media(self):
+        if (
+            not self._media_auto_refresh_pending
+            or self._media_auto_refresh_running
+            or time.monotonic() < self._media_auto_refresh_retry_at
+        ):
+            return
+        if not await self._is_media_auto_refresh_idle():
+            return
+
+        self._media_auto_refresh_running = True
+        try:
+            # Re-check immediately before the external media API calls.
+            if not await self._is_media_auto_refresh_idle():
+                return
+            result = await auto_refresh_recommended_libraries()
+            refreshed = result.get("refreshed", [])
+            errors = result.get("errors", [])
+            if refreshed:
+                names = ", ".join(item.get("library_title") or item.get("library_key", "") for item in refreshed)
+                log(f"Media auto-refresh completed for: {names}")
+            if errors:
+                self._media_auto_refresh_retry_at = time.monotonic() + 300
+                for item in errors:
+                    self._record_error("media_auto_refresh", item.get("error", "Unknown media refresh error"))
+                return
+            self._media_auto_refresh_pending = False
+        except Exception as e:
+            self._media_auto_refresh_retry_at = time.monotonic() + 300
+            self._record_error("media_auto_refresh", f"{type(e).__name__}: {e}")
+        finally:
+            self._media_auto_refresh_running = False
+
     async def _check_torrents(self, db, now: str):
         cursor = await db.execute(
             "SELECT * FROM torrents WHERE status IN ('processing', 'ready_importing')"
@@ -561,6 +618,8 @@ class QueueManager:
              row["created_at"], now),
         )
         await db.commit()
+        if row["status"] == "complete":
+            self._media_auto_refresh_pending = True
 
     async def _check_package_complete(self, db, package_id: str, now: str):
         cursor = await db.execute(

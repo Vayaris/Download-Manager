@@ -2,7 +2,7 @@
 
 A web-based download manager with **AllDebrid** support, designed to run on **Linux** machines (Proxmox VM/LXC, dedicated servers, VPS).
 
-Latest stable release: `v1.10.20`
+Latest stable release: `v1.10.21`
 
 ![Python](https://img.shields.io/badge/Python-3.8+-3776AB?logo=python&logoColor=white)
 ![FastAPI](https://img.shields.io/badge/FastAPI-009688?logo=fastapi&logoColor=white)
@@ -21,6 +21,7 @@ Latest stable release: `v1.10.20`
 - **Torrent / Magnet support** — upload one or many `.torrent` files, or paste magnet links via AllDebrid, with automatic polling and download start
 - **Batch torrent packages** — files and magnets added together from the torrent modal are grouped into one package
 - **Smarter media suggestions** — completed packages only suggest one Plex/Jellyfin library refresh per library
+- **Automatic media refresh** — optional Plex/Jellyfin auto-refresh runs when the whole queue is finished
 - **Safe history cleanup** — clearing history removes history rows only and keeps downloaded files on disk
 - **Silent `.nfo` filter** — optional setting enabled by default to skip `.nfo` files from torrents or link batches without showing them in the queue
 - **aria2 engine** — fast downloads, multi-segment (split), automatic resume
@@ -312,7 +313,7 @@ MIT
 
 Interface web de gestion de téléchargements avec support **AllDebrid**, conçue pour tourner sur des machines **Linux** (VM / LXC Proxmox, serveurs dédiés, VPS).
 
-Dernière version stable : `v1.10.20`
+Dernière version stable : `v1.10.21`
 
 ## Fonctionnalités
 
@@ -322,6 +323,7 @@ Dernière version stable : `v1.10.20`
 - **Support Torrent / Magnet** — upload d'un ou plusieurs fichiers `.torrent` ou liens magnet via AllDebrid
 - **Lots torrent en paquet** — les fichiers et magnets ajoutés ensemble depuis la modale torrent sont regroupés dans un seul paquet
 - **Suggestions média plus propres** — un paquet terminé ne propose qu'un seul rafraîchissement Plex/Jellyfin par bibliothèque
+- **Rafraîchissement média automatique** — option Plex/Jellyfin qui s'exécute quand toute la file est terminée
 - **Nettoyage d'historique sécurisé** — vider l'historique supprime uniquement les lignes d'historique et conserve les fichiers téléchargés
 - **Filtre `.nfo` silencieux** — option activée par défaut pour ignorer les `.nfo` sans les afficher dans la file
 - **aria2 sous le capot** — téléchargements rapides, multi-segments, reprise automatique

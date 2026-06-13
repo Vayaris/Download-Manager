@@ -46,14 +46,20 @@ DEFAULT_CONFIG = {
         "url": "http://127.0.0.1:32400",
         "token": "",
         "last_refreshes": {},
-        "favorite_keys": []
+        "favorite_keys": [],
+        "auto_refresh_enabled": False,
+        "auto_refresh_enabled_at": None,
+        "auto_refreshes": {}
     },
     "jellyfin": {
         "enabled": False,
         "url": "http://127.0.0.1:8096",
         "token": "",
         "last_refreshes": {},
-        "favorite_keys": []
+        "favorite_keys": [],
+        "auto_refresh_enabled": False,
+        "auto_refresh_enabled_at": None,
+        "auto_refreshes": {}
     },
     "media": {
         "active": "plex"

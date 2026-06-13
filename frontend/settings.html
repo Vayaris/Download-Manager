@@ -641,6 +641,17 @@
         </label>
       </div>
 
+      <div class="form-group toggle-group">
+        <div>
+          <label class="form-label" data-i18n="media_auto_refresh_enabled">Auto-refresh recommended libraries</label>
+          <p class="form-hint" data-i18n="media_auto_refresh_hint">When the queue is fully finished, Download Manager refreshes the recommended Plex/Jellyfin libraries automatically.</p>
+        </div>
+        <label class="toggle">
+          <input type="checkbox" id="media-auto-refresh-enabled">
+          <span class="toggle-slider"></span>
+        </label>
+      </div>
+
       <div id="plex-fields">
       <div class="form-group">
         <label class="form-label" data-i18n="plex_url">Plex URL</label>
@@ -744,10 +755,10 @@ function pwaInstall(){if(pwaDeferred){pwaDeferred.prompt();pwaDeferred.userChoic
 </script>
 
 <script src="/static/js/theme.js?v=36"></script>
-<script src="/static/js/i18n.js?v=47"></script>
+<script src="/static/js/i18n.js?v=48"></script>
 <script src="/static/js/api.js?v=30"></script>
 <script src="/static/js/filebrowser.js?v=36"></script>
-<script src="/static/js/settings.js?v=45"></script>
+<script src="/static/js/settings.js?v=46"></script>
 <script src="/static/js/account.js?v=29"></script>
 <script>if("serviceWorker"in navigator)navigator.serviceWorker.register("/sw.js").catch(()=>{})</script>
 </body>

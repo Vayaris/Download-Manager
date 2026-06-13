@@ -90,6 +90,7 @@ class MediaSettingsRequest(BaseModel):
     url: Optional[str] = None
     token: Optional[str] = None
     favorite_keys: Optional[List[str]] = None
+    auto_refresh_enabled: Optional[bool] = None
 
 
 class SignalCheckRequest(BaseModel):

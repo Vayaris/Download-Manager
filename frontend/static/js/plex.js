@@ -43,6 +43,8 @@ let _plexState = {
   suggestions: [],
   favoriteKeys: [],
   lastRefreshes: {},
+  autoRefreshEnabled: false,
+  autoRefreshes: {},
   query: "",
   error: "",
 };
@@ -86,6 +88,8 @@ function normalizePlexState(data) {
     favoriteKeys,
     favoriteSet,
     lastRefreshes: data.last_refreshes || {},
+    autoRefreshEnabled: !!data.auto_refresh_enabled,
+    autoRefreshes: data.auto_refreshes || {},
     query: typeof _plexState.query === "string" ? _plexState.query : "",
     error: String(data.error || ""),
   };
@@ -159,6 +163,33 @@ function buildPlexSuggestionRow(item) {
     </div>`;
 }
 
+function getLatestAutoRefresh() {
+  const entries = Object.values(_plexState.autoRefreshes || {})
+    .filter((item) => item && item.refreshed_at)
+    .sort((a, b) => String(b.refreshed_at).localeCompare(String(a.refreshed_at)));
+  return entries[0] || null;
+}
+
+function buildPlexAutoRefreshBanner() {
+  if (!_plexState.autoRefreshEnabled || String(_plexState.query || "").trim() !== "") return "";
+  const latest = getLatestAutoRefresh();
+  const providerName = _plexState.provider === "jellyfin" ? "Jellyfin" : "Plex";
+  const detail = latest
+    ? t("media_auto_refresh_last", {
+        library: latest.library_title || latest.library_key || "-",
+        time: formatPlexRefreshTime(latest.refreshed_at),
+      })
+    : t("media_auto_refresh_waiting");
+  return `
+    <section class="plex-section plex-auto-refresh-section">
+      <div class="plex-auto-refresh-icon">A</div>
+      <div>
+        <h2>${escHtml(t("media_auto_refresh_banner_title", { provider: providerName }))}</h2>
+        <p class="form-hint">${escHtml(detail)}</p>
+      </div>
+    </section>`;
+}
+
 function getPlexVisibleLibraries() {
   const query = String(_plexState.query || "").trim().toLocaleLowerCase();
   if (!query) return _plexState.libraries.slice();
@@ -204,6 +235,8 @@ function renderPlexLists() {
   const otherLibraries = visibleLibraries.filter((library) => !favoriteSet.has(library.key));
 
   const sections = [];
+  const autoRefreshBanner = buildPlexAutoRefreshBanner();
+  if (autoRefreshBanner) sections.push(autoRefreshBanner);
 
   if (_plexState.connected && _plexState.suggestions.length && String(_plexState.query || "").trim() === "") {
     sections.push(`
