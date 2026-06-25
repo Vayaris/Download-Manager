@@ -299,6 +299,7 @@ async def get_settings(_=Depends(get_current_user)):
         "max_retries": cfg["downloads"].get("max_retries", 3),
         "retry_delay_seconds": cfg["downloads"].get("retry_delay_seconds", 5),
         "skip_nfo_files": cfg["downloads"].get("skip_nfo_files", True),
+        "stalled_timeout_hours": cfg["downloads"].get("stalled_timeout_hours", 3),
         "media_provider": _active_media_provider(cfg),
         "port": cfg["server"]["port"],
         "webhook_enabled": wh.get("enabled", False),
@@ -339,6 +340,8 @@ async def update_settings(body: SettingsUpdate, _=Depends(get_current_user)):
         cfg["downloads"]["retry_delay_seconds"] = body.retry_delay_seconds
     if body.skip_nfo_files is not None:
         cfg["downloads"]["skip_nfo_files"] = bool(body.skip_nfo_files)
+    if body.stalled_timeout_hours is not None and 0 <= body.stalled_timeout_hours <= 168:
+        cfg["downloads"]["stalled_timeout_hours"] = body.stalled_timeout_hours
 
     # Webhooks
     if "webhooks" not in cfg:

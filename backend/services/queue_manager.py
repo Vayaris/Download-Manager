@@ -3,7 +3,8 @@ import sys
 import time
 import uuid
 from collections import deque
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
+from pathlib import Path
 from typing import Optional
 from urllib.parse import unquote, urlparse
 
@@ -50,6 +51,52 @@ def _is_transient_aria2_error(exc: Exception) -> bool:
     return not _is_missing_aria2_gid_error(exc)
 
 
+def _parse_datetime(value: str | None) -> datetime | None:
+    if not value:
+        return None
+    try:
+        parsed = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+        if parsed.tzinfo is None:
+            return parsed.replace(tzinfo=timezone.utc)
+        return parsed.astimezone(timezone.utc)
+    except Exception:
+        return None
+
+
+def _path_is_allowed(path: Path, destination: str, config: dict) -> bool:
+    try:
+        resolved = path.resolve()
+    except OSError:
+        return False
+
+    roots = [destination, config["downloads"].get("default_destination", "")]
+    roots.extend(config["downloads"].get("allowed_paths", []))
+    for root in roots:
+        if not root:
+            continue
+        try:
+            resolved.relative_to(Path(root).resolve())
+            return True
+        except (ValueError, OSError):
+            continue
+    return False
+
+
+def _aria2_file_path(data: dict) -> Path | None:
+    files = data.get("files") or []
+    if not files:
+        return None
+    raw_path = str(files[0].get("path") or "").strip()
+    return Path(raw_path) if raw_path else None
+
+
+def _file_matches_size(path: Path, expected_size: int) -> bool:
+    try:
+        return path.is_file() and path.stat().st_size == expected_size
+    except OSError:
+        return False
+
+
 class QueueManager:
     def __init__(self):
         self._task: Optional[asyncio.Task] = None
@@ -87,6 +134,90 @@ class QueueManager:
             "source": source,
             "message": str(message)[:200],
         })
+
+    async def _finalize_download(self, db, row, parsed: dict, now: str):
+        cursor = await db.execute(
+            """UPDATE downloads SET
+                   name = ?, status = 'complete', progress = 100,
+                   speed = 0, size = ?, downloaded = ?,
+                   error_msg = NULL, updated_at = ?, last_progress_at = ?
+               WHERE id = ? AND aria2_gid = ? AND status NOT IN ('complete', 'failed')""",
+            (
+                parsed["name"] or row["name"],
+                parsed["size"],
+                parsed["downloaded"],
+                now,
+                now,
+                row["id"],
+                row["aria2_gid"],
+            ),
+        )
+        if cursor.rowcount == 0:
+            return
+
+        await aria2.remove_result(row["aria2_gid"])
+        await self._move_to_history(db, row["id"], now)
+        if not row["package_id"]:
+            await db.execute("DELETE FROM downloads WHERE id = ?", (row["id"],))
+            asyncio.create_task(send_webhook("download_complete", {
+                "name": parsed["name"] or row["name"],
+                "destination": row["destination"],
+                "size": parsed["size"],
+                "status": "complete",
+            }))
+        else:
+            await self._check_package_complete(db, row["package_id"], now)
+
+    async def _expire_download(self, db, row, parsed: dict, raw_status: dict, now: str, timeout_hours: int):
+        file_path = _aria2_file_path(raw_status)
+        sidecar_was_present = False
+        config = get_config()
+        if file_path and _path_is_allowed(file_path, row["destination"], config):
+            sidecar_was_present = Path(f"{file_path}.aria2").is_file()
+
+        await aria2.remove(row["aria2_gid"])
+
+        if file_path and sidecar_was_present and _path_is_allowed(file_path, row["destination"], config):
+            for partial_path in (file_path, Path(f"{file_path}.aria2")):
+                try:
+                    if partial_path.is_file():
+                        partial_path.unlink()
+                except OSError as exc:
+                    self._record_error("stalled_cleanup", f"{partial_path}: {exc}")
+
+        error_msg = f"No progress for {timeout_hours} hours (timeout)"
+        cursor = await db.execute(
+            """UPDATE downloads SET
+                   name = ?, status = 'failed', progress = ?,
+                   speed = 0, size = ?, downloaded = ?,
+                   error_msg = ?, aria2_gid = NULL, updated_at = ?
+               WHERE id = ? AND aria2_gid = ? AND status NOT IN ('complete', 'failed')""",
+            (
+                parsed["name"] or row["name"],
+                parsed["progress"],
+                parsed["size"],
+                parsed["downloaded"],
+                error_msg,
+                now,
+                row["id"],
+                row["aria2_gid"],
+            ),
+        )
+        if cursor.rowcount == 0:
+            return
+
+        await self._move_to_history(db, row["id"], now)
+        if not row["package_id"]:
+            await db.execute("DELETE FROM downloads WHERE id = ?", (row["id"],))
+            asyncio.create_task(send_webhook("download_failed", {
+                "name": parsed["name"] or row["name"],
+                "destination": row["destination"],
+                "size": parsed["size"],
+                "error_msg": error_msg,
+                "status": "failed",
+            }))
+        else:
+            await self._check_package_complete(db, row["package_id"], now)
 
     async def start(self):
         self._running = True
@@ -148,6 +279,8 @@ class QueueManager:
         config = get_config()
         max_concurrent = config["downloads"]["simultaneous"]
         now = datetime.now(timezone.utc).isoformat()
+        now_dt = datetime.now(timezone.utc)
+        stalled_timeout_hours = max(0, min(168, int(config["downloads"].get("stalled_timeout_hours", 3) or 0)))
 
         async with aiosqlite.connect(str(DB_PATH)) as db:
             db.row_factory = aiosqlite.Row
@@ -164,6 +297,34 @@ class QueueManager:
                     parsed = aria2.parse_status(data)
 
                     name_update = parsed["name"] if parsed["name"] else row["name"]
+                    progressed = parsed["downloaded"] > (row["downloaded"] or 0)
+                    last_progress_at = now if progressed else (
+                        row["last_progress_at"] or row["created_at"] or now
+                    )
+                    last_progress_dt = _parse_datetime(last_progress_at) or now_dt
+
+                    if parsed["status"] != "complete" and parsed["progress"] >= 100:
+                        file_path = _aria2_file_path(data)
+                        completion_grace_passed = now_dt - last_progress_dt >= timedelta(minutes=5)
+                        file_is_complete = (
+                            file_path is not None
+                            and parsed["size"] > 0
+                            and _path_is_allowed(file_path, row["destination"], config)
+                            and _file_matches_size(file_path, parsed["size"])
+                        )
+                        if completion_grace_passed and file_is_complete:
+                            parsed["status"] = "complete"
+
+                    if (
+                        stalled_timeout_hours > 0
+                        and parsed["status"] == "downloading"
+                        and parsed["progress"] < 100
+                        and now_dt - last_progress_dt >= timedelta(hours=stalled_timeout_hours)
+                    ):
+                        await self._expire_download(
+                            db, row, parsed, data, now, stalled_timeout_hours
+                        )
+                        continue
 
                     if parsed["status"] == "error":
                         # Retry logic
@@ -213,44 +374,17 @@ class QueueManager:
                                  now, row["id"], row["aria2_gid"]),
                             )
                     elif parsed["status"] == "complete":
-                        cursor = await db.execute(
-                            """UPDATE downloads SET
-                                   name = ?, status = 'complete', progress = 100,
-                                   speed = 0, size = ?, downloaded = ?,
-                                   updated_at = ?
-                               WHERE id = ? AND aria2_gid = ? AND status NOT IN ('complete', 'failed')""",
-                            (name_update, parsed["size"], parsed["downloaded"],
-                             now, row["id"], row["aria2_gid"]),
-                        )
-                        if cursor.rowcount == 0:
-                            continue
-                        await aria2.remove_result(row["aria2_gid"])
-
-                        # Move to history immediately and remove from active queue
-                        await self._move_to_history(db, row["id"], now)
-                        if not row["package_id"]:
-                            # Standalone download — remove from downloads table
-                            await db.execute("DELETE FROM downloads WHERE id = ?", (row["id"],))
-
-                        if not row["package_id"]:
-                            asyncio.create_task(send_webhook("download_complete", {
-                                "name": name_update, "destination": row["destination"],
-                                "size": parsed["size"], "status": "complete",
-                            }))
-
-                        # Check if package is complete
-                        if row["package_id"]:
-                            await self._check_package_complete(db, row["package_id"], now)
+                        await self._finalize_download(db, row, parsed, now)
                     else:
                         await db.execute(
                             """UPDATE downloads SET
                                    name = ?, status = ?, progress = ?,
                                    speed = ?, size = ?, downloaded = ?,
-                                   updated_at = ?
+                                   updated_at = ?, last_progress_at = ?
                                WHERE id = ? AND aria2_gid = ? AND status NOT IN ('complete', 'failed')""",
                             (name_update, parsed["status"], parsed["progress"],
                              parsed["speed"], parsed["size"], parsed["downloaded"],
-                             now, row["id"], row["aria2_gid"]),
+                             now, last_progress_at, row["id"], row["aria2_gid"]),
                         )
 
                 except Exception as e:
@@ -512,15 +646,87 @@ class QueueManager:
         finally:
             self._media_auto_refresh_running = False
 
+    async def _move_torrent_to_history(self, db, row, now: str, error_msg: str):
+        pkg_name = None
+        if row["package_id"]:
+            cursor = await db.execute(
+                "SELECT name FROM packages WHERE id = ?", (row["package_id"],)
+            )
+            package = await cursor.fetchone()
+            if package:
+                pkg_name = package["name"]
+
+        await db.execute(
+            """INSERT OR REPLACE INTO history
+               (id, name, url, destination, size, status, error_msg, package_name, created_at, completed_at)
+               VALUES (?, ?, ?, ?, ?, 'failed', ?, ?, ?, ?)""",
+            (
+                row["id"],
+                row["name"],
+                f"alldebrid://magnet/{row['alldebrid_id']}",
+                row["destination"],
+                row["size"],
+                error_msg,
+                pkg_name,
+                row["created_at"],
+                now,
+            ),
+        )
+
+    async def _fail_torrent(self, db, row, now: str, error_msg: str):
+        cursor = await db.execute(
+            """UPDATE torrents SET
+                   status = 'error', speed = 0,
+                   status_message = ?, updated_at = ?
+               WHERE id = ? AND status IN ('processing', 'ready_importing')""",
+            (error_msg, now, row["id"]),
+        )
+        if cursor.rowcount == 0:
+            return
+
+        await self._move_torrent_to_history(db, row, now, error_msg)
+        if row["package_id"]:
+            await self._check_package_complete(db, row["package_id"], now)
+        else:
+            await db.execute("DELETE FROM torrents WHERE id = ?", (row["id"],))
+            asyncio.create_task(send_webhook("download_failed", {
+                "name": row["name"] or "Torrent",
+                "destination": row["destination"],
+                "size": row["size"],
+                "error_msg": error_msg,
+                "status": "failed",
+            }))
+        await db.commit()
+
     async def _check_torrents(self, db, now: str):
         cursor = await db.execute(
             "SELECT * FROM torrents WHERE status IN ('processing', 'ready_importing')"
         )
         rows = await cursor.fetchall()
         torrent_errors = 0
+        timeout_hours = max(
+            0,
+            min(168, int(get_config()["downloads"].get("stalled_timeout_hours", 3) or 0)),
+        )
+        now_dt = _parse_datetime(now) or datetime.now(timezone.utc)
         for row in rows:
             importing = row["status"] == "ready_importing"
             try:
+                last_progress_dt = _parse_datetime(
+                    row["last_progress_at"] or row["created_at"]
+                ) or now_dt
+                if (
+                    timeout_hours > 0
+                    and now_dt - last_progress_dt >= timedelta(hours=timeout_hours)
+                ):
+                    await self._fail_torrent(
+                        db,
+                        row,
+                        now,
+                        f"No AllDebrid progress for {timeout_hours} hours (timeout)",
+                    )
+                    continue
+
                 status_data = await alldebrid.magnet_status(row["alldebrid_id"])
                 sc = status_data.get("statusCode", 0)
 
@@ -559,11 +765,12 @@ class QueueManager:
                 elif sc >= 5:
                     # Error
                     torrent_errors += 1
-                    await db.execute(
-                        "UPDATE torrents SET status = 'error', status_message = ?, updated_at = ? WHERE id = ?",
-                        (status_data.get("filename", "Torrent error"), now, row["id"]),
+                    await self._fail_torrent(
+                        db,
+                        row,
+                        now,
+                        status_data.get("filename", "AllDebrid torrent error"),
                     )
-                    await db.commit()
                 else:
                     # Processing — update progress
                     dl = status_data.get("downloaded", 0)
@@ -571,12 +778,18 @@ class QueueManager:
                     progress = round(dl / size * 100, 1) if size > 0 else 0
                     speed = status_data.get("downloadSpeed", 0)
                     seeders = status_data.get("seeders", 0)
+                    progressed = dl > (row["downloaded"] or 0)
+                    last_progress_at = now if progressed else (
+                        row["last_progress_at"] or row["created_at"] or now
+                    )
                     await db.execute(
                         """UPDATE torrents SET progress = ?, speed = ?, seeders = ?,
-                               size = ?, status_message = ?, updated_at = ?
+                               size = ?, downloaded = ?, status_message = ?,
+                               updated_at = ?, last_progress_at = ?
                            WHERE id = ?""",
                         (progress, speed, seeders,
-                         size, status_data.get("filename", ""), now, row["id"]),
+                         size, dl, status_data.get("filename", ""),
+                         now, last_progress_at, row["id"]),
                     )
                     await db.commit()
             except Exception as e:
@@ -647,8 +860,13 @@ class QueueManager:
                 "SELECT COUNT(*) FROM downloads WHERE package_id = ? AND status = 'failed'",
                 (package_id,),
             )
-            (failed,) = await cursor.fetchone()
-            pkg_status = "complete" if failed == 0 else "partial"
+            (failed_downloads,) = await cursor.fetchone()
+            cursor = await db.execute(
+                "SELECT COUNT(*) FROM torrents WHERE package_id = ? AND status IN ('error', 'import_failed')",
+                (package_id,),
+            )
+            (failed_torrents,) = await cursor.fetchone()
+            pkg_status = "complete" if failed_downloads == 0 and failed_torrents == 0 else "partial"
 
             # Fetch package info before deleting (needed for webhook)
             pcur = await db.execute("SELECT * FROM packages WHERE id = ?", (package_id,))
@@ -656,12 +874,13 @@ class QueueManager:
 
             # Remove all package downloads from active table
             await db.execute("DELETE FROM downloads WHERE package_id = ?", (package_id,))
+            await db.execute("DELETE FROM torrents WHERE package_id = ?", (package_id,))
             # Delete the package itself so it disappears from the UI
             await db.execute("DELETE FROM packages WHERE id = ?", (package_id,))
             await db.commit()
 
             # Webhook
-            if pkg and total_downloads > 0:
+            if pkg and (total_downloads > 0 or failed_torrents > 0):
                 asyncio.create_task(send_webhook("package_complete", {
                     "name": pkg["name"], "package_name": pkg["name"],
                     "destination": pkg["destination"], "status": pkg_status,
@@ -706,9 +925,10 @@ class QueueManager:
                 dl_id = str(uuid.uuid4())
                 await db.execute(
                     """INSERT INTO downloads
-                       (id, url, status, destination, created_at, updated_at, position, package_id, max_retries)
-                       VALUES (?, ?, 'pending', ?, ?, ?, ?, ?, ?)""",
-                    (dl_id, url, destination, now, now, pos, package_id, max_retries),
+                       (id, url, status, destination, created_at, updated_at, position,
+                        package_id, max_retries, last_progress_at)
+                       VALUES (?, ?, 'pending', ?, ?, ?, ?, ?, ?, ?)""",
+                    (dl_id, url, destination, now, now, pos, package_id, max_retries, now),
                 )
                 ids.append(dl_id)
                 pos += 1

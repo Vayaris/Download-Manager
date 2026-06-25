@@ -60,9 +60,10 @@ async def _insert_torrent(db, mag: dict, destination: str, now: str, package_id:
     name = mag.get("name", "Torrent")
     await db.execute(
         """INSERT INTO torrents
-           (id, alldebrid_id, name, size, status, destination, package_id, created_at, updated_at)
-           VALUES (?, ?, ?, ?, 'processing', ?, ?, ?, ?)""",
-        (t_id, mag["id"], name, mag.get("size", 0), destination, package_id, now, now),
+           (id, alldebrid_id, name, size, status, destination, package_id,
+            created_at, updated_at, last_progress_at)
+           VALUES (?, ?, ?, ?, 'processing', ?, ?, ?, ?, ?)""",
+        (t_id, mag["id"], name, mag.get("size", 0), destination, package_id, now, now, now),
     )
     return {"id": t_id, "name": name, "ready": False}
 
@@ -102,18 +103,20 @@ async def submit_magnets(body: MagnetUploadRequest, request: Request, _=Depends(
                     t_id = str(uuid.uuid4())
                     await db.execute(
                         """INSERT INTO torrents
-                           (id, alldebrid_id, name, size, status, destination, created_at, updated_at)
-                           VALUES (?, ?, ?, ?, 'processing', ?, ?, ?)""",
-                        (t_id, ad_id, name, size, body.destination, now, now),
+                           (id, alldebrid_id, name, size, status, destination,
+                            created_at, updated_at, last_progress_at)
+                           VALUES (?, ?, ?, ?, 'processing', ?, ?, ?, ?)""",
+                        (t_id, ad_id, name, size, body.destination, now, now, now),
                     )
                     added.append({"id": t_id, "name": name, "ready": False})
             else:
                 t_id = str(uuid.uuid4())
                 await db.execute(
                     """INSERT INTO torrents
-                       (id, alldebrid_id, name, size, status, destination, created_at, updated_at)
-                       VALUES (?, ?, ?, ?, 'processing', ?, ?, ?)""",
-                    (t_id, ad_id, name, size, body.destination, now, now),
+                       (id, alldebrid_id, name, size, status, destination,
+                        created_at, updated_at, last_progress_at)
+                       VALUES (?, ?, ?, ?, 'processing', ?, ?, ?, ?)""",
+                    (t_id, ad_id, name, size, body.destination, now, now, now),
                 )
                 added.append({"id": t_id, "name": name, "ready": False})
         await db.commit()
@@ -162,18 +165,20 @@ async def upload_torrent(
                     t_id = str(uuid.uuid4())
                     await db.execute(
                         """INSERT INTO torrents
-                           (id, alldebrid_id, name, size, status, destination, created_at, updated_at)
-                           VALUES (?, ?, ?, ?, 'processing', ?, ?, ?)""",
-                        (t_id, ad_id, name, size, destination, now, now),
+                           (id, alldebrid_id, name, size, status, destination,
+                            created_at, updated_at, last_progress_at)
+                           VALUES (?, ?, ?, ?, 'processing', ?, ?, ?, ?)""",
+                        (t_id, ad_id, name, size, destination, now, now, now),
                     )
                     added.append({"id": t_id, "name": name, "ready": False})
             else:
                 t_id = str(uuid.uuid4())
                 await db.execute(
                     """INSERT INTO torrents
-                       (id, alldebrid_id, name, size, status, destination, created_at, updated_at)
-                       VALUES (?, ?, ?, ?, 'processing', ?, ?, ?)""",
-                    (t_id, ad_id, name, size, destination, now, now),
+                       (id, alldebrid_id, name, size, status, destination,
+                        created_at, updated_at, last_progress_at)
+                       VALUES (?, ?, ?, ?, 'processing', ?, ?, ?, ?)""",
+                    (t_id, ad_id, name, size, destination, now, now, now),
                 )
                 added.append({"id": t_id, "name": name, "ready": False})
         await db.commit()

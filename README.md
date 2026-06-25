@@ -2,7 +2,7 @@
 
 A web-based download manager with **AllDebrid** support, designed to run on **Linux** machines (Proxmox VM/LXC, dedicated servers, VPS).
 
-Latest stable release: `v1.10.21`
+Latest stable release: `v1.10.22`
 
 ![Python](https://img.shields.io/badge/Python-3.8+-3776AB?logo=python&logoColor=white)
 ![FastAPI](https://img.shields.io/badge/FastAPI-009688?logo=fastapi&logoColor=white)
@@ -29,6 +29,7 @@ Latest stable release: `v1.10.21`
 - **Speed limit** — throttle global bandwidth in MB/s
 - **Package system** — group your links by season, album, etc. with global progress tracking
 - **Automatic retry** — configurable attempts and delay between retries
+- **Stalled download watchdog** — configurable no-progress timeout with safe partial-file cleanup
 - **Automatic history** — completed/failed downloads are automatically moved to history
 - **Webhook notifications** — Discord, Slack, Telegram, Gotify, ntfy, Signal, or generic JSON, with one notification when a package finishes
 - **File browser** — select and create folders directly from the interface
@@ -313,7 +314,7 @@ MIT
 
 Interface web de gestion de téléchargements avec support **AllDebrid**, conçue pour tourner sur des machines **Linux** (VM / LXC Proxmox, serveurs dédiés, VPS).
 
-Dernière version stable : `v1.10.21`
+Dernière version stable : `v1.10.22`
 
 ## Fonctionnalités
 
@@ -330,6 +331,7 @@ Dernière version stable : `v1.10.21`
 - **Multi-segments** — jusqu'à 16 connexions par fichier pour maximiser la vitesse
 - **Système de paquets** — groupez vos liens par saison, album, etc.
 - **Retry automatique** — 5 tentatives par défaut
+- **Watchdog des téléchargements bloqués** — expiration configurable sans progression et nettoyage sécurisé des fichiers partiels
 - **Historique automatique** — les téléchargements terminés passent dans l'historique
 - **Notifications webhook** — Discord, Slack, Telegram, Gotify, ntfy, Signal, avec une seule notification quand un paquet est terminé
 - **Rafraîchissement média** — configurez Plex ou Jellyfin dans les Paramètres, puis rafraîchissez les bibliothèques depuis l'onglet média

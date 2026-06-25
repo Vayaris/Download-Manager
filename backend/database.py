@@ -26,7 +26,8 @@ async def init_db():
                 aria2_gid   TEXT,
                 retry_count INTEGER DEFAULT 0,
                 max_retries INTEGER DEFAULT 5,
-                package_id  TEXT
+                package_id  TEXT,
+                last_progress_at TEXT
             )
         """)
 
@@ -93,12 +94,14 @@ async def init_db():
                 status          TEXT DEFAULT 'processing',
                 destination     TEXT NOT NULL,
                 progress        REAL DEFAULT 0,
+                downloaded      INTEGER DEFAULT 0,
                 speed           INTEGER DEFAULT 0,
                 seeders         INTEGER DEFAULT 0,
                 status_message  TEXT,
                 package_id      TEXT,
                 created_at      TEXT,
-                updated_at      TEXT
+                updated_at      TEXT,
+                last_progress_at TEXT
             )
         """)
 
@@ -110,9 +113,21 @@ async def init_db():
             await db.execute("ALTER TABLE downloads ADD COLUMN max_retries INTEGER DEFAULT 5")
         if "package_id" not in columns:
             await db.execute("ALTER TABLE downloads ADD COLUMN package_id TEXT")
+        if "last_progress_at" not in columns:
+            await db.execute("ALTER TABLE downloads ADD COLUMN last_progress_at TEXT")
+            await db.execute(
+                "UPDATE downloads SET last_progress_at = COALESCE(updated_at, created_at)"
+            )
 
         torrent_columns = [row[1] for row in await (await db.execute("PRAGMA table_info(torrents)")).fetchall()]
         if "package_id" not in torrent_columns:
             await db.execute("ALTER TABLE torrents ADD COLUMN package_id TEXT")
+        if "last_progress_at" not in torrent_columns:
+            await db.execute("ALTER TABLE torrents ADD COLUMN last_progress_at TEXT")
+            await db.execute(
+                "UPDATE torrents SET last_progress_at = created_at"
+            )
+        if "downloaded" not in torrent_columns:
+            await db.execute("ALTER TABLE torrents ADD COLUMN downloaded INTEGER DEFAULT 0")
 
         await db.commit()

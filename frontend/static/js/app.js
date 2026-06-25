@@ -506,7 +506,7 @@ async function loadHistory() {
             ${item.package_name ? `<span class="file-url">${ICONS.pkg} ${escHtml(item.package_name)}</span>` : `<span class="file-url" title="${escHtml(item.url)}">${escHtml(item.url)}</span>`}
           </div>
         </td>
-        <td class="col-status">${statusBadge(item.status)}</td>
+        <td class="col-status" title="${escHtml(item.error_msg || '')}">${statusBadge(item.status)}</td>
         <td class="col-size mono-cell">${escHtml(fmtBytes(item.size))}</td>
         <td class="col-dest">
           <span class="dest-cell-path" title="${escHtml(item.destination)}">${escHtml(item.destination)}</span>

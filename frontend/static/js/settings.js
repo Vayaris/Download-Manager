@@ -84,8 +84,10 @@ async function saveDownloadSettings() {
   const speedLimit = parseInt(document.getElementById("speed-limit").value) || 0;
   const maxRetriesRaw = parseInt(document.getElementById("max-retries-input").value);
   const retryDelayRaw = parseInt(document.getElementById("retry-delay-input").value);
+  const stalledTimeoutRaw = parseInt(document.getElementById("stalled-timeout-input").value);
   const maxRetries = Math.min(20, Math.max(0, Number.isNaN(maxRetriesRaw) ? 3 : maxRetriesRaw));
   const retryDelay = Math.min(3600, Math.max(0, Number.isNaN(retryDelayRaw) ? 5 : retryDelayRaw));
+  const stalledTimeout = Math.min(168, Math.max(0, Number.isNaN(stalledTimeoutRaw) ? 3 : stalledTimeoutRaw));
   const skipNfo = document.getElementById("skip-nfo-files").checked;
   const dest = document.getElementById("default-dest").value.trim() || undefined;
 
@@ -94,6 +96,7 @@ async function saveDownloadSettings() {
   document.getElementById("segments-input").value = segments;
   document.getElementById("max-retries-input").value = maxRetries;
   document.getElementById("retry-delay-input").value = retryDelay;
+  document.getElementById("stalled-timeout-input").value = stalledTimeout;
 
   try {
     await API.put("/api/settings/", {
@@ -102,6 +105,7 @@ async function saveDownloadSettings() {
       speed_limit: speedLimit,
       max_retries: maxRetries,
       retry_delay_seconds: retryDelay,
+      stalled_timeout_hours: stalledTimeout,
       skip_nfo_files: skipNfo,
       default_destination: dest,
     });
@@ -836,6 +840,7 @@ async function saveSettings() {
   const newAllDebridKey = document.getElementById("alldebrid-key").value.trim();
   const maxRetriesRaw = parseInt(document.getElementById("max-retries-input").value);
   const retryDelayRaw = parseInt(document.getElementById("retry-delay-input").value);
+  const stalledTimeoutRaw = parseInt(document.getElementById("stalled-timeout-input").value);
   const payload = {
     alldebrid_api_key: newAllDebridKey || undefined,
     alldebrid_enabled: document.getElementById("alldebrid-enabled").checked,
@@ -844,6 +849,7 @@ async function saveSettings() {
     speed_limit: parseInt(document.getElementById("speed-limit").value) || 0,
     max_retries: Math.min(20, Math.max(0, Number.isNaN(maxRetriesRaw) ? 3 : maxRetriesRaw)),
     retry_delay_seconds: Math.min(3600, Math.max(0, Number.isNaN(retryDelayRaw) ? 5 : retryDelayRaw)),
+    stalled_timeout_hours: Math.min(168, Math.max(0, Number.isNaN(stalledTimeoutRaw) ? 3 : stalledTimeoutRaw)),
     default_destination: document.getElementById("default-dest").value.trim() || undefined,
     webhook_enabled: document.getElementById("webhook-enabled").checked,
     webhook_url: document.getElementById("webhook-url").value.trim() || undefined,
@@ -1254,6 +1260,7 @@ async function bootSettings() {
     document.getElementById("speed-limit").value = cfg.speed_limit || 0;
     document.getElementById("max-retries-input").value = cfg.max_retries ?? 3;
     document.getElementById("retry-delay-input").value = cfg.retry_delay_seconds ?? 5;
+    document.getElementById("stalled-timeout-input").value = cfg.stalled_timeout_hours ?? 3;
     document.getElementById("skip-nfo-files").checked = cfg.skip_nfo_files !== false;
 
     await checkAllDebridStatus();
