@@ -743,6 +743,7 @@
       </div>
       <div class="key-actions" style="margin-top:12px">
         <button class="btn btn-sm" onclick="loadDiagnostics()" data-i18n="diagnostics_refresh">Refresh diagnostics</button>
+        <button class="btn btn-sm btn-ghost" onclick="clearDiagnosticEvents()">Effacer le journal</button>
       </div>
     </div>
 
@@ -788,7 +789,7 @@ function pwaInstall(){if(pwaDeferred){pwaDeferred.prompt();pwaDeferred.userChoic
 <script src="/static/js/i18n.js?v=50"></script>
 <script src="/static/js/api.js?v=30"></script>
 <script src="/static/js/filebrowser.js?v=37"></script>
-<script src="/static/js/settings.js?v=48"></script>
+<script src="/static/js/settings.js?v=49"></script>
 <script src="/static/js/account.js?v=29"></script>
 <script>if("serviceWorker"in navigator)navigator.serviceWorker.register("/sw.js").catch(()=>{})</script>
 </body>

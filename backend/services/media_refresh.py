@@ -6,6 +6,7 @@ import aiosqlite
 
 from config import get_config, save_config
 from database import DB_PATH
+from services.diagnostics import record_event_nowait
 from services.jellyfin import jellyfin
 from services.plex import plex
 
@@ -241,6 +242,10 @@ async def auto_refresh_recommended_libraries(limit: int = 50) -> dict:
             )
             refreshed.append({**suggestion, **result})
         except Exception as exc:
+            record_event_nowait(
+                "media_refresh", "automatic_refresh_failed", exc,
+                context={"provider": provider, "library_key": library_key},
+            )
             errors.append({
                 "library_key": library_key,
                 "library_title": suggestion.get("library_title", ""),

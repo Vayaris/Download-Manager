@@ -1422,7 +1422,7 @@ function renderDiagnostics(data) {
   const db = data.database || {};
   const tables = db.tables || {};
   const statuses = db.download_statuses || [];
-  const recent = queue.recent_errors || [];
+  const recent = data.events || queue.recent_errors || [];
 
   const tick = Number(queue.last_tick_seconds || 0);
   const tempErrors = Number(queue.temporary_aria2_errors || 0);
@@ -1444,8 +1444,8 @@ function renderDiagnostics(data) {
   const recentErrors = recent.length
     ? recent.slice(0, 5).map((error) => `
         <div class="diagnostics-error-line">
-          <span>${escHtml(error.at || "")}</span>
-          <strong>${escHtml(error.source || "")}</strong>
+          <span>${escHtml(error.created_at || error.at || "")}</span>
+          <strong>${escHtml(error.source || "")}${error.code ? ` · ${escHtml(error.code)}` : ""}</strong>
           <span>${escHtml(error.message || "")}</span>
         </div>`).join("")
     : `<div class="diagnostics-error-line">${escHtml(t("diagnostics_no_recent_errors"))}</div>`;
@@ -1482,6 +1482,17 @@ async function loadDiagnostics() {
     renderDiagnostics(data);
   } catch (e) {
     panel.innerHTML = `<p class="form-hint" style="color:var(--red)">${t("diagnostics_unavailable")}: ${escHtml(e.message)}</p>`;
+  }
+}
+
+async function clearDiagnosticEvents() {
+  if (!confirm(getLang() === "fr" ? "Effacer le journal de diagnostic ?" : "Clear the diagnostic event log?")) return;
+  try {
+    await API.del("/api/settings/diagnostics/events");
+    await loadDiagnostics();
+    showToast(getLang() === "fr" ? "Journal effacé" : "Diagnostic log cleared", "ok");
+  } catch (error) {
+    showToast(t("error_prefix") + error.message, "error");
   }
 }
 
@@ -1563,25 +1574,40 @@ async function performUpdate() {
   try {
     const res = await API.post("/api/settings/update", {});
     if (res.success) {
-      setUpdateBadge("ok", "v" + res.version);
+      setUpdateBadge("checking", t("update_updating"));
       showToast(res.message, "ok");
       btn.textContent = t("update_restarting");
 
-      // Wait for the service to restart, then reload
+      // The updater runs outside this service and persists its status across restarts.
       setTimeout(() => {
         const poll = setInterval(async () => {
           try {
-            const r = await fetch("/api/settings/version", {
+            const r = await fetch("/api/settings/update-status", {
               headers: API._headers(),
             });
             if (r.ok) {
-              clearInterval(poll);
-              window.location.reload();
+              const status = await r.json();
+              if (status.job_id !== res.job_id) return;
+              if (status.state === "success") {
+                clearInterval(poll);
+                window.location.reload();
+              } else if (status.state === "rolled_back" || status.state === "failed") {
+                clearInterval(poll);
+                setUpdateBadge("error", status.state === "rolled_back" ? "Rollback" : t("update_failed"));
+                showToast(status.message || t("update_failed"), "error");
+                btn.disabled = false;
+                btn.textContent = origText;
+              } else {
+                setUpdateBadge("checking", status.message || t("update_updating"));
+              }
             }
           } catch {}
         }, 1500);
-        // Stop polling after 30s
-        setTimeout(() => clearInterval(poll), 30000);
+        setTimeout(() => {
+          clearInterval(poll);
+          btn.disabled = false;
+          btn.textContent = origText;
+        }, 180000);
       }, 2000);
     } else {
       setUpdateBadge("error", t("update_failed"));

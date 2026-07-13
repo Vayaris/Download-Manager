@@ -12,6 +12,7 @@ from starlette.requests import Request
 from config import get_config
 from database import init_db
 from services.queue_manager import QueueManager
+from services.diagnostics import record_event_nowait
 from routers import downloads, settings, filebrowser, torrents, smb as smb_router
 from routers import auth as auth_router
 
@@ -56,8 +57,8 @@ async def lifespan(app: FastAPI):
     try:
         from services.smb import mount_all_auto
         mount_all_auto()
-    except Exception:
-        pass
+    except Exception as exc:
+        record_event_nowait("startup", "smb_automount_failed", exc, severity="warning")
     qm = QueueManager()
     qm.register_ws_manager(ws_manager)
     await qm.start()

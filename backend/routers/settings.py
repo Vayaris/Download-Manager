@@ -6,6 +6,7 @@ import re
 import shutil
 import socket
 import subprocess
+import secrets
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -28,6 +29,7 @@ from services.media_refresh import (
 )
 from services.plex import plex
 from services.webhook import send_webhook
+from services.diagnostics import clear_events, list_events, record_event_nowait
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -1157,7 +1159,19 @@ async def diagnostics(request: Request, _=Depends(get_current_user)):
         "database": db_info,
         "aria2": aria2_info,
         "queue": queue_info,
+        "events": await list_events(100),
     }
+
+
+@router.get("/diagnostics/events")
+async def diagnostic_events(limit: int = 100, _=Depends(get_current_user)):
+    return {"items": await list_events(limit)}
+
+
+@router.delete("/diagnostics/events")
+async def delete_diagnostic_events(_=Depends(get_current_user)):
+    await clear_events()
+    return {"status": "cleared"}
 
 
 @router.get("/check-update")
@@ -1185,18 +1199,22 @@ async def check_update(_=Depends(get_current_user)):
         return {"update_available": False, "current": current, "message": f"Error: {str(e)[:200]}", "error": True}
 
 
-def _do_restart():
-    """Restart the systemd service. Called as a background task after the HTTP response is sent."""
-    import time
-    time.sleep(1)  # Let the response reach the client
-    subprocess.run(["systemctl", "reset-failed", "download-manager"],
-                   capture_output=True, timeout=10)
-    subprocess.run(["systemctl", "restart", "download-manager"],
-                   capture_output=True, timeout=30)
+UPDATE_STATUS_FILE = Path("/var/lib/download-manager/update-status.json")
+
+
+@router.get("/update-status")
+async def update_status(_=Depends(get_current_user)):
+    if not UPDATE_STATUS_FILE.exists():
+        return {"state": "idle", "message": "No update has run yet"}
+    try:
+        import json
+        return json.loads(UPDATE_STATUS_FILE.read_text())
+    except (OSError, ValueError):
+        return {"state": "unknown", "message": "Update status is unreadable"}
 
 
 @router.post("/update")
-async def perform_update(background_tasks: BackgroundTasks, _=Depends(get_current_user)):
+async def perform_update(_=Depends(get_current_user)):
     import httpx
 
     current = _get_current_version()
@@ -1212,8 +1230,6 @@ async def perform_update(background_tasks: BackgroundTasks, _=Depends(get_curren
             if current_version is None or latest_info["version_tuple"] <= current_version:
                 return {"success": True, "message": "Already up to date", "version": current, "changelog": ""}
 
-        # Perform git pull from the project root
-        install_dir = INSTALL_DIR
         git_dir = _find_git_dir()
         if _is_git_dirty(git_dir):
             raise HTTPException(
@@ -1221,67 +1237,29 @@ async def perform_update(background_tasks: BackgroundTasks, _=Depends(get_curren
                 detail="Update blocked: local files have uncommitted changes.",
             )
 
-        result = subprocess.run(
-            ["git", "pull", "--ff-only", "origin", "main"],
-            cwd=str(git_dir),
-            capture_output=True, text=True, timeout=60,
-        )
-
+        job_id = f"dm-{secrets.token_hex(6)}"
+        runner = INSTALL_DIR / "backend" / "update_runner.py"
+        command = [
+            "systemd-run", "--quiet", f"--unit=download-manager-update-{job_id}",
+            "--property=Type=exec", str(INSTALL_DIR / "venv" / "bin" / "python"),
+            str(runner), "--job-id", job_id, "--git-dir", str(git_dir),
+            "--expected-version", latest,
+        ]
+        result = subprocess.run(command, capture_output=True, text=True, timeout=15)
         if result.returncode != 0:
-            msg = (result.stderr or result.stdout or "git pull failed").strip()
-            raise HTTPException(
-                status_code=409,
-                detail=f"Update requires manual intervention: {msg[:300]}",
-            )
-
-        # Always ensure start.sh is executable (git may strip the bit)
-        start_sh = install_dir / "start.sh"
-        if start_sh.exists():
-            start_sh.chmod(0o755)
-
-        # If install_dir != git_dir, sync files
-        if git_dir != install_dir:
-            subprocess.run(
-                ["cp", "-r", f"{git_dir}/backend/.", f"{install_dir}/backend/"],
-                capture_output=True, timeout=30,
-            )
-            subprocess.run(
-                ["cp", "-r", f"{git_dir}/frontend/.", f"{install_dir}/frontend/"],
-                capture_output=True, timeout=30,
-            )
-            # Copy root-level files (VERSION, start.sh, requirements.txt)
-            for fname in ["VERSION", "start.sh", "requirements.txt"]:
-                src = git_dir / fname
-                if src.exists():
-                    subprocess.run(
-                        ["cp", str(src), str(install_dir / fname)],
-                        capture_output=True, timeout=10,
-                    )
-            # Re-apply executable bit after copy
-            start_sh = install_dir / "start.sh"
-            if start_sh.exists():
-                start_sh.chmod(0o755)
-
-        # Update pip dependencies if requirements.txt exists
-        pip_bin = install_dir / "venv" / "bin" / "pip"
-        req_file = install_dir / "requirements.txt"
-        if pip_bin.exists() and req_file.exists():
-            subprocess.run(
-                [str(pip_bin), "install", "--quiet", "-r", str(req_file)],
-                capture_output=True, timeout=120,
-            )
-
-        # Schedule restart AFTER the HTTP response is sent (BackgroundTask)
-        background_tasks.add_task(_do_restart)
+            detail = (result.stderr or result.stdout or "systemd-run failed").strip()
+            raise HTTPException(status_code=500, detail=f"Unable to start updater: {detail[:300]}")
 
         return {
             "success": True,
-            "message": f"Updated to v{latest}",
+            "message": f"Update to v{latest} started",
             "version": latest,
             "changelog": changelog,
+            "job_id": job_id,
         }
 
     except HTTPException:
         raise
     except Exception as e:
+        record_event_nowait("updates", "update_failed", e)
         raise HTTPException(status_code=500, detail="Internal error during update")

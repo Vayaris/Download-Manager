@@ -3,6 +3,7 @@ import asyncio
 from datetime import datetime, timezone
 from urllib.parse import urlparse, parse_qs
 from config import get_config
+from services.diagnostics import record_event_nowait
 
 
 def _fmt_size(size_bytes: int) -> str:
@@ -36,8 +37,8 @@ async def send_webhook(event: str, data: dict):
         target_url = urlparse(url)._replace(query="", fragment="").geturl() if fmt == "signal" else url
         async with httpx.AsyncClient(timeout=10.0) as client:
             await client.post(target_url, json=payload)
-    except Exception:
-        pass
+    except Exception as exc:
+        record_event_nowait("webhook", "delivery_failed", exc, context={"event": event, "format": fmt})
 
 
 def _build_payload(fmt: str, event: str, data: dict, url: str = "") -> dict:
