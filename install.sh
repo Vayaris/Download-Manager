@@ -155,6 +155,8 @@ else
 server:
   host: "0.0.0.0"
   port: ${PORT}
+  cors_origins: []
+  trusted_proxies: []
 
 alldebrid:
   api_key: ""
@@ -162,13 +164,18 @@ alldebrid:
 
 downloads:
   simultaneous: 3
+  download_segments: 1
+  speed_limit: 0
+  max_retries: 3
+  retry_delay_seconds: 5
+  skip_nfo_files: true
+  stalled_timeout_hours: 3
   default_destination: "${INSTALL_DIR}/downloads"
   allowed_paths:
     - "/mnt"
     - "${INSTALL_DIR}/downloads"
 
 auth:
-  enabled: false
   jwt_secret: ""
 
 aria2:
@@ -183,6 +190,29 @@ webhooks:
     - "download_complete"
     - "download_failed"
     - "package_complete"
+
+plex:
+  enabled: false
+  url: "http://127.0.0.1:32400"
+  token: ""
+  last_refreshes: {}
+  favorite_keys: []
+  auto_refresh_enabled: false
+  auto_refresh_enabled_at: null
+  auto_refreshes: {}
+
+jellyfin:
+  enabled: false
+  url: "http://127.0.0.1:8096"
+  token: ""
+  last_refreshes: {}
+  favorite_keys: []
+  auto_refresh_enabled: false
+  auto_refresh_enabled_at: null
+  auto_refreshes: {}
+
+media:
+  active: "plex"
 EOF
     success "Configuration created: ${CONFIG_DIR}/config.yml"
 fi
@@ -322,8 +352,9 @@ echo -e "    ${YELLOW}nano ${CONFIG_DIR}/config.yml${NC}       — configuration
 echo ""
 echo -e "  ${BOLD}Features:${NC}"
 echo -e "    - AllDebrid : configure your API key in Settings"
-echo -e "    - Torrents  : upload .torrent or magnet via AllDebrid"
-echo -e "    - Packages  : group your links into packages"
+echo -e "    - Torrents  : upload one or many .torrent files or magnets"
+echo -e "    - Packages  : 2+ sources are grouped with one final notification"
+echo -e "    - Media     : optional Plex or Jellyfin library refresh"
 echo -e "    - Webhooks  : Discord, Slack, Telegram, Gotify, ntfy, Signal"
 echo -e "    - 2FA       : enable from the Settings page"
 echo -e "    - Updates   : from Settings > Updates"

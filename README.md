@@ -1,8 +1,8 @@
 # Download Manager
 
-A web-based download manager with **AllDebrid** support, designed to run on **Linux** machines (Proxmox VM/LXC, dedicated servers, VPS).
+Self-hosted download manager powered by **FastAPI**, **aria2** and **AllDebrid**. It provides a responsive web/PWA interface for direct links, magnets and `.torrent` files, with real-time queue updates and optional Plex or Jellyfin library refreshes.
 
-Latest stable release: `v1.11.0`
+Current release: **v1.11.0**
 
 ![Python](https://img.shields.io/badge/Python-3.8+-3776AB?logo=python&logoColor=white)
 ![FastAPI](https://img.shields.io/badge/FastAPI-009688?logo=fastapi&logoColor=white)
@@ -10,378 +10,197 @@ Latest stable release: `v1.11.0`
 ![PWA](https://img.shields.io/badge/PWA-Installable-0f766e?logo=pwa&logoColor=white)
 ![License](https://img.shields.io/badge/License-MIT-green)
 
----
+## Highlights
 
-## Features
+- Direct links, magnets and one or many `.torrent` files through AllDebrid
+- Automatic mixed packages when at least two sources are submitted, with one final package notification
+- Queue priorities, drag and drop, pause/resume, configurable retries and up to 20 simultaneous downloads
+- Global aria2 speed limit in MB/s, with effective-limit verification in Settings
+- Responsive desktop/mobile interface, dark/light themes, French/English and installable PWA
+- Account-synced destination explorer with favorites, recent paths, search, breadcrumbs and mobile tabs
+- Silent `.nfo` filtering enabled by default
+- Safe stalled-download watchdog and automatic history
+- Plex or Jellyfin integration with favorites, manual refresh suggestions and optional automatic refresh
+- Webhooks for Discord, Slack, Telegram, Gotify, ntfy, Signal and generic JSON
+- Mandatory authentication, optional TOTP 2FA, login rate limiting and IP blocking
+- Built-in diagnostics, updates, SMB/CIFS support and admin CLI
 
-- **Modern web interface** — clean light default, polished dark mode, responsive layout, real-time updates via WebSocket
-- **Installable PWA** — add the app to your phone's home screen (Android / iOS)
-- **Optimized mobile view** — compact download cards, touch navigation, bottom navigation bar
-- **AllDebrid integration** — automatic link debriding plus account hoster list in Settings
-- **Torrent / Magnet support** — upload one or many `.torrent` files, or paste magnet links via AllDebrid, with automatic polling and download start
-- **Automatic mixed packages** — any submission containing two or more direct links, magnets or `.torrent` files becomes one package with one final notification
-- **Smarter media suggestions** — completed packages only suggest one Plex/Jellyfin library refresh per library
-- **Automatic media refresh** — optional Plex/Jellyfin auto-refresh runs when the whole queue is finished
-- **Safe history cleanup** — clearing history removes history rows only and keeps downloaded files on disk
-- **Silent `.nfo` filter** — optional setting enabled by default to skip `.nfo` files from torrents or link batches without showing them in the queue
-- **aria2 engine** — fast downloads, multi-segment (split), automatic resume
-- **Multi-segment downloads** — up to 16 connections per file (JDownloader-style) to maximize speed
-- **Speed limit** — throttle global bandwidth in MB/s
-- **Package system** — group your links by season, album, etc. with global progress tracking
-- **Automatic retry** — configurable attempts and delay between retries
-- **Stalled download watchdog** — configurable no-progress timeout with safe partial-file cleanup
-- **Automatic history** — completed/failed downloads are automatically moved to history
-- **Webhook notifications** — Discord, Slack, Telegram, Gotify, ntfy, Signal, or generic JSON, with one notification when a package finishes
-- **File browser** — select and create folders directly from the interface
-- **Account-synced destination explorer** — wide Windows-style browser with persistent favorites, drag-and-drop ordering, recent destinations, search and mobile tabs
-- **Verified global speed limit** — aria2 confirms the effective aggregate limit; AllDebrid remote caching is identified separately
-- **Secure authentication** — login/password with 2FA (6-digit OTP), rate limiting, IP blocking
-- **Built-in updates** — check and install new versions from the Settings page, with changelog
-- **Runtime diagnostics** — queue, aria2, database and git health visible from Settings
-- **Media server refresh** — configure Plex or Jellyfin in Settings, then refresh libraries manually from the media tab
-- **Collapsible settings** — keep advanced sections hidden until needed
-- **Admin CLI** — reset admin account, manage blocked IPs from the command line
-- **Systemd service** — auto-start, crash recovery
-- **Multi-language** — English and French, switchable from Settings
+## Requirements
 
----
+- Ubuntu 20.04+ or Debian 11+
+- Root access and systemd recommended
+- A reachable download destination, usually under `/mnt` or `/opt/download-manager/downloads`
+- An AllDebrid API key for debrid and torrent workflows
+- Docker only when using the optional Signal integration
 
-## Security
-
-- **JWT authentication** with 2FA (TOTP) — compatible with Google Authenticator, Authy, etc.
-- **Rate limiting** — 5 login attempts in 15 min, automatic IP blocking for 4h
-- **Authenticated WebSocket** — real-time connections require a valid token
-- **Path traversal protection** — file browser restricted to allowed paths
-- **Destination validation** — cannot download to an unauthorized path
-- **SSRF webhook protection** — internal URLs (localhost, private IPs) are blocked
-- **IP spoofing protection** — proxy headers only accepted from local proxies
-- **No CORS wildcard** — CORS disabled by default, configurable if needed
-
----
-
-## Quick Install
-
-> **Requirements**: Ubuntu 20.04+ or Debian 11+ (VM, LXC Proxmox, VPS). Root access.
+## Install
 
 ```bash
 bash <(curl -fsSL https://raw.githubusercontent.com/Vayaris/download-manager/main/install.sh)
 ```
 
-The script automatically installs all dependencies (Python, aria2, etc.), configures the systemd service, and starts the application.
+The installer asks for the HTTP port (`40320` by default), installs system dependencies, creates a Python virtual environment, configures `download-manager.service`, and starts the application. It does not configure or modify Plex/Jellyfin services.
 
----
+Open `http://<SERVER_IP>:40320` and create the administrator account on first launch.
 
-## Manual Install
+To install from a local clone:
 
 ```bash
-# 1. Clone the repository
-git clone https://github.com/Vayaris/download-manager.git
-cd download-manager
-
-# 2. Run the installer
+git clone https://github.com/Vayaris/Download-Manager.git
+cd Download-Manager
 sudo bash install.sh
 ```
 
----
+## How downloads are grouped
 
-## Usage
-
-After installation, the interface is accessible at:
-
-```
-http://<YOUR_SERVER_IP>:40320
-```
-
-The port is configurable during installation.
-
-### Mobile
-
-The application is a **PWA** (Progressive Web App). From your mobile browser:
-- **Android**: Menu (⋮) → "Add to Home screen"
-- **iOS**: Share button (↑) → "Add to Home Screen"
-
-The app then launches like a native application, without the browser toolbar.
-
-### Useful Commands
-
-| Command | Description |
+| Submission | Result |
 |---|---|
-| `systemctl status download-manager` | Service status |
-| `systemctl restart download-manager` | Restart |
-| `systemctl stop download-manager` | Stop |
-| `journalctl -u download-manager -f` | Real-time logs |
-| `nano /etc/download-manager/config.yml` | Edit configuration |
+| One direct link, magnet or `.torrent` file | Standalone download |
+| Two or more valid sources, including mixed source types | One automatic package |
+| Package members | One aggregate progress view and one final webhook |
 
-### Admin CLI
+AllDebrid resolves magnets and torrents before aria2 downloads the returned files. Remote AllDebrid caching is separate from the local aria2 speed limit. When `.nfo` filtering is enabled, matching files are ignored silently and never appear as failed or blocked items.
 
-```bash
-cd /opt/download-manager/backend
+## Destination explorer
 
-# Reset admin account
-python3 dm-cli.py reset-admin
+You can paste an allowed path such as `/mnt/media/Movies` directly or open the file browser. On desktop, the browser shows favorites, the folder tree and recent destinations side by side. On mobile, the same areas become tabs.
 
-# List blocked IPs
-python3 dm-cli.py list-ips
+Favorites, their order and recent destinations are stored server-side for the authenticated account. Directory scans run outside the FastAPI event loop and use a bounded timeout/cache so a slow disk or mount is less likely to freeze the interface.
 
-# Unblock an IP
-python3 dm-cli.py unblock 1.2.3.4
+Only paths listed in `downloads.allowed_paths` can be browsed or selected.
 
-# Unblock all IPs
-python3 dm-cli.py unblock-all
-```
+## Plex and Jellyfin
 
----
+Settings supports one active media provider at a time:
+
+- **Plex:** server URL and Plex token
+- **Jellyfin:** server URL and API key
+
+The media tab lists libraries, allows favorites with drag-and-drop ordering, and suggests likely libraries from completed download destinations. Automatic refresh is disabled by default; when enabled, recommended libraries are refreshed only after the entire download queue has reached a terminal state.
+
+Media credentials are stored server-side and are never returned to the browser. Download Manager calls the configured API but does not restart or reconfigure the media server.
+
+## Notifications
+
+The Webhooks section has a master on/off switch. Supported formats are Discord, Slack, Telegram, Gotify, ntfy, Signal and generic JSON. Events can be enabled for completed downloads, failed downloads and completed packages.
+
+Members of a package do not emit individual completion notifications. The package sends one final event after all members have completed or failed.
 
 ## Configuration
 
-The configuration file is located at `/etc/download-manager/config.yml`:
+The main configuration file is `/etc/download-manager/config.yml`. Most values should be managed from the web Settings page.
 
 ```yaml
 server:
   host: "0.0.0.0"
   port: 40320
-  cors_origins: []          # Allowed CORS origins (empty = disabled)
-  trusted_proxies: []       # Trusted reverse proxy IPs
+  cors_origins: []
+  trusted_proxies: []
 
 alldebrid:
-  api_key: ""
   enabled: false
+  api_key: ""
 
 downloads:
-  simultaneous: 3           # 1-20 simultaneous downloads
-  download_segments: 1      # 1-16 segments per file (multi-connection)
-  speed_limit: 0            # Total local aria2 MB/s (0 = unlimited)
-  max_retries: 3            # 0-20 retries for new downloads
-  retry_delay_seconds: 5    # 0-3600 seconds before retrying
-  skip_nfo_files: true      # Skip .nfo files silently
+  simultaneous: 3
+  download_segments: 1
+  speed_limit: 0
+  max_retries: 3
+  retry_delay_seconds: 5
+  skip_nfo_files: true
+  stalled_timeout_hours: 3
   default_destination: "/opt/download-manager/downloads"
   allowed_paths:
     - "/mnt"
     - "/opt/download-manager/downloads"
-
-auth:
-  jwt_secret: ""            # Auto-generated on first launch
-
-aria2:
-  rpc_port: 6800
-  rpc_secret: "auto-generated"
-
-webhooks:
-  enabled: false
-  url: ""
-  format: "generic"         # generic | discord | slack | telegram | gotify | ntfy
-  events:
-    - "download_complete"
-    - "download_failed"
-    - "package_complete"
-
-plex:
-  enabled: false
-  url: "http://127.0.0.1:32400"
-  token: ""                 # Stored server-side, never returned to the browser
-  last_refreshes: {}
 ```
 
-Most settings can be changed directly from the **Settings** page in the web interface.
+Important ranges and behavior:
 
----
+| Setting | Accepted value | Notes |
+|---|---|---|
+| `simultaneous` | `1` to `20` | Concurrent local downloads |
+| `download_segments` | `1` to `16` | Connections per file |
+| `speed_limit` | `0` or MB/s | Aggregate local aria2 limit; `0` is unlimited |
+| `max_retries` | `0` to `20` | Captured when a new download is created |
+| `retry_delay_seconds` | `0` to `3600` | Delay between attempts |
+| `stalled_timeout_hours` | `0` to `168` | No-progress timeout; `0` disables the watchdog |
 
-## Detailed Features
+Existing installations keep their configuration during installer updates. Missing keys are supplied by application defaults and saved when changed through the interface.
 
-### Torrent / Magnet Support
+## Paths and service
 
-Add torrents directly from the interface:
-- **Magnet link** — paste one or more magnet links (auto-detected in the main textarea)
-- **.torrent files** — upload one or many files via the modal with drag & drop
-- Any submission containing at least two valid sources is grouped automatically, including mixed direct links, magnets and `.torrent` files.
-- Package members never send individual completion notifications; one package notification is emitted after every member reaches a terminal state.
-- The torrent is sent to AllDebrid for debriding. If already cached, downloads start instantly. Otherwise, the "Active torrents" section shows real-time progress (speed, seeders).
-- Once ready, a package is automatically created with all files.
-- `.nfo` files are skipped silently by default, so they are not downloaded and do not appear as blocked or failed items.
+| Path | Purpose |
+|---|---|
+| `/opt/download-manager` | Application and Python virtual environment |
+| `/opt/download-manager/config/downloads.db` | SQLite database |
+| `/etc/download-manager/config.yml` | Runtime configuration and integration secrets |
+| `/var/log/download-manager` | aria2/application logs |
 
-### Package System
+Useful commands:
 
-Group multiple links into a single package (e.g., a complete season). The package shows global real-time progress (completed files, percentage, cumulative speed) and can be expanded to show each file individually.
+```bash
+systemctl status download-manager
+systemctl restart download-manager
+journalctl -u download-manager -f
+```
 
-### Multi-Segment Downloads
+Admin CLI:
 
-Each download can use up to 16 simultaneous connections to the server (`download_segments` setting). More segments = more speed, like JDownloader. Configurable in settings.
-
-### Speed Limit
-
-Throttle the global bandwidth of all downloads in MB/s. Useful to avoid saturating your connection. The limit is applied immediately via aria2.
-
-### Automatic Retry
-
-Each new download uses the retry count configured in Settings. The retry delay is also configurable, and the counter is visible in the interface.
-
-### Automatic History
-
-Completed or failed downloads are automatically moved to the "Completed" section. The download area only shows active / pending / paused files. When empty, it disappears.
-
-### Diagnostics
-
-The **Settings** page now includes a diagnostics panel with:
-- queue health and recent errors
-- aria2 runtime status
-- database table counts and download status distribution
-- git HEAD / dirty state for update checks
-
-### Fast Destination Input
-
-When adding links, packages or torrents, you can paste a destination path directly, for example `/mnt/media/Movies`, or use the folder browser button. The wide destination explorer provides account-synced favorites and recent destinations, folder search, breadcrumbs and drag-and-drop favorite ordering. Directory scans run outside FastAPI's event loop with a bounded cache and timeout so active downloads or slow mounts do not freeze the interface. On mobile, Favorites, Explorer and Recents become compact tabs.
-
-### Media Server Refresh
-
-Enable one media server in **Settings → Media server**:
-- **Plex** uses a Plex token and refreshes libraries through the Plex HTTP API.
-- **Jellyfin** uses an API key from the Jellyfin admin dashboard and refreshes selected libraries through the Jellyfin HTTP API.
-
-Only one media server is active at a time. The media tab displays the active server and lets you refresh each library manually after adding media.
-
-### Webhook Notifications
-
-Configure a webhook URL to receive notifications on events:
-
-The master switch is always visible in the Webhooks card header and saves immediately. URL, format and event changes have their own save button.
-- **Download completed** / **failed**
-- **Package completed**
-
-Supported formats: Discord (embed), Slack (block), Telegram (Markdown), Gotify, ntfy, Signal, or generic JSON. Built-in setup guides are provided for each service. Downloads inside a package do not send individual notifications; only the final package completion notification is sent.
-
-### Authentication and 2FA
-
-- Create an admin account on first launch
-- Add 2FA (TOTP) compatible with Google Authenticator, Authy, etc.
-- Rate limiting: 5 attempts in 15 min = IP blocked for 4h
-- Reset via `dm-cli.py reset-admin`
-
----
+```bash
+cd /opt/download-manager/backend
+/opt/download-manager/venv/bin/python dm-cli.py reset-admin
+/opt/download-manager/venv/bin/python dm-cli.py list-ips
+/opt/download-manager/venv/bin/python dm-cli.py unblock 1.2.3.4
+/opt/download-manager/venv/bin/python dm-cli.py unblock-all
+```
 
 ## Updates
 
-### From the interface (recommended)
+Use **Settings > Updates > Check for updates**. When a newer GitHub release is available, the interface shows its changelog, installs it, restarts Download Manager if required, and reloads the page.
 
-Go to **Settings** → **Updates** → **Check for updates**. If a new version is available, the changelog is displayed and you can update with one click. The page reloads automatically after restart.
-
-### From the command line
+For a manual update:
 
 ```bash
-cd /path/to/download-manager
-git pull
+cd /opt/download-manager
+git pull --ff-only
 sudo bash install.sh
 ```
 
-The installer detects existing installations and updates without overwriting your configuration.
+Back up `/etc/download-manager/config.yml` and `/opt/download-manager/config/downloads.db` before a manual recovery or migration.
 
----
+## Security notes
 
-## Uninstall
+- Authentication is mandatory; TOTP 2FA can be enabled per account.
+- Five failed login attempts within 15 minutes block the source IP for four hours.
+- JWTs and WebSockets require authentication. JWT sessions currently last seven days.
+- File operations are constrained to configured allowed paths.
+- Webhook targets are checked to reduce SSRF risk.
+- CORS is disabled by default. Configure explicit origins and trusted proxies when using a reverse proxy.
+- The service runs as `root` to support mounts and arbitrary configured destinations. Do not expose port `40320` directly to the public Internet; use a firewall and a properly configured HTTPS reverse proxy.
+
+## Troubleshooting
 
 ```bash
-sudo systemctl stop download-manager
-sudo systemctl disable download-manager
-sudo rm /etc/systemd/system/download-manager.service
-sudo systemctl daemon-reload
-sudo rm -rf /opt/download-manager
-sudo rm -rf /etc/download-manager
-sudo rm -rf /var/log/download-manager
+systemctl status download-manager
+journalctl -u download-manager -n 100 --no-pager
+tail -n 100 /var/log/download-manager/aria2.log
 ```
 
----
+If a destination is unavailable, verify the mount first and confirm that its path is included in `downloads.allowed_paths`. For speed-limit issues, use the status shown in Settings: it reports the value effectively read back from aria2, not the speed of AllDebrid's remote cache.
 
-## Tech Stack
+## Architecture
 
-| Component | Role |
-|---|---|
-| **FastAPI** | Backend API + WebSocket |
-| **aria2c** | Download engine |
-| **AllDebrid API** | Link debriding + torrents |
-| **Vanilla JS** | PWA frontend (no framework) |
-| **SQLite** | Local database |
-| **pyotp + qrcode** | 2FA / TOTP |
-| **python-jose** | JWT tokens |
-| **bcrypt** | Password hashing |
+Browser/PWA communicates with FastAPI over HTTP and authenticated WebSocket. FastAPI stores queue and account state in SQLite, delegates local transfers to aria2 RPC, and uses AllDebrid for debrid/torrent resolution. The frontend is framework-free Vanilla JS.
 
----
+This project is designed for a single self-hosted user. SQLite and the current service model are intentional for that scope.
+
+## Résumé français
+
+Download Manager centralise les liens directs, magnets et fichiers `.torrent` dans une interface web responsive. À partir de deux sources, un lot unique est créé automatiquement avec une progression globale et une seule notification finale. L’explorateur de destination synchronise favoris et récents côté serveur, et les intégrations Plex/Jellyfin permettent un rafraîchissement manuel ou automatique des bibliothèques lorsque toute la file est terminée.
+
+L’installation rapide, les chemins, commandes et réglages indiqués ci-dessus sont identiques pour l’interface française. La configuration courante se fait principalement depuis **Paramètres**.
 
 ## License
 
 MIT
-
----
-
-<details>
-<summary>🇫🇷 Version française</summary>
-
-# Download Manager
-
-Interface web de gestion de téléchargements avec support **AllDebrid**, conçue pour tourner sur des machines **Linux** (VM / LXC Proxmox, serveurs dédiés, VPS).
-
-Dernière version stable : `v1.11.0`
-
-## Fonctionnalités
-
-- **Interface web moderne** — thème clair/sombre, responsive mobile, temps réel via WebSocket
-- **PWA installable** — ajoutez l'app sur l'écran d'accueil de votre téléphone (Android / iOS)
-- **AllDebrid intégré** — débridage automatique des liens hébergeurs
-- **Support Torrent / Magnet** — upload d'un ou plusieurs fichiers `.torrent` ou liens magnet via AllDebrid
-- **Lots automatiques mixtes** — toute soumission d’au moins deux liens directs, magnets ou fichiers `.torrent` devient un seul paquet avec une notification finale
-- **Suggestions média plus propres** — un paquet terminé ne propose qu'un seul rafraîchissement Plex/Jellyfin par bibliothèque
-- **Rafraîchissement média automatique** — option Plex/Jellyfin qui s'exécute quand toute la file est terminée
-- **Nettoyage d'historique sécurisé** — vider l'historique supprime uniquement les lignes d'historique et conserve les fichiers téléchargés
-- **Filtre `.nfo` silencieux** — option activée par défaut pour ignorer les `.nfo` sans les afficher dans la file
-- **aria2 sous le capot** — téléchargements rapides, multi-segments, reprise automatique
-- **Multi-segments** — jusqu'à 16 connexions par fichier pour maximiser la vitesse
-- **Système de paquets** — groupez vos liens par saison, album, etc.
-- **Retry automatique** — 5 tentatives par défaut
-- **Watchdog des téléchargements bloqués** — expiration configurable sans progression et nettoyage sécurisé des fichiers partiels
-- **Historique automatique** — les téléchargements terminés passent dans l'historique
-- **Notifications webhook** — Discord, Slack, Telegram, Gotify, ntfy, Signal, avec une seule notification quand un paquet est terminé
-- **Explorateur de destination synchronisé** — favoris persistants et réordonnables, destinations récentes, recherche et onglets mobiles
-- **Limite globale vérifiée** — la valeur réellement appliquée par aria2 est affichée, indépendamment du cache distant AllDebrid
-- **Rafraîchissement média** — configurez Plex ou Jellyfin dans les Paramètres, puis rafraîchissez les bibliothèques depuis l'onglet média
-- **Destination rapide** — collez directement un chemin `/mnt/...` ou parcourez les dossiers
-- **Authentification sécurisée** — login avec 2FA (OTP), rate limiting, blocage IP
-- **Mise à jour intégrée** — depuis la page Paramètres
-- **Diagnostics runtime** — santé de la queue, d'aria2, de la base et de git visibles dans les Paramètres
-- **Multi-langue** — anglais et français, changeable dans les Paramètres
-
-## Diagnostics
-
-La page **Paramètres** inclut maintenant un panneau de diagnostics avec :
-- la santé de la queue et les erreurs récentes
-- l'état runtime d'aria2
-- les compteurs de la base de données et la répartition des statuts
-- l'état git HEAD / dirty pour les vérifications de mise à jour
-
-## Destination rapide
-
-Lors de l'ajout de liens, paquets ou torrents, vous pouvez coller directement un chemin de destination, par exemple `/mnt/media/Films`, ou utiliser le bouton de navigation. Le nouvel explorateur large propose des favoris et récents synchronisés avec le compte, une recherche, un fil d’Ariane et le glisser-déposer. Les accès disque sont exécutés hors de la boucle FastAPI avec cache et délai maximal afin qu’un téléchargement ou montage lent ne bloque plus l’interface. Sur mobile, Favoris, Explorateur et Récents sont présentés sous forme d’onglets.
-
-## Installation rapide
-
-> **Pré-requis** : Ubuntu 20.04+ ou Debian 11+. Accès root.
-
-```bash
-bash <(curl -fsSL https://raw.githubusercontent.com/Vayaris/download-manager/main/install.sh)
-```
-
-## Utilisation
-
-Après installation, l'interface est accessible sur `http://<IP>:40320`.
-
-### Commandes utiles
-
-| Commande | Description |
-|---|---|
-| `systemctl status download-manager` | Statut du service |
-| `systemctl restart download-manager` | Redémarrer |
-| `journalctl -u download-manager -f` | Logs en temps réel |
-| `nano /etc/download-manager/config.yml` | Configuration |
-
-## Licence
-
-MIT
-
-</details>
