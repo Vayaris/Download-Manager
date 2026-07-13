@@ -116,6 +116,7 @@ class DownloadWorkspaceTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("column-count: 3", modern_styles)
         self.assertIn("#account-modal .modal-box", modern_styles)
         self.assertIn('id="acct-ui-style-select"', account)
+        self.assertIn("Minimal premium (Beta)", account)
         self.assertIn('localStorage.setItem("dm_ui_style", next)', theme)
 
         for page in ("index.html", "settings.html", "plex.html"):

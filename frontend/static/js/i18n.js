@@ -174,9 +174,9 @@ const TRANSLATIONS = {
     // ---- Account ----
     acct_title: "My account",
     acct_appearance_title: "Interface style",
-    acct_appearance_hint: "This preference is saved on this device. The classic interface remains available at any time.",
+    acct_appearance_hint: "The Minimal premium interface is a beta preview saved on this device. The classic interface remains available at any time.",
     acct_ui_classic: "Classic",
-    acct_ui_modern: "Minimal premium",
+    acct_ui_modern: "Minimal premium (Beta)",
     acct_role: "Administrator",
     acct_change_password: "Change password",
     acct_password_placeholder: "New password (min. 6 characters)",
@@ -830,9 +830,9 @@ const TRANSLATIONS = {
     // ---- Account ----
     acct_title: "Mon compte",
     acct_appearance_title: "Style de l’interface",
-    acct_appearance_hint: "Ce choix est enregistré sur cet appareil. L’interface classique reste disponible à tout moment.",
+    acct_appearance_hint: "L’interface Minimal premium est proposée en bêta et ce choix est enregistré sur cet appareil. L’interface classique reste disponible à tout moment.",
     acct_ui_classic: "Classique",
-    acct_ui_modern: "Minimal premium",
+    acct_ui_modern: "Minimal premium (Bêta)",
     acct_role: "Administrateur",
     acct_change_password: "Changer le mot de passe",
     acct_password_placeholder: "Nouveau mot de passe (min. 6 caractères)",

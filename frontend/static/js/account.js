@@ -104,9 +104,9 @@
         <div class="form-group">
           <select id="acct-ui-style-select" class="form-input" onchange="setUIStyle(this.value)">
             <option value="classic" data-i18n="acct_ui_classic">Classic</option>
-            <option value="modern" data-i18n="acct_ui_modern">Minimal premium</option>
+            <option value="modern" data-i18n="acct_ui_modern">Minimal premium (Beta)</option>
           </select>
-          <p class="form-hint" data-i18n="acct_appearance_hint">This preference is saved on this device. The classic interface remains available at any time.</p>
+          <p class="form-hint" data-i18n="acct_appearance_hint">The Minimal premium interface is a beta preview saved on this device. The classic interface remains available at any time.</p>
         </div>
       </div>
 
