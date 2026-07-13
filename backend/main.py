@@ -179,4 +179,7 @@ if __name__ == "__main__":
         host=cfg["server"]["host"],
         port=cfg["server"]["port"],
         reload=False,
+        # WebSocket authentication currently uses a query parameter; access
+        # logs would persist the JWT in journald.
+        access_log=False,
     )

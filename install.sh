@@ -236,7 +236,7 @@ Environment=DM_CONFIG=${CONFIG_DIR}/config.yml
 Environment=DM_DB=${INSTALL_DIR}/config/downloads.db
 
 ExecStart=${INSTALL_DIR}/start.sh
-ExecStopPost=/bin/bash -c 'pkill -f "aria2c.*rpc-listen-port" 2>/dev/null || true'
+ExecStopPost=-/usr/bin/pkill -f ^aria2c.*--rpc-listen-port=
 
 Restart=on-failure
 RestartSec=5
