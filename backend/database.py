@@ -37,6 +37,8 @@ async def init_db():
                 name        TEXT NOT NULL,
                 destination TEXT NOT NULL,
                 status      TEXT DEFAULT 'active',
+                source_count INTEGER DEFAULT 0,
+                failed_sources INTEGER DEFAULT 0,
                 created_at  TEXT,
                 updated_at  TEXT
             )
@@ -86,6 +88,22 @@ async def init_db():
         """)
 
         await db.execute("""
+            CREATE TABLE IF NOT EXISTS filebrowser_places (
+                username     TEXT NOT NULL,
+                path         TEXT NOT NULL,
+                kind         TEXT NOT NULL CHECK(kind IN ('favorite', 'recent')),
+                position     INTEGER DEFAULT 0,
+                last_used_at TEXT,
+                PRIMARY KEY (username, path, kind)
+            )
+        """)
+
+        await db.execute("""
+            CREATE INDEX IF NOT EXISTS idx_filebrowser_places_user_kind
+            ON filebrowser_places (username, kind, position, last_used_at)
+        """)
+
+        await db.execute("""
             CREATE TABLE IF NOT EXISTS torrents (
                 id              TEXT PRIMARY KEY,
                 alldebrid_id    INTEGER NOT NULL,
@@ -118,6 +136,12 @@ async def init_db():
             await db.execute(
                 "UPDATE downloads SET last_progress_at = COALESCE(updated_at, created_at)"
             )
+
+        package_columns = [row[1] for row in await (await db.execute("PRAGMA table_info(packages)")).fetchall()]
+        if "source_count" not in package_columns:
+            await db.execute("ALTER TABLE packages ADD COLUMN source_count INTEGER DEFAULT 0")
+        if "failed_sources" not in package_columns:
+            await db.execute("ALTER TABLE packages ADD COLUMN failed_sources INTEGER DEFAULT 0")
 
         torrent_columns = [row[1] for row in await (await db.execute("PRAGMA table_info(torrents)")).fetchall()]
         if "package_id" not in torrent_columns:

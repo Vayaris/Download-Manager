@@ -1,6 +1,8 @@
+import uuid
+from datetime import datetime, timezone
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, HTTPException, Request, Query
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Request, UploadFile
 from typing import List, Optional
 
 import aiosqlite
@@ -9,6 +11,7 @@ from database import DB_PATH
 from models import AddDownloadsRequest, AddPackageRequest, BulkActionRequest, ReorderRequest
 from auth import get_current_user
 from config import get_config
+from services.alldebrid import alldebrid
 from utils import validate_destination as _validate_destination
 
 router = APIRouter()
@@ -38,6 +41,148 @@ async def add_downloads(body: AddDownloadsRequest, request: Request, _=Depends(g
     _validate_destination(body.destination)
     ids = await _qm(request).add_downloads(urls, body.destination)
     return {"added": len(ids), "ids": ids}
+
+
+@router.post("/batch")
+async def add_automatic_batch(
+    request: Request,
+    links: str = Form(""),
+    destination: str = Form(...),
+    package_name: str = Form(""),
+    files: Optional[List[UploadFile]] = File(None),
+    _=Depends(get_current_user),
+):
+    """Accept direct links, magnets and torrent files as one submission."""
+    _validate_destination(destination)
+    qm = _qm(request)
+
+    normalized_links = []
+    seen = set()
+    for raw in links.splitlines():
+        value = raw.strip()
+        if value and value not in seen:
+            seen.add(value)
+            normalized_links.append(value)
+
+    direct_links = [value for value in normalized_links if not value.lower().startswith("magnet:")]
+    magnet_links = [value for value in normalized_links if value.lower().startswith("magnet:")]
+    torrent_files = list(files or [])
+    files_data = []
+    for file in torrent_files:
+        filename = (file.filename or "").strip()
+        if not filename.lower().endswith(".torrent"):
+            raise HTTPException(status_code=400, detail=".torrent files required")
+        content = await file.read()
+        if len(content) > 10 * 1024 * 1024:
+            raise HTTPException(status_code=400, detail=f"{filename} is too large (max 10MB)")
+        files_data.append((filename, content))
+
+    source_count = len(normalized_links) + len(files_data)
+    if source_count == 0:
+        raise HTTPException(status_code=400, detail="Add at least one link or .torrent file")
+
+    use_package = source_count >= 2
+    safe_package_name = package_name.strip()[:160] or f"Batch - {datetime.now().strftime('%Y-%m-%d %H:%M')}"
+    package_id = None
+    if use_package:
+        package_id = await qm.create_package(
+            safe_package_name,
+            destination,
+            status="assembling",
+            source_count=source_count,
+        )
+
+    uploaded = []
+    failed_sources = []
+    try:
+        if magnet_links:
+            results = await alldebrid.magnet_upload(magnet_links)
+            uploaded.extend(result for result in results if not result.get("error"))
+            failed_sources.extend(
+                (result.get("name") or "Magnet", str(result.get("error")))
+                for result in results if result.get("error")
+            )
+    except Exception as exc:
+        failed_sources.extend(("Magnet", str(exc)) for _ in magnet_links)
+
+    try:
+        if files_data:
+            results = await alldebrid.magnet_upload_files(files_data)
+            uploaded.extend(result for result in results if not result.get("error"))
+            failed_sources.extend(
+                (result.get("name") or "Torrent", str(result.get("error")))
+                for result in results if result.get("error")
+            )
+    except Exception as exc:
+        failed_sources.extend((name, str(exc)) for name, _ in files_data)
+
+    if not use_package and (magnet_links or files_data) and not uploaded:
+        raise HTTPException(status_code=502, detail=failed_sources[0][1] if failed_sources else "Torrent rejected by AllDebrid")
+
+    direct_ids = await qm.add_downloads(direct_links, destination, package_id=package_id)
+    added_torrents = []
+    now = datetime.now(timezone.utc).isoformat()
+
+    # Reuse the torrent import primitives so delayed and instantly-ready torrents
+    # have exactly the same package behavior.
+    from routers.torrents import (
+        _insert_torrent,
+        _process_ready_into_package,
+        _process_ready_without_package,
+    )
+
+    async with aiosqlite.connect(str(DB_PATH)) as db:
+        for magnet in uploaded:
+            name = magnet.get("name", "Torrent")
+            if magnet.get("ready", False):
+                try:
+                    imported = await (
+                        _process_ready_into_package(magnet["id"], destination, package_id, qm)
+                        if package_id
+                        else _process_ready_without_package(magnet["id"], destination, qm)
+                    )
+                    if imported == 0:
+                        failed_sources.append((name, "AllDebrid returned no downloadable files"))
+                    added_torrents.append({
+                        "id": magnet["id"], "name": name,
+                        "ready": True, "imported": imported,
+                    })
+                except Exception:
+                    added_torrents.append(
+                        await _insert_torrent(db, magnet, destination, now, package_id=package_id)
+                    )
+            else:
+                added_torrents.append(
+                    await _insert_torrent(db, magnet, destination, now, package_id=package_id)
+                )
+
+        if package_id and failed_sources:
+            for name, error in failed_sources:
+                await db.execute(
+                    """INSERT OR REPLACE INTO history
+                       (id, name, url, destination, size, status, error_msg,
+                        package_name, created_at, completed_at)
+                       VALUES (?, ?, '', ?, 0, 'failed', ?, ?, ?, ?)""",
+                    (
+                        str(uuid.uuid4()), name, destination,
+                        error[:400], safe_package_name, now, now,
+                    ),
+                )
+        await db.commit()
+
+    if package_id:
+        await qm.activate_package(package_id, failed_sources=len(failed_sources))
+
+    added = len(direct_ids) + len(added_torrents)
+    response = {
+        "added": added,
+        "download_ids": direct_ids,
+        "torrents": added_torrents,
+        "failed": len(failed_sources),
+    }
+    if package_id:
+        response.update({"package_id": package_id, "package_name": safe_package_name})
+    return response
 
 
 @router.post("/{download_id}/pause")

@@ -99,7 +99,7 @@ async function saveDownloadSettings() {
   document.getElementById("stalled-timeout-input").value = stalledTimeout;
 
   try {
-    await API.put("/api/settings/", {
+    const result = await API.put("/api/settings/", {
       simultaneous_downloads: simultaneous,
       download_segments: segments,
       speed_limit: speedLimit,
@@ -109,6 +109,7 @@ async function saveDownloadSettings() {
       skip_nfo_files: skipNfo,
       default_destination: dest,
     });
+    if (result.speed_limit) renderSpeedLimitStatus(result.speed_limit);
     showToast(t("settings_downloads_saved"), "ok");
   } catch (e) {
     showToast(t("error_prefix") + e.message, "error");
@@ -270,7 +271,56 @@ function toggleKeyVisibility() {
 function toggleWebhookFields() {
   const enabled = document.getElementById("webhook-enabled").checked;
   document.getElementById("webhook-fields").classList.toggle("hidden", !enabled);
+  const badge = document.getElementById("webhook-state-badge");
+  if (badge) {
+    badge.classList.toggle("on", enabled);
+    badge.classList.toggle("off", !enabled);
+    badge.textContent = t(enabled ? "settings_webhook_enabled_state" : "settings_webhook_disabled");
+  }
   if (enabled) updateWebhookPreset();
+}
+
+async function setWebhookEnabled(enabled) {
+  const input = document.getElementById("webhook-enabled");
+  input.disabled = true;
+  toggleWebhookFields();
+  try {
+    await API.put("/api/settings/", { webhook_enabled: enabled });
+    showToast(t(enabled ? "settings_webhook_enabled_saved" : "settings_webhook_disabled_saved"), "ok");
+  } catch (error) {
+    input.checked = !enabled;
+    toggleWebhookFields();
+    showToast(t("error_prefix") + error.message, "error");
+  } finally {
+    input.disabled = false;
+  }
+}
+
+function renderSpeedLimitStatus(status) {
+  const element = document.getElementById("speed-limit-status");
+  if (!element || !status) return;
+  if (status.applied) {
+    element.dataset.state = "ok";
+    element.textContent = status.configured_mb_s > 0
+      ? t("settings_speed_applied", { n: status.configured_mb_s })
+      : t("settings_speed_unlimited_applied");
+    return;
+  }
+  element.dataset.state = "warning";
+  if (status.effective_bytes_s != null) {
+    const effective = (status.effective_bytes_s / 1024 / 1024).toFixed(1);
+    element.textContent = t("settings_speed_mismatch", { n: effective });
+  } else {
+    element.textContent = t("settings_speed_pending_restart");
+  }
+}
+
+async function loadSpeedLimitStatus() {
+  try {
+    renderSpeedLimitStatus(await API.get("/api/settings/speed-limit/status"));
+  } catch {
+    renderSpeedLimitStatus({ applied: false, effective_bytes_s: null });
+  }
 }
 
 const WEBHOOK_PRESETS = {
@@ -822,6 +872,15 @@ async function saveWebhookSettings() {
   });
 }
 
+async function saveWebhookDetails() {
+  try {
+    await saveWebhookSettings();
+    showToast(t("settings_webhook_saved"), "ok");
+  } catch (error) {
+    showToast(t("error_prefix") + error.message, "error");
+  }
+}
+
 // ---- Save all settings ----
 
 async function saveSettings() {
@@ -1258,6 +1317,7 @@ async function bootSettings() {
     document.getElementById("simultaneous-input").value = cfg.simultaneous_downloads || 3;
     document.getElementById("segments-input").value = cfg.download_segments || 1;
     document.getElementById("speed-limit").value = cfg.speed_limit || 0;
+    loadSpeedLimitStatus();
     document.getElementById("max-retries-input").value = cfg.max_retries ?? 3;
     document.getElementById("retry-delay-input").value = cfg.retry_delay_seconds ?? 5;
     document.getElementById("stalled-timeout-input").value = cfg.stalled_timeout_hours ?? 3;

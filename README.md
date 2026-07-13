@@ -2,7 +2,7 @@
 
 A web-based download manager with **AllDebrid** support, designed to run on **Linux** machines (Proxmox VM/LXC, dedicated servers, VPS).
 
-Latest stable release: `v1.10.22`
+Latest stable release: `v1.11.0`
 
 ![Python](https://img.shields.io/badge/Python-3.8+-3776AB?logo=python&logoColor=white)
 ![FastAPI](https://img.shields.io/badge/FastAPI-009688?logo=fastapi&logoColor=white)
@@ -19,7 +19,7 @@ Latest stable release: `v1.10.22`
 - **Optimized mobile view** — compact download cards, touch navigation, bottom navigation bar
 - **AllDebrid integration** — automatic link debriding plus account hoster list in Settings
 - **Torrent / Magnet support** — upload one or many `.torrent` files, or paste magnet links via AllDebrid, with automatic polling and download start
-- **Batch torrent packages** — files and magnets added together from the torrent modal are grouped into one package
+- **Automatic mixed packages** — any submission containing two or more direct links, magnets or `.torrent` files becomes one package with one final notification
 - **Smarter media suggestions** — completed packages only suggest one Plex/Jellyfin library refresh per library
 - **Automatic media refresh** — optional Plex/Jellyfin auto-refresh runs when the whole queue is finished
 - **Safe history cleanup** — clearing history removes history rows only and keeps downloaded files on disk
@@ -33,7 +33,8 @@ Latest stable release: `v1.10.22`
 - **Automatic history** — completed/failed downloads are automatically moved to history
 - **Webhook notifications** — Discord, Slack, Telegram, Gotify, ntfy, Signal, or generic JSON, with one notification when a package finishes
 - **File browser** — select and create folders directly from the interface
-- **Fast destination input** — paste `/mnt/...` paths directly or browse folders
+- **Account-synced destination explorer** — wide Windows-style browser with persistent favorites, drag-and-drop ordering, recent destinations, search and mobile tabs
+- **Verified global speed limit** — aria2 confirms the effective aggregate limit; AllDebrid remote caching is identified separately
 - **Secure authentication** — login/password with 2FA (6-digit OTP), rate limiting, IP blocking
 - **Built-in updates** — check and install new versions from the Settings page, with changelog
 - **Runtime diagnostics** — queue, aria2, database and git health visible from Settings
@@ -149,7 +150,7 @@ alldebrid:
 downloads:
   simultaneous: 3           # 1-20 simultaneous downloads
   download_segments: 1      # 1-16 segments per file (multi-connection)
-  speed_limit: 0            # MB/s (0 = unlimited)
+  speed_limit: 0            # Total local aria2 MB/s (0 = unlimited)
   max_retries: 3            # 0-20 retries for new downloads
   retry_delay_seconds: 5    # 0-3600 seconds before retrying
   skip_nfo_files: true      # Skip .nfo files silently
@@ -192,7 +193,8 @@ Most settings can be changed directly from the **Settings** page in the web inte
 Add torrents directly from the interface:
 - **Magnet link** — paste one or more magnet links (auto-detected in the main textarea)
 - **.torrent files** — upload one or many files via the modal with drag & drop
-- When multiple `.torrent` files or magnets are submitted together from the torrent modal, they are grouped into one automatic package.
+- Any submission containing at least two valid sources is grouped automatically, including mixed direct links, magnets and `.torrent` files.
+- Package members never send individual completion notifications; one package notification is emitted after every member reaches a terminal state.
 - The torrent is sent to AllDebrid for debriding. If already cached, downloads start instantly. Otherwise, the "Active torrents" section shows real-time progress (speed, seeders).
 - Once ready, a package is automatically created with all files.
 - `.nfo` files are skipped silently by default, so they are not downloaded and do not appear as blocked or failed items.
@@ -227,7 +229,7 @@ The **Settings** page now includes a diagnostics panel with:
 
 ### Fast Destination Input
 
-When adding links, packages or torrents, you can paste a destination path directly, for example `/mnt/media/Movies`, or use the folder browser button. The folder browser uses a lightweight directory listing so it stays responsive while downloads are writing files.
+When adding links, packages or torrents, you can paste a destination path directly, for example `/mnt/media/Movies`, or use the folder browser button. The wide destination explorer provides account-synced favorites and recent destinations, folder search, breadcrumbs and drag-and-drop favorite ordering. Directory scans run outside FastAPI's event loop with a bounded cache and timeout so active downloads or slow mounts do not freeze the interface. On mobile, Favorites, Explorer and Recents become compact tabs.
 
 ### Media Server Refresh
 
@@ -240,6 +242,8 @@ Only one media server is active at a time. The media tab displays the active ser
 ### Webhook Notifications
 
 Configure a webhook URL to receive notifications on events:
+
+The master switch is always visible in the Webhooks card header and saves immediately. URL, format and event changes have their own save button.
 - **Download completed** / **failed**
 - **Package completed**
 
@@ -314,7 +318,7 @@ MIT
 
 Interface web de gestion de téléchargements avec support **AllDebrid**, conçue pour tourner sur des machines **Linux** (VM / LXC Proxmox, serveurs dédiés, VPS).
 
-Dernière version stable : `v1.10.22`
+Dernière version stable : `v1.11.0`
 
 ## Fonctionnalités
 
@@ -322,7 +326,7 @@ Dernière version stable : `v1.10.22`
 - **PWA installable** — ajoutez l'app sur l'écran d'accueil de votre téléphone (Android / iOS)
 - **AllDebrid intégré** — débridage automatique des liens hébergeurs
 - **Support Torrent / Magnet** — upload d'un ou plusieurs fichiers `.torrent` ou liens magnet via AllDebrid
-- **Lots torrent en paquet** — les fichiers et magnets ajoutés ensemble depuis la modale torrent sont regroupés dans un seul paquet
+- **Lots automatiques mixtes** — toute soumission d’au moins deux liens directs, magnets ou fichiers `.torrent` devient un seul paquet avec une notification finale
 - **Suggestions média plus propres** — un paquet terminé ne propose qu'un seul rafraîchissement Plex/Jellyfin par bibliothèque
 - **Rafraîchissement média automatique** — option Plex/Jellyfin qui s'exécute quand toute la file est terminée
 - **Nettoyage d'historique sécurisé** — vider l'historique supprime uniquement les lignes d'historique et conserve les fichiers téléchargés
@@ -334,6 +338,8 @@ Dernière version stable : `v1.10.22`
 - **Watchdog des téléchargements bloqués** — expiration configurable sans progression et nettoyage sécurisé des fichiers partiels
 - **Historique automatique** — les téléchargements terminés passent dans l'historique
 - **Notifications webhook** — Discord, Slack, Telegram, Gotify, ntfy, Signal, avec une seule notification quand un paquet est terminé
+- **Explorateur de destination synchronisé** — favoris persistants et réordonnables, destinations récentes, recherche et onglets mobiles
+- **Limite globale vérifiée** — la valeur réellement appliquée par aria2 est affichée, indépendamment du cache distant AllDebrid
 - **Rafraîchissement média** — configurez Plex ou Jellyfin dans les Paramètres, puis rafraîchissez les bibliothèques depuis l'onglet média
 - **Destination rapide** — collez directement un chemin `/mnt/...` ou parcourez les dossiers
 - **Authentification sécurisée** — login avec 2FA (OTP), rate limiting, blocage IP
@@ -351,7 +357,7 @@ La page **Paramètres** inclut maintenant un panneau de diagnostics avec :
 
 ## Destination rapide
 
-Lors de l'ajout de liens, paquets ou torrents, vous pouvez coller directement un chemin de destination, par exemple `/mnt/media/Films`, ou utiliser le bouton de navigation. Le navigateur de dossiers utilise un listing léger pour rester réactif pendant qu'un téléchargement écrit des fichiers.
+Lors de l'ajout de liens, paquets ou torrents, vous pouvez coller directement un chemin de destination, par exemple `/mnt/media/Films`, ou utiliser le bouton de navigation. Le nouvel explorateur large propose des favoris et récents synchronisés avec le compte, une recherche, un fil d’Ariane et le glisser-déposer. Les accès disque sont exécutés hors de la boucle FastAPI avec cache et délai maximal afin qu’un téléchargement ou montage lent ne bloque plus l’interface. Sur mobile, Favoris, Explorateur et Récents sont présentés sous forme d’onglets.
 
 ## Installation rapide
 

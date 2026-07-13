@@ -99,6 +99,9 @@ class Aria2Service:
     async def change_global_option(self, options: Dict) -> str:
         return await self._call("aria2.changeGlobalOption", [options])
 
+    async def get_global_option(self) -> Dict:
+        return await self._call("aria2.getGlobalOption")
+
     async def is_alive(self) -> bool:
         try:
             await self._call("aria2.getVersion")

@@ -69,6 +69,14 @@ class MkdirRequest(BaseModel):
     name: str
 
 
+class FileBrowserPathRequest(BaseModel):
+    path: str
+
+
+class FileBrowserReorderRequest(BaseModel):
+    paths: List[str]
+
+
 class MagnetUploadRequest(BaseModel):
     magnets: List[str]
     destination: str

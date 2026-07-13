@@ -749,11 +749,7 @@ class QueueManager:
                     if row["package_id"]:
                         await self.add_downloads(links, row["destination"], package_id=row["package_id"])
                     else:
-                        await self.add_package(
-                            row["name"] or "Torrent",
-                            links,
-                            row["destination"],
-                        )
+                        await self.add_downloads(links, row["destination"])
                     await db.execute("DELETE FROM torrents WHERE id = ?", (row["id"],))
                     await db.commit()
                     if row["package_id"]:
@@ -835,6 +831,11 @@ class QueueManager:
             self._media_auto_refresh_pending = True
 
     async def _check_package_complete(self, db, package_id: str, now: str):
+        pcur = await db.execute("SELECT * FROM packages WHERE id = ?", (package_id,))
+        pkg = await pcur.fetchone()
+        if not pkg or pkg["status"] != "active":
+            return
+
         cursor = await db.execute(
             "SELECT COUNT(*) FROM torrents WHERE package_id = ? AND status IN ('processing', 'ready_importing')",
             (package_id,),
@@ -866,11 +867,8 @@ class QueueManager:
                 (package_id,),
             )
             (failed_torrents,) = await cursor.fetchone()
-            pkg_status = "complete" if failed_downloads == 0 and failed_torrents == 0 else "partial"
-
-            # Fetch package info before deleting (needed for webhook)
-            pcur = await db.execute("SELECT * FROM packages WHERE id = ?", (package_id,))
-            pkg = await pcur.fetchone()
+            failed_sources = pkg["failed_sources"] or 0
+            pkg_status = "complete" if failed_downloads == 0 and failed_torrents == 0 and failed_sources == 0 else "partial"
 
             # Remove all package downloads from active table
             await db.execute("DELETE FROM downloads WHERE package_id = ?", (package_id,))
@@ -880,7 +878,7 @@ class QueueManager:
             await db.commit()
 
             # Webhook
-            if pkg and (total_downloads > 0 or failed_torrents > 0):
+            if total_downloads > 0 or failed_torrents > 0 or failed_sources > 0:
                 asyncio.create_task(send_webhook("package_complete", {
                     "name": pkg["name"], "package_name": pkg["name"],
                     "destination": pkg["destination"], "status": pkg_status,
@@ -936,21 +934,41 @@ class QueueManager:
 
         return ids
 
-    async def create_package(self, name: str, destination: str) -> str:
+    async def create_package(
+        self,
+        name: str,
+        destination: str,
+        status: str = "active",
+        source_count: int = 0,
+    ) -> str:
         now = datetime.now(timezone.utc).isoformat()
         pkg_id = str(uuid.uuid4())
 
         async with aiosqlite.connect(str(DB_PATH)) as db:
             await db.execute(
-                "INSERT INTO packages (id, name, destination, status, created_at, updated_at) VALUES (?, ?, ?, 'active', ?, ?)",
-                (pkg_id, name, destination, now, now),
+                """INSERT INTO packages
+                   (id, name, destination, status, source_count, failed_sources, created_at, updated_at)
+                   VALUES (?, ?, ?, ?, ?, 0, ?, ?)""",
+                (pkg_id, name, destination, status, source_count, now, now),
             )
             await db.commit()
 
         return pkg_id
 
+    async def activate_package(self, package_id: str, failed_sources: int = 0):
+        now = datetime.now(timezone.utc).isoformat()
+        async with aiosqlite.connect(str(DB_PATH)) as db:
+            db.row_factory = aiosqlite.Row
+            await db.execute(
+                """UPDATE packages SET status = 'active', failed_sources = ?, updated_at = ?
+                   WHERE id = ? AND status = 'assembling'""",
+                (max(0, failed_sources), now, package_id),
+            )
+            await db.commit()
+            await self._check_package_complete(db, package_id, now)
+
     async def add_package(self, name: str, urls: list, destination: str) -> dict:
-        pkg_id = await self.create_package(name, destination)
+        pkg_id = await self.create_package(name, destination, source_count=len(urls))
         ids = await self.add_downloads(urls, destination, package_id=pkg_id)
         return {"package_id": pkg_id, "download_ids": ids}
 

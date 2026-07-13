@@ -11,7 +11,7 @@
   <link rel="apple-touch-icon" href="/static/icons/icon-192.svg">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link rel="stylesheet" href="/static/css/style.css?v=47">
+  <link rel="stylesheet" href="/static/css/style.css?v=48">
   <script>
     (function() {
       var t = localStorage.getItem('dm_theme') || 'light';
@@ -24,7 +24,7 @@
 <body>
 
 <!-- ==================== FILE BROWSER MODAL ==================== -->
-<div id="filebrowser-modal" class="modal-overlay hidden">
+<div id="filebrowser-modal" class="modal-overlay hidden" data-fb-panel="explorer">
   <div class="modal-box fb-box">
     <div class="modal-header">
       <div class="modal-header-title">
@@ -35,24 +35,44 @@
         <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
       </button>
     </div>
-    <div id="fb-breadcrumbs" class="fb-breadcrumbs"></div>
-    <div id="fb-toolbar" class="fb-toolbar">
-      <button class="btn btn-sm" onclick="showMkdirInput()">
-        <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-        <span data-i18n="fb_new_folder">New folder</span>
-      </button>
-      <div id="mkdir-input-wrap" class="mkdir-wrap hidden">
-        <input type="text" id="mkdir-name" class="form-input form-input-sm" placeholder="Folder name..." data-i18n-placeholder="fb_folder_name_placeholder" autocomplete="off" autocorrect="off" autocapitalize="none" spellcheck="false" dir="ltr">
-        <button class="btn btn-primary btn-sm" onclick="createFolder()" data-i18n="fb_create">Create</button>
-        <button class="btn btn-sm" onclick="hideMkdirInput()" data-i18n="btn_cancel">Cancel</button>
-      </div>
+    <div class="fb-mobile-tabs">
+      <button type="button" data-fb-panel-button="favorites" onclick="FileBrowser.setMobilePanel('favorites')" data-i18n="fb_favorites">Favorites</button>
+      <button type="button" class="active" data-fb-panel-button="explorer" onclick="FileBrowser.setMobilePanel('explorer')" data-i18n="fb_explorer">Explorer</button>
+      <button type="button" data-fb-panel-button="recents" onclick="FileBrowser.setMobilePanel('recents')" data-i18n="fb_recent_paths">Recent</button>
     </div>
-    <div id="fb-history" class="fb-history hidden">
-      <div class="fb-history-title" data-i18n="fb_recent_paths">Recent</div>
-      <div id="fb-history-list" class="fb-history-list"></div>
-    </div>
-    <div id="fb-list" class="fb-list">
-      <div class="fb-loading" data-i18n="fb_loading">Loading...</div>
+    <div class="fb-layout">
+      <aside class="fb-side fb-favorites-panel">
+        <div class="fb-side-title"><span data-i18n="fb_favorites">Favorites</span><small data-i18n="fb_drag_hint">Drag to reorder</small></div>
+        <div id="fb-favorites-list" class="fb-places-list"></div>
+      </aside>
+      <main class="fb-explorer-panel">
+        <div class="fb-address-row">
+          <div id="fb-breadcrumbs" class="fb-breadcrumbs"></div>
+          <button type="button" id="fb-current-favorite" class="fb-icon-btn" onclick="FileBrowser.toggleCurrentFavorite()" title="Favorite">☆</button>
+          <button type="button" class="fb-icon-btn" onclick="FileBrowser.refresh()" data-i18n-title="fb_refresh" title="Refresh">↻</button>
+        </div>
+        <div class="fb-path-row">
+          <input type="text" id="fb-path-input" class="form-input" placeholder="/mnt/media/..." autocomplete="off" onkeydown="if(event.key==='Enter'){event.preventDefault();FileBrowser.goToPath()}">
+          <button type="button" class="btn btn-sm" onclick="FileBrowser.goToPath()" data-i18n="fb_go">Go</button>
+        </div>
+        <div id="fb-toolbar" class="fb-toolbar">
+          <input type="search" id="fb-search" class="form-input form-input-sm fb-search" oninput="FileBrowser.filter(this.value)" data-i18n-placeholder="fb_search_placeholder" placeholder="Search folders...">
+          <button type="button" class="btn btn-sm" onclick="showMkdirInput()">
+            <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+            <span data-i18n="fb_new_folder">New folder</span>
+          </button>
+        </div>
+        <div id="mkdir-input-wrap" class="mkdir-wrap fb-mkdir-row hidden">
+          <input type="text" id="mkdir-name" class="form-input form-input-sm" placeholder="Folder name..." data-i18n-placeholder="fb_folder_name_placeholder" autocomplete="off" autocorrect="off" autocapitalize="none" spellcheck="false" dir="ltr">
+          <button type="button" class="btn btn-primary btn-sm" onclick="createFolder()" data-i18n="fb_create">Create</button>
+          <button type="button" class="btn btn-sm" onclick="hideMkdirInput()" data-i18n="btn_cancel">Cancel</button>
+        </div>
+        <div id="fb-list" class="fb-list"><div class="fb-loading" data-i18n="fb_loading">Loading...</div></div>
+      </main>
+      <aside class="fb-side fb-recents-panel">
+        <div class="fb-side-title"><span data-i18n="fb_recent_paths">Recent</span><small data-i18n="fb_recent_destinations">Last selected folders</small></div>
+        <div id="fb-recents-list" class="fb-places-list"></div>
+      </aside>
     </div>
     <div class="modal-footer">
       <div id="fb-current-path" class="selected-path-display">
@@ -61,7 +81,7 @@
       </div>
       <div class="modal-actions">
         <button class="btn" onclick="closeFilerBrowser()" data-i18n="btn_cancel">Cancel</button>
-        <button class="btn btn-primary" onclick="selectCurrentPath()" data-i18n="fb_select_folder">Select this folder</button>
+        <button id="fb-select-button" class="btn btn-primary" onclick="selectCurrentPath()" data-i18n="fb_select_folder">Select this folder</button>
       </div>
     </div>
   </div>
@@ -229,6 +249,8 @@
           <input type="number" id="speed-limit" class="form-input" style="max-width:100px" placeholder="0" min="0">
           <span style="color:var(--text-3);font-size:12px" data-i18n="settings_speed_limit_hint">MB/s (0 = unlimited)</span>
         </div>
+        <p class="form-hint" data-i18n="settings_speed_limit_scope">This limit applies to the total local aria2 traffic. The remote AllDebrid cache phase is not limited.</p>
+        <div id="speed-limit-status" class="runtime-setting-status" data-state="loading" data-i18n="settings_speed_checking">Checking aria2...</div>
       </div>
 
       <div class="form-group">
@@ -294,15 +316,14 @@
       <h2 class="card-title">
         <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
         <span data-i18n="settings_webhooks_title">Webhooks</span>
+        <span class="webhook-header-control" onclick="event.stopPropagation()" onkeydown="event.stopPropagation()">
+          <span id="webhook-state-badge" class="settings-state-badge off" data-i18n="settings_webhook_disabled">Disabled</span>
+          <label class="toggle" title="Enable webhooks">
+            <input type="checkbox" id="webhook-enabled" onchange="setWebhookEnabled(this.checked)" onclick="event.stopPropagation()">
+            <span class="toggle-slider"></span>
+          </label>
+        </span>
       </h2>
-
-      <div class="form-group toggle-group">
-        <label class="form-label" data-i18n="settings_webhook_enabled">Enable webhooks</label>
-        <label class="toggle">
-          <input type="checkbox" id="webhook-enabled" onchange="toggleWebhookFields()">
-          <span class="toggle-slider"></span>
-        </label>
-      </div>
 
       <div id="webhook-fields" class="hidden" style="margin-top:16px">
         <div id="webhook-url-group" class="form-group">
@@ -518,6 +539,7 @@
         </div>
 
         <div class="key-actions">
+          <button class="btn btn-primary" onclick="saveWebhookDetails()" data-i18n="settings_btn_save_webhook">Save webhook settings</button>
           <button class="btn" onclick="testWebhook()" data-i18n="settings_btn_test_webhook">Test</button>
         </div>
       </div>
@@ -763,10 +785,10 @@ function pwaInstall(){if(pwaDeferred){pwaDeferred.prompt();pwaDeferred.userChoic
 </script>
 
 <script src="/static/js/theme.js?v=36"></script>
-<script src="/static/js/i18n.js?v=49"></script>
+<script src="/static/js/i18n.js?v=50"></script>
 <script src="/static/js/api.js?v=30"></script>
-<script src="/static/js/filebrowser.js?v=36"></script>
-<script src="/static/js/settings.js?v=47"></script>
+<script src="/static/js/filebrowser.js?v=37"></script>
+<script src="/static/js/settings.js?v=48"></script>
 <script src="/static/js/account.js?v=29"></script>
 <script>if("serviceWorker"in navigator)navigator.serviceWorker.register("/sw.js").catch(()=>{})</script>
 </body>

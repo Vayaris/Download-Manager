@@ -1,4 +1,4 @@
-const CACHE_NAME = "dm-v3";
+const CACHE_NAME = "dm-v4";
 const PRECACHE = [
   "/",
   "/plex-page",

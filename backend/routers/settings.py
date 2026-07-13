@@ -1,3 +1,4 @@
+import asyncio
 import ipaddress
 import logging
 import os
@@ -326,14 +327,6 @@ async def update_settings(body: SettingsUpdate, _=Depends(get_current_user)):
         cfg["downloads"]["download_segments"] = body.download_segments
     if body.speed_limit is not None and body.speed_limit >= 0:
         cfg["downloads"]["speed_limit"] = body.speed_limit
-        # Apply speed limit to aria2 immediately
-        from services.aria2_service import aria2
-        import asyncio
-        try:
-            limit_str = f"{body.speed_limit}M" if body.speed_limit > 0 else "0"
-            asyncio.create_task(aria2.change_global_option({"max-overall-download-limit": limit_str}))
-        except Exception:
-            pass
     if body.max_retries is not None and 0 <= body.max_retries <= 20:
         cfg["downloads"]["max_retries"] = body.max_retries
     if body.retry_delay_seconds is not None and 0 <= body.retry_delay_seconds <= 3600:
@@ -356,7 +349,8 @@ async def update_settings(body: SettingsUpdate, _=Depends(get_current_user)):
             if parsed.scheme not in ("http", "https"):
                 raise HTTPException(status_code=400, detail="Webhook URL must use http or https")
             # Signal intentionally targets a local service — skip SSRF check for that format
-            if body.webhook_format != "signal":
+            effective_format = body.webhook_format or cfg["webhooks"].get("format", "generic")
+            if effective_format != "signal":
                 # Block private/reserved IPs (SSRF protection)
                 host = parsed.hostname or ""
                 try:
@@ -374,7 +368,32 @@ async def update_settings(body: SettingsUpdate, _=Depends(get_current_user)):
         cfg["webhooks"]["events"] = body.webhook_events
 
     save_config(cfg)
-    return {"status": "saved"}
+    response = {"status": "saved"}
+    if body.speed_limit is not None and body.speed_limit >= 0:
+        from services.aria2_service import aria2
+        expected_bytes = body.speed_limit * 1024 * 1024 if body.speed_limit > 0 else 0
+        try:
+            limit_str = f"{body.speed_limit}M" if body.speed_limit > 0 else "0"
+            await asyncio.wait_for(
+                aria2.change_global_option({"max-overall-download-limit": limit_str}),
+                timeout=5,
+            )
+            options = await asyncio.wait_for(aria2.get_global_option(), timeout=5)
+            effective_bytes = int(options.get("max-overall-download-limit", 0) or 0)
+            response["speed_limit"] = {
+                "configured_mb_s": body.speed_limit,
+                "effective_bytes_s": effective_bytes,
+                "applied": effective_bytes == expected_bytes,
+            }
+        except Exception as exc:
+            logger.warning("Speed limit saved but not applied to aria2: %s", exc)
+            response["speed_limit"] = {
+                "configured_mb_s": body.speed_limit,
+                "effective_bytes_s": None,
+                "applied": False,
+                "error": type(exc).__name__,
+            }
+    return response
 
 
 @router.post("/test-alldebrid")
@@ -1063,6 +1082,31 @@ def _find_git_dir() -> Path:
 @router.get("/version")
 async def get_version(_=Depends(get_current_user)):
     return {"version": _get_current_version()}
+
+
+@router.get("/speed-limit/status")
+async def get_speed_limit_status(_=Depends(get_current_user)):
+    from services.aria2_service import aria2
+
+    configured = max(0, int(get_config()["downloads"].get("speed_limit", 0) or 0))
+    expected_bytes = configured * 1024 * 1024 if configured > 0 else 0
+    try:
+        options = await asyncio.wait_for(aria2.get_global_option(), timeout=5)
+        effective_bytes = int(options.get("max-overall-download-limit", 0) or 0)
+        return {
+            "configured_mb_s": configured,
+            "effective_bytes_s": effective_bytes,
+            "applied": effective_bytes == expected_bytes,
+            "available": True,
+        }
+    except Exception as exc:
+        return {
+            "configured_mb_s": configured,
+            "effective_bytes_s": None,
+            "applied": False,
+            "available": False,
+            "error": type(exc).__name__,
+        }
 
 
 @router.get("/diagnostics")

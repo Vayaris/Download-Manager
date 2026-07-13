@@ -626,15 +626,16 @@ async function submitTorrent() {
   }
 
   const formData = new FormData();
-  formData.append("magnets", magnetRaw);
+  formData.append("links", magnetRaw);
   formData.append("destination", destination);
+  formData.append("package_name", t("auto_batch_name", { date: new Date().toLocaleString(getLang()) }));
   torrentFiles.forEach(file => formData.append("files", file));
 
   try {
     const token = API.token;
     const headers = {};
     if (token) headers["Authorization"] = `Bearer ${token}`;
-    const resp = await fetch("/api/torrents/batch", { method: "POST", headers, body: formData });
+    const resp = await fetch("/api/downloads/batch", { method: "POST", headers, body: formData });
     if (!resp.ok) throw new Error(await resp.text());
     const result = await resp.json();
     const message = result.package_name
@@ -751,40 +752,24 @@ async function addLinks() {
     }
   }
 
-  const allLines = rawUrls.split("\n").map(u => u.trim()).filter(Boolean);
+  const formData = new FormData();
+  formData.append("links", rawUrls);
+  formData.append("destination", destination);
+  formData.append("package_name", t("auto_batch_name", { date: new Date().toLocaleString(getLang()) }));
 
-  // Separate magnet links from regular URLs
-  const magnets = allLines.filter(u => u.startsWith("magnet:"));
-  const urls = allLines.filter(u => !u.startsWith("magnet:"));
-
-  let added = 0;
-  let errors = [];
-
-  // Submit magnet links to torrent endpoint
-  if (magnets.length > 0) {
-    try {
-      const result = await API.post("/api/torrents/", { magnets, destination });
-      added += result.added;
-    } catch (e) {
-      errors.push(e.message);
-    }
-  }
-
-  // Submit regular URLs to downloads endpoint
-  if (urls.length > 0) {
-    try {
-      const result = await API.post("/api/downloads/", { urls, destination });
-      added += result.added;
-    } catch (e) {
-      errors.push(e.message);
-    }
-  }
-
-  if (errors.length > 0) {
-    showToast(t("error_prefix") + errors.join("; "), "error");
-  } else {
+  try {
+    const headers = {};
+    if (API.token) headers.Authorization = `Bearer ${API.token}`;
+    const response = await fetch("/api/downloads/batch", { method: "POST", headers, body: formData });
+    const result = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(result.detail || `HTTP ${response.status}`);
     textarea.value = "";
-    showToast(t("links_added", { n: added, s: added > 1 ? "s" : "" }), "ok");
+    const message = result.package_name
+      ? t("batch_added", { n: result.added, name: result.package_name })
+      : t("links_added", { n: result.added, s: result.added > 1 ? "s" : "" });
+    showToast(result.failed ? `${message} · ${t("batch_failed", { n: result.failed })}` : message, result.failed ? "error" : "ok");
+  } catch (error) {
+    showToast(t("error_prefix") + error.message, "error");
   }
 }
 
