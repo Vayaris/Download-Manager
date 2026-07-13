@@ -72,7 +72,8 @@ async def init_db():
                 package_name TEXT,
                 created_at   TEXT,
                 completed_at TEXT,
-                source_key   TEXT
+                source_key   TEXT,
+                package_id   TEXT
             )
         """)
 
@@ -192,6 +193,8 @@ async def init_db():
         history_columns = [row[1] for row in await (await db.execute("PRAGMA table_info(history)")).fetchall()]
         if "source_key" not in history_columns:
             await db.execute("ALTER TABLE history ADD COLUMN source_key TEXT")
+        if "package_id" not in history_columns:
+            await db.execute("ALTER TABLE history ADD COLUMN package_id TEXT")
 
         package_columns = [row[1] for row in await (await db.execute("PRAGMA table_info(packages)")).fetchall()]
         if "source_count" not in package_columns:
@@ -214,6 +217,9 @@ async def init_db():
 
         await db.execute("CREATE INDEX IF NOT EXISTS idx_downloads_source_key ON downloads (source_key)")
         await db.execute("CREATE INDEX IF NOT EXISTS idx_history_source_key ON history (source_key)")
+        await db.execute("CREATE INDEX IF NOT EXISTS idx_history_completed ON history (completed_at DESC)")
+        await db.execute("CREATE INDEX IF NOT EXISTS idx_history_status ON history (status)")
+        await db.execute("CREATE INDEX IF NOT EXISTS idx_history_package ON history (package_id)")
         await db.execute("CREATE INDEX IF NOT EXISTS idx_torrents_source_key ON torrents (source_key)")
 
         await db.commit()

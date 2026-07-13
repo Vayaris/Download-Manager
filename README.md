@@ -2,7 +2,7 @@
 
 Self-hosted download manager powered by **FastAPI**, **aria2** and **AllDebrid**. It provides a responsive web/PWA interface for direct links, magnets and `.torrent` files, with real-time queue updates and optional Plex or Jellyfin library refreshes.
 
-Current release: **v1.12.0**
+Current release: **v1.13.0**
 
 ![Python](https://img.shields.io/badge/Python-3.8+-3776AB?logo=python&logoColor=white)
 ![FastAPI](https://img.shields.io/badge/FastAPI-009688?logo=fastapi&logoColor=white)
@@ -12,7 +12,7 @@ Current release: **v1.12.0**
 
 ## Highlights
 
-- Direct links, magnets and one or many `.torrent` files through AllDebrid
+- One unified form for direct links, magnets and one or many `.torrent` files through AllDebrid
 - Duplicate preflight for active URLs, successful history, destination files and repeated batch sources
 - Automatic mixed packages when at least two sources are submitted, with one final package notification
 - Queue priorities, drag and drop, pause/resume, configurable retries and up to 20 simultaneous downloads
@@ -21,6 +21,7 @@ Current release: **v1.12.0**
 - Account-synced destination explorer with favorites, recent paths, search, breadcrumbs and mobile tabs
 - Silent `.nfo` filtering enabled by default
 - Safe stalled-download watchdog and automatic history
+- Responsive grouped history with batch summaries, quick filters, safe multi-selection and detailed error views
 - Plex or Jellyfin integration with favorites, manual refresh suggestions and optional automatic refresh
 - Webhooks for Discord, Slack, Telegram, Gotify, ntfy, Signal and generic JSON
 - Mandatory authentication, optional TOTP 2FA, login rate limiting and IP blocking
@@ -54,6 +55,8 @@ sudo bash install.sh
 
 ## How downloads are grouped
 
+Links, magnets and `.torrent` files share the same submission area. Torrent files can be selected or dropped anywhere on the form, reviewed before submission and mixed with pasted links. A custom batch name appears only when at least two sources are present.
+
 | Submission | Result |
 |---|---|
 | One direct link, magnet or `.torrent` file | Standalone download |
@@ -67,6 +70,12 @@ AllDebrid resolves magnets and torrents before aria2 downloads the returned file
 Every web submission runs through a preflight check. Conflicts include an identical active URL, a successful history entry, a file already present in the selected destination, or a repeated source inside the same batch. The resolution dialog supports **Ignore**, **Download anyway**, and **Replace** per item, plus an apply-to-all control. Overwriting an existing destination always requires an additional explicit confirmation.
 
 Some final filenames are only known after AllDebrid resolves a source. Those downloads remain in a `duplicate_pending` state and prompt for a decision before aria2 starts the local transfer.
+
+## Download history
+
+The Downloads page separates active work from history with dedicated tabs. History entries are grouped by date, and package members stay under one expandable summary showing their aggregate status, size and destination. Quick filters cover all entries, today's completions and failures.
+
+Item details expose the source, destination, timestamps and full error without leaving the page. Entries can be removed individually or through a safe selection mode; bulk history removal and the global clear action always preserve downloaded files. Disk deletion remains an explicit per-file action.
 
 ## Destination explorer
 
@@ -206,7 +215,7 @@ This project is designed for a single self-hosted user. SQLite and the current s
 
 ## Résumé français
 
-Download Manager centralise les liens directs, magnets et fichiers `.torrent` dans une interface web responsive. À partir de deux sources, un lot unique est créé automatiquement avec une progression globale et une seule notification finale. L’explorateur de destination synchronise favoris et récents côté serveur, et les intégrations Plex/Jellyfin permettent un rafraîchissement manuel ou automatique des bibliothèques lorsque toute la file est terminée.
+Download Manager centralise les liens directs, magnets et fichiers `.torrent` dans un formulaire unique responsive. À partir de deux sources, un lot unique est créé automatiquement avec une progression globale et une seule notification finale. La vue Historique regroupe les lots, propose des filtres rapides et permet de retirer plusieurs entrées sans supprimer les fichiers téléchargés. L’explorateur de destination synchronise favoris et récents côté serveur, et les intégrations Plex/Jellyfin permettent un rafraîchissement manuel ou automatique des bibliothèques lorsque toute la file est terminée.
 
 L’installation rapide, les chemins, commandes et réglages indiqués ci-dessus sont identiques pour l’interface française. La configuration courante se fait principalement depuis **Paramètres**.
 

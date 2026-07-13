@@ -66,6 +66,14 @@ function fmtDate(iso) {
     + " " + d.toLocaleTimeString(loc, { hour: "2-digit", minute: "2-digit" });
 }
 
+function escJs(value) {
+  return escHtml(String(value || "")
+    .replace(/\\/g, "\\\\")
+    .replace(/'/g, "\\'")
+    .replace(/\r/g, "\\r")
+    .replace(/\n/g, "\\n"));
+}
+
 // escHtml is provided by api.js
 
 // ---- Status badge ----
@@ -113,6 +121,7 @@ async function pasteFromClipboard() {
     const textarea = document.getElementById("links-input");
     const current = textarea.value.trim();
     textarea.value = current ? current + "\n" + text.trim() : text.trim();
+    updateUnifiedSourceState();
     textarea.focus();
     showToast(text.trim() ? t("paste_ok") : t("paste_empty"), text.trim() ? "ok" : "error");
   } catch {
@@ -120,11 +129,134 @@ async function pasteFromClipboard() {
   }
 }
 
+// ---- Unified links / magnets / torrents submission ----
+
+let unifiedTorrentFiles = [];
+
+function unifiedLinkCount() {
+  return document.getElementById("links-input").value.split(/\r?\n/).filter(line => line.trim()).length;
+}
+
+function updateUnifiedSourceState() {
+  const count = unifiedLinkCount() + unifiedTorrentFiles.length;
+  document.getElementById("unified-package-name-wrap").classList.toggle("hidden", count < 2);
+  const label = document.getElementById("unified-submit-label");
+  label.textContent = count ? t("unified_add_count", { n: count }) : t("btn_add");
+}
+
+function renderUnifiedTorrentFiles() {
+  const container = document.getElementById("unified-files");
+  container.classList.toggle("hidden", unifiedTorrentFiles.length === 0);
+  container.innerHTML = unifiedTorrentFiles.map((file, index) => `
+    <div class="unified-file-row">
+      <span class="unified-file-icon">${ICONS.pkg}</span>
+      <span class="unified-file-name" title="${escHtml(file.name)}">${escHtml(file.name)}</span>
+      <span class="unified-file-size">${fmtBytes(file.size)}</span>
+      <button type="button" onclick="removeUnifiedTorrentFile(${index})" aria-label="${t("unified_remove_file")}">×</button>
+    </div>`).join("");
+  updateUnifiedSourceState();
+}
+
+function addUnifiedTorrentFiles(files) {
+  let ignored = 0;
+  for (const file of Array.from(files || [])) {
+    if (!file.name.toLowerCase().endsWith(".torrent")) { ignored++; continue; }
+    const duplicate = unifiedTorrentFiles.some(item => item.name === file.name && item.size === file.size && item.lastModified === file.lastModified);
+    if (!duplicate) unifiedTorrentFiles.push(file);
+  }
+  document.getElementById("unified-torrent-input").value = "";
+  renderUnifiedTorrentFiles();
+  if (ignored) showToast(t("torrent_files_ignored"), "error");
+}
+
+function removeUnifiedTorrentFile(index) {
+  unifiedTorrentFiles.splice(index, 1);
+  renderUnifiedTorrentFiles();
+}
+
+async function addUnifiedSources() {
+  const textarea = document.getElementById("links-input");
+  const links = textarea.value.trim();
+  const sourceCount = unifiedLinkCount() + unifiedTorrentFiles.length;
+  if (!sourceCount) { showToast(t("unified_empty"), "error"); return; }
+
+  let destination = getDestinationValue("dest-path");
+  if (!destination) {
+    try {
+      const cfg = await API.get("/api/settings/");
+      destination = cfg.default_destination || "/opt/download-manager/downloads";
+    } catch {
+      destination = "/opt/download-manager/downloads";
+    }
+  }
+
+  const form = new FormData();
+  form.append("links", links);
+  form.append("destination", destination);
+  const customName = document.getElementById("unified-package-name").value.trim();
+  form.append("package_name", customName || t("auto_batch_name", { date: new Date().toLocaleString(getLang()) }));
+  unifiedTorrentFiles.forEach(file => form.append("files", file));
+
+  const button = document.getElementById("unified-submit");
+  button.disabled = true;
+  button.classList.add("loading");
+  try {
+    const result = await preflightAndCommit(form);
+    textarea.value = "";
+    unifiedTorrentFiles = [];
+    document.getElementById("unified-package-name").value = "";
+    renderUnifiedTorrentFiles();
+    const message = result.package_name
+      ? t("batch_added", { n: result.added, name: result.package_name })
+      : t("unified_added", { n: result.added });
+    showToast(result.failed ? `${message} · ${t("batch_failed", { n: result.failed })}` : message, result.failed ? "error" : "ok");
+  } catch (error) {
+    showToast(t("error_prefix") + error.message, "error");
+  } finally {
+    button.disabled = false;
+    button.classList.remove("loading");
+    updateUnifiedSourceState();
+  }
+}
+
+document.addEventListener("DOMContentLoaded", () => {
+  const card = document.getElementById("unified-add-card");
+  const overlay = document.getElementById("torrent-drop-overlay");
+  const textarea = document.getElementById("links-input");
+  let dragDepth = 0;
+  const hasDraggedFiles = event => Array.from(event.dataTransfer?.types || []).includes("Files");
+  textarea.addEventListener("input", updateUnifiedSourceState);
+  card.addEventListener("dragenter", event => {
+    if (!hasDraggedFiles(event)) return;
+    event.preventDefault();
+    dragDepth++;
+    overlay.classList.remove("hidden");
+  });
+  card.addEventListener("dragover", event => {
+    if (hasDraggedFiles(event)) event.preventDefault();
+  });
+  card.addEventListener("dragleave", event => {
+    event.preventDefault();
+    dragDepth = Math.max(0, dragDepth - 1);
+    if (!dragDepth) overlay.classList.add("hidden");
+  });
+  card.addEventListener("drop", event => {
+    event.preventDefault();
+    dragDepth = 0;
+    overlay.classList.add("hidden");
+    addUnifiedTorrentFiles(event.dataTransfer.files);
+  });
+  updateUnifiedSourceState();
+});
+
 // ---- Render downloads ----
 
 function renderDownloads(downloads) {
   const tbody = document.getElementById("dl-tbody");
   const tableSection = tbody.closest(".table-wrap");
+  const activeCount = downloads.filter(d => d.status !== "complete" && d.status !== "failed").length;
+  const activeTabCount = document.getElementById("active-tab-count");
+  if (activeTabCount) activeTabCount.textContent = activeCount;
   // Only show active downloads (not completed/failed — those go to history)
   const active = downloads.filter(d => !d.package_id && d.status !== "complete" && d.status !== "failed");
 
@@ -402,63 +534,6 @@ async function removePackage(id) {
   } catch (e) { showToast(t("error_prefix") + e.message, "error"); }
 }
 
-// ---- Package modal ----
-
-let _pkgFileBrowserMode = false;
-
-function openPackageModal() {
-  document.getElementById("package-modal").classList.remove("hidden");
-  const mainDest = getDestinationValue("dest-path");
-  if (mainDest) {
-    setDestinationValue("pkg-dest-path", mainDest);
-  }
-}
-function closePackageModal() {
-  document.getElementById("package-modal").classList.add("hidden");
-}
-
-function openFileBrowserForPackage() {
-  _pkgFileBrowserMode = true;
-  FileBrowser.elevate();
-  const startPath = getDestinationValue("pkg-dest-path") || undefined;
-  FileBrowser.open((path) => {
-    setDestinationValue("pkg-dest-path", path);
-    _pkgFileBrowserMode = false;
-  }, startPath);
-}
-
-async function addPackage() {
-  const name = document.getElementById("pkg-name").value.trim();
-  const links = document.getElementById("pkg-links").value.trim();
-  const dest = getDestinationValue("pkg-dest-path");
-
-  if (!name) { showToast(t("pkg_name_required"), "error"); return; }
-  if (!links) { showToast(t("pkg_links_required"), "error"); return; }
-
-  let destination = dest;
-  if (!destination) {
-    try {
-      const cfg = await API.get("/api/settings/");
-      destination = cfg.default_destination || "/opt/download-manager/downloads";
-    } catch {
-      destination = "/opt/download-manager/downloads";
-    }
-  }
-
-  const urls = links.split("\n").map(u => u.trim()).filter(Boolean);
-
-  try {
-    const result = await API.post("/api/downloads/packages", { name, urls, destination });
-    showToast(t("pkg_created", { name, n: result.added }), "ok");
-    document.getElementById("pkg-name").value = "";
-    document.getElementById("pkg-links").value = "";
-    closePackageModal();
-    loadPackages();
-  } catch (e) {
-    showToast(t("error_prefix") + e.message, "error");
-  }
-}
-
 // ---- Stats chips ----
 
 function updateStats(downloads) {
@@ -481,70 +556,276 @@ function updateStats(downloads) {
 
 // ---- History ----
 
-let historyPage = 0;
-const HISTORY_PER_PAGE = 20;
+const historyState = {
+  scope: "all", cursor: null, groups: [], details: new Map(),
+  selecting: false, selected: new Set(), loading: false,
+};
 
-async function loadHistory() {
+function switchDownloadView(view) {
+  const history = view === "history";
+  document.getElementById("active-view").classList.toggle("hidden", history);
+  document.getElementById("history-section").classList.toggle("hidden", !history);
+  document.getElementById("active-tab").classList.toggle("active", !history);
+  document.getElementById("history-tab").classList.toggle("active", history);
+  document.getElementById("active-tab").setAttribute("aria-selected", String(!history));
+  document.getElementById("history-tab").setAttribute("aria-selected", String(history));
+  closeHistoryMenus();
+  if (history) loadHistory(true);
+}
+
+function historyInteractionInProgress() {
+  return historyState.selecting
+    || !document.getElementById("history-detail-panel").classList.contains("hidden")
+    || Boolean(document.querySelector(".history-card.expanded"));
+}
+
+function historyDayLabel(value) {
+  const date = new Date(value);
+  const today = new Date();
+  const yesterday = new Date();
+  yesterday.setDate(today.getDate() - 1);
+  const key = date.toDateString();
+  if (key === today.toDateString()) return t("history_today");
+  if (key === yesterday.toDateString()) return t("history_yesterday");
+  return date.toLocaleDateString(t("date_locale"), { weekday: "long", day: "numeric", month: "long", year: "numeric" });
+}
+
+function historyStatus(group) {
+  if (group.status === "partial") {
+    return `<span class="badge badge-error"><span class="b-dot"></span>${t("history_partial")}</span>`;
+  }
+  return statusBadge(group.status);
+}
+
+function renderHistorySummary(summary) {
+  document.getElementById("history-summary").innerHTML = `
+    <div><strong>${summary.completed_today}</strong><span>${t("history_completed_today")}</span></div>
+    <div><strong>${fmtBytes(summary.total_bytes)}</strong><span>${t("history_total_volume")}</span></div>
+    <div class="${summary.failed ? "has-error" : ""}"><strong>${summary.failed}</strong><span>${t("history_failures")}</span></div>`;
+  document.getElementById("history-failed-count").textContent = summary.failed;
+  document.getElementById("history-tab-count").textContent = summary.total;
+}
+
+function renderHistoryGroups() {
+  const container = document.getElementById("history-groups");
+  const empty = document.getElementById("history-empty");
+  empty.classList.toggle("hidden", historyState.groups.length > 0);
+  let lastDay = "";
+  container.innerHTML = historyState.groups.map(group => {
+    const day = historyDayLabel(group.completed_at);
+    const heading = day !== lastDay ? `<div class="history-day">${escHtml(day)}</div>` : "";
+    lastDay = day;
+    const packageMeta = group.kind === "package"
+      ? `${t("history_files_count", { n: group.item_count })} · ${group.complete_count} ${t("history_success_short")} · ${group.failed_count} ${t("history_failed_short")}`
+      : fmtBytes(group.size);
+    return `${heading}<article class="history-card ${group.kind}" data-history-group="${group.id}">
+      <label class="history-checkbox ${historyState.selecting ? "" : "hidden"}" onclick="event.stopPropagation()">
+        <input type="checkbox" ${historyState.selected.has(group.id) ? "checked" : ""} onchange="selectHistoryGroup('${group.id}',this.checked)">
+      </label>
+      <button class="history-card-main" onclick="${group.kind === "package" ? `toggleHistoryGroup('${group.id}')` : `openHistoryDetails('${group.id}')`}">
+        <span class="history-chevron">${group.kind === "package" ? ICONS.chevRight : ICONS.check}</span>
+        <span class="history-card-copy"><strong title="${escHtml(group.name)}">${escHtml(group.name)}</strong><small>${escHtml(packageMeta)}</small></span>
+      </button>
+      <div class="history-card-status">${historyStatus(group)}</div>
+      <div class="history-card-meta"><span>${fmtBytes(group.size)}</span><span>${fmtDate(group.completed_at)}</span></div>
+      <button class="history-card-menu" onclick="openHistoryActions(event,'${group.id}')" aria-label="${t("col_actions")}">•••</button>
+      <div class="history-card-destination" title="${escHtml(group.destination)}">${ICONS.folder}<span>${escHtml(group.destination || t("history_multiple_destinations"))}</span></div>
+      <div id="history-children-${group.id}" class="history-children hidden"></div>
+    </article>`;
+  }).join("");
+}
+
+async function loadHistory(reset = true) {
+  if (historyState.loading) return;
+  historyState.loading = true;
   try {
-    const data = await API.get(`/api/downloads/history?limit=${HISTORY_PER_PAGE}&offset=${historyPage * HISTORY_PER_PAGE}`);
-    const section = document.getElementById("history-section");
-    const tbody = document.getElementById("history-tbody");
-    const pagination = document.getElementById("history-pagination");
-
-    if (data.total === 0) {
-      section.classList.add("hidden");
-      return;
+    if (reset) {
+      historyState.cursor = null;
+      historyState.groups = [];
+      historyState.details.clear();
     }
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const cursor = historyState.cursor ? `&cursor=${encodeURIComponent(historyState.cursor)}` : "";
+    const data = await API.get(`/api/downloads/history/view?scope=${historyState.scope}&limit=30&today_from=${encodeURIComponent(today.toISOString())}${cursor}`);
+    historyState.groups.push(...data.groups);
+    historyState.cursor = data.next_cursor;
+    renderHistorySummary(data.summary);
+    renderHistoryGroups();
+    document.getElementById("history-load-more").classList.toggle("hidden", !data.next_cursor);
+  } catch (error) {
+    showToast(t("error_prefix") + error.message, "error");
+  } finally {
+    historyState.loading = false;
+  }
+}
 
-    section.classList.remove("hidden");
+function loadMoreHistory() { loadHistory(false); }
 
-    tbody.innerHTML = data.items.map(item => `
-      <tr>
-        <td class="col-name">
-          <div class="cell-name">
-            <span class="file-name" title="${escHtml(item.name)}">${escHtml(item.name || item.url)}</span>
-            ${item.package_name ? `<span class="file-url">${ICONS.pkg} ${escHtml(item.package_name)}</span>` : `<span class="file-url" title="${escHtml(item.url)}">${escHtml(item.url)}</span>`}
-          </div>
-        </td>
-        <td class="col-status" title="${escHtml(item.error_msg || '')}">${statusBadge(item.status)}</td>
-        <td class="col-size mono-cell">${escHtml(fmtBytes(item.size))}</td>
-        <td class="col-dest">
-          <span class="dest-cell-path" title="${escHtml(item.destination)}">${escHtml(item.destination)}</span>
-        </td>
-        <td class="col-date mono-cell">${fmtDate(item.completed_at)}</td>
-        <td class="col-actions">
-          <div class="row-actions">
-            <button class="btn-act act-delete" onclick="deleteHistoryItem('${item.id}', false)" title="${t("btn_delete_history")}">${ICONS.trash}</button>
-            ${item.status === 'complete' ? `<button class="btn-act act-delete" onclick="deleteHistoryItem('${item.id}', true)" title="${t("btn_delete_file")}" style="color:var(--red)">${ICONS.trash}</button>` : ''}
-          </div>
-        </td>
-      </tr>
-    `).join("");
+function setHistoryScope(scope) {
+  historyState.scope = scope;
+  document.querySelectorAll("[data-history-scope]").forEach(button => button.classList.toggle("active", button.dataset.historyScope === scope));
+  toggleHistorySelection(false);
+  loadHistory(true);
+}
 
-    const totalPages = Math.ceil(data.total / HISTORY_PER_PAGE);
-    if (totalPages > 1) {
-      let paginationHtml = "";
-      if (historyPage > 0) {
-        paginationHtml += `<button class="btn btn-sm" onclick="historyPage--;loadHistory()">${t("history_prev")}</button>`;
-      }
-      paginationHtml += `<span class="pagination-info">${historyPage + 1} / ${totalPages}</span>`;
-      if (historyPage < totalPages - 1) {
-        paginationHtml += `<button class="btn btn-sm" onclick="historyPage++;loadHistory()">${t("history_next")}</button>`;
-      }
-      pagination.innerHTML = paginationHtml;
-    } else {
-      pagination.innerHTML = "";
-    }
-  } catch {}
+async function getHistoryGroup(groupId) {
+  if (!historyState.details.has(groupId)) {
+    historyState.details.set(groupId, await API.get(`/api/downloads/history/groups/${encodeURIComponent(groupId)}`));
+  }
+  return historyState.details.get(groupId);
+}
+
+function historyChildRow(item, groupId) {
+  return `<div class="history-child">
+    <span class="history-child-status">${statusBadge(item.status)}</span>
+    <button class="history-child-name" onclick="openHistoryDetails('${groupId}','${item.id}')">${escHtml(item.name || item.url)}</button>
+    <span class="history-child-size">${fmtBytes(item.size)}</span>
+    <button class="history-card-menu" onclick="openHistoryActions(event,'${groupId}','${item.id}')">•••</button>
+  </div>`;
+}
+
+async function toggleHistoryGroup(groupId) {
+  const child = document.getElementById(`history-children-${groupId}`);
+  const card = child.closest(".history-card");
+  if (!child.classList.contains("hidden")) {
+    child.classList.add("hidden");
+    card.classList.remove("expanded");
+    return;
+  }
+  child.innerHTML = `<div class="history-child-loading">${t("history_loading")}</div>`;
+  child.classList.remove("hidden");
+  card.classList.add("expanded");
+  try {
+    const detail = await getHistoryGroup(groupId);
+    child.innerHTML = detail.items.map(item => historyChildRow(item, groupId)).join("");
+  } catch (error) {
+    child.innerHTML = `<div class="history-child-loading">${escHtml(error.message)}</div>`;
+  }
+}
+
+function historyDetailHtml(item) {
+  const error = item.error_msg ? `<div class="history-detail-error"><span>${t("history_error_detail")}</span><p>${escHtml(item.error_msg)}</p></div>` : "";
+  return `<div class="history-detail-title">${statusBadge(item.status)}<h4>${escHtml(item.name || item.url)}</h4></div>
+    <dl class="history-detail-list">
+      <dt>${t("col_size")}</dt><dd>${fmtBytes(item.size)}</dd>
+      <dt>${t("col_dest")}</dt><dd class="mono-cell">${escHtml(item.destination || "—")}</dd>
+      <dt>${t("history_source")}</dt><dd class="mono-cell">${escHtml(item.url || "—")}</dd>
+      <dt>${t("history_started")}</dt><dd>${fmtDate(item.created_at)}</dd>
+      <dt>${t("history_finished")}</dt><dd>${fmtDate(item.completed_at)}</dd>
+    </dl>${error}
+    <div class="history-detail-actions">
+      <button class="btn" onclick="copyToClipboard('${escJs(item.destination || "")}')">${t("history_copy_path")}</button>
+      ${item.retryable ? `<button class="btn" onclick="retryHistoryItem('${item.id}')">${t("history_retry")}</button>` : ""}
+      <button class="btn" onclick="removeHistoryIds(['${item.id}'])">${t("btn_delete_history")}</button>
+      ${item.status === "complete" ? `<button class="btn btn-danger" onclick="deleteHistoryItem('${item.id}',true)">${t("btn_delete_file")}</button>` : ""}
+    </div>`;
+}
+
+async function openHistoryDetails(groupId, itemId = "") {
+  closeHistoryMenus();
+  try {
+    const detail = await getHistoryGroup(groupId);
+    const item = detail.items.find(entry => entry.id === itemId) || detail.items[0];
+    document.getElementById("history-detail-content").innerHTML = historyDetailHtml(item);
+    document.getElementById("history-detail-panel").classList.remove("hidden");
+    document.getElementById("history-detail-panel").setAttribute("aria-hidden", "false");
+    document.getElementById("history-detail-backdrop").classList.remove("hidden");
+  } catch (error) {
+    showToast(t("error_prefix") + error.message, "error");
+  }
+}
+
+function closeHistoryDetails() {
+  document.getElementById("history-detail-panel").classList.add("hidden");
+  document.getElementById("history-detail-panel").setAttribute("aria-hidden", "true");
+  document.getElementById("history-detail-backdrop").classList.add("hidden");
+}
+
+function closeHistoryMenus() {
+  document.getElementById("history-global-menu")?.classList.add("hidden");
+  document.getElementById("history-context-menu")?.remove();
+}
+
+function toggleHistoryGlobalMenu(event) {
+  event.stopPropagation();
+  document.getElementById("history-global-menu").classList.toggle("hidden");
+}
+
+async function openHistoryActions(event, groupId, itemId = "") {
+  event.stopPropagation();
+  closeHistoryMenus();
+  let detail;
+  try {
+    detail = await getHistoryGroup(groupId);
+  } catch (error) {
+    showToast(t("error_prefix") + error.message, "error");
+    return;
+  }
+  const item = itemId ? detail.items.find(entry => entry.id === itemId) : (detail.items.length === 1 ? detail.items[0] : null);
+  const ids = item ? [item.id] : detail.items.map(entry => entry.id);
+  const menu = document.createElement("div");
+  menu.id = "history-context-menu";
+  menu.className = "history-menu history-context-menu";
+  menu.innerHTML = `
+    <button onclick="${item ? `openHistoryDetails('${groupId}','${item.id}')` : `toggleHistoryGroup('${groupId}');closeHistoryMenus()`}">${item ? t("history_details") : t("history_show_files")}</button>
+    <button onclick="copyToClipboard('${escJs((item || detail.items[0]).destination || "")}');closeHistoryMenus()">${t("history_copy_path")}</button>
+    ${item?.retryable ? `<button onclick="retryHistoryItem('${item.id}')">${t("history_retry")}</button>` : ""}
+    <button onclick='removeHistoryIds(${JSON.stringify(ids)})'>${t("btn_delete_history")}</button>
+    ${item?.status === "complete" ? `<button class="danger" onclick="deleteHistoryItem('${item.id}',true)">${t("btn_delete_file")}</button>` : ""}`;
+  document.body.appendChild(menu);
+  const rect = event.currentTarget.getBoundingClientRect();
+  menu.style.left = `${Math.max(8, Math.min(rect.right - 210, window.innerWidth - 218))}px`;
+  menu.style.top = `${Math.min(rect.bottom + 4, window.innerHeight - menu.offsetHeight - 8)}px`;
+}
+
+function toggleHistorySelection(force) {
+  historyState.selecting = typeof force === "boolean" ? force : !historyState.selecting;
+  if (!historyState.selecting) historyState.selected.clear();
+  document.getElementById("history-selection-bar").classList.toggle("hidden", !historyState.selecting);
+  document.getElementById("history-select-toggle").classList.toggle("active", historyState.selecting);
+  renderHistoryGroups();
+  updateHistorySelectionCount();
+}
+
+async function selectHistoryGroup(groupId, checked) {
+  if (checked) historyState.selected.add(groupId); else historyState.selected.delete(groupId);
+  updateHistorySelectionCount();
+}
+
+function updateHistorySelectionCount() {
+  document.getElementById("history-selection-count").textContent = t("history_selected_count", { n: historyState.selected.size });
+}
+
+async function removeSelectedHistory() {
+  const ids = [];
+  for (const groupId of historyState.selected) {
+    const detail = await getHistoryGroup(groupId);
+    ids.push(...detail.items.map(item => item.id));
+  }
+  if (ids.length) await removeHistoryIds(ids);
+}
+
+async function removeHistoryIds(ids) {
+  closeHistoryMenus();
+  if (!confirm(t("history_confirm_remove_entries", { n: ids.length }))) return;
+  try {
+    await API.post("/api/downloads/history/remove", { ids });
+    closeHistoryDetails();
+    toggleHistorySelection(false);
+    await loadHistory(true);
+    showToast(t("history_deleted"), "ok");
+  } catch (error) {
+    showToast(t("error_prefix") + error.message, "error");
+  }
 }
 
 async function clearHistory() {
-  if (!confirm(t("history_confirm_clear"))) return;
+  closeHistoryMenus();
+  if (!confirm(t("history_confirm_clear_keep_files"))) return;
   try {
-    const resp = await API.del("/api/downloads/history");
-    historyPage = 0;
-    document.getElementById("history-tbody").innerHTML = "";
-    document.getElementById("history-section").classList.add("hidden");
+    await API.del("/api/downloads/history");
+    await loadHistory(true);
     showToast(t("history_cleared"), "ok");
   } catch (e) { showToast(t("error_prefix") + e.message, "error"); }
 }
@@ -555,118 +836,39 @@ async function deleteHistoryItem(id, deleteFile) {
   try {
     await API.del(`/api/downloads/history/${id}?delete_file=${deleteFile}`);
     showToast(deleteFile ? t("history_deleted_file") : t("history_deleted"), "ok");
-    loadHistory();
+    closeHistoryDetails();
+    closeHistoryMenus();
+    loadHistory(true);
   } catch (e) { showToast(t("error_prefix") + e.message, "error"); }
 }
 
-// ---- Torrent modal ----
-
-let _torrentFileBrowserMode = false;
-
-function openTorrentModal() {
-  document.getElementById("torrent-modal").classList.remove("hidden");
-  const mainDest = getDestinationValue("dest-path");
-  if (mainDest) {
-    setDestinationValue("torrent-dest-path", mainDest);
-  }
-}
-
-function closeTorrentModal() {
-  document.getElementById("torrent-modal").classList.add("hidden");
-  document.getElementById("torrent-magnets").value = "";
-  document.getElementById("torrent-file-input").value = "";
-  document.getElementById("torrent-file-label").textContent = t("torrent_dropzone");
-}
-
-function updateTorrentFileLabel(files) {
-  const list = Array.from(files || []).filter(file => file.name.toLowerCase().endsWith(".torrent"));
-  if (list.length === 0) {
-    document.getElementById("torrent-file-label").textContent = t("torrent_dropzone");
-  } else if (list.length === 1) {
-    document.getElementById("torrent-file-label").textContent = list[0].name;
-  } else {
-    document.getElementById("torrent-file-label").textContent = t("torrent_files_selected", { n: list.length });
-  }
-  return list;
-}
-
-function onTorrentFileSelected(input) {
-  updateTorrentFileLabel(input.files);
-}
-
-function openFileBrowserForTorrent() {
-  _torrentFileBrowserMode = true;
-  FileBrowser.elevate();
-  const startPath = getDestinationValue("torrent-dest-path") || undefined;
-  FileBrowser.open((path) => {
-    setDestinationValue("torrent-dest-path", path);
-    _torrentFileBrowserMode = false;
-  }, startPath);
-}
-
-async function submitTorrent() {
-  const magnetRaw = document.getElementById("torrent-magnets").value.trim();
-  const fileInput = document.getElementById("torrent-file-input");
-  const torrentFiles = updateTorrentFileLabel(fileInput.files);
-  const hasFile = torrentFiles.length > 0;
-
-  if (!magnetRaw && !hasFile) {
-    showToast(t("torrent_nothing"), "error");
+async function retryHistoryItem(id) {
+  for (const detail of historyState.details.values()) {
+    const item = detail.items.find(entry => entry.id === id);
+    if (!item) continue;
+    const form = new FormData();
+    form.append("links", item.url);
+    form.append("destination", item.destination);
+    form.append("package_name", "");
+    try {
+      const result = await preflightAndCommit(form);
+      closeHistoryDetails();
+      closeHistoryMenus();
+      switchDownloadView("active");
+      showToast(t("history_retry_started", { n: result.added }), "ok");
+    } catch (error) {
+      showToast(t("error_prefix") + error.message, "error");
+    }
     return;
   }
-
-  let destination = getDestinationValue("torrent-dest-path");
-  if (!destination) {
-    try {
-      const cfg = await API.get("/api/settings/");
-      destination = cfg.default_destination || "/opt/download-manager/downloads";
-    } catch {
-      destination = "/opt/download-manager/downloads";
-    }
-  }
-
-  const formData = new FormData();
-  formData.append("links", magnetRaw);
-  formData.append("destination", destination);
-  formData.append("package_name", t("auto_batch_name", { date: new Date().toLocaleString(getLang()) }));
-  torrentFiles.forEach(file => formData.append("files", file));
-
-  try {
-    const result = await preflightAndCommit(formData);
-    const message = result.package_name
-      ? t("torrent_batch_added", { n: result.added, name: result.package_name })
-      : t("torrent_added", { n: result.added });
-    showToast(message, "ok");
-    closeTorrentModal();
-  } catch (e) {
-    showToast(t("error_prefix") + e.message, "error");
-  }
 }
 
-// ---- Torrent dropzone ----
-
-(function() {
-  document.addEventListener("DOMContentLoaded", () => {
-    const dz = document.getElementById("torrent-dropzone");
-    if (!dz) return;
-    dz.addEventListener("dragover", (e) => { e.preventDefault(); dz.classList.add("dragover"); });
-    dz.addEventListener("dragleave", () => { dz.classList.remove("dragover"); });
-    dz.addEventListener("drop", (e) => {
-      e.preventDefault();
-      dz.classList.remove("dragover");
-      const files = e.dataTransfer.files;
-      if (files && files[0]) {
-        const input = document.getElementById("torrent-file-input");
-        const torrents = Array.from(files).filter(file => file.name.toLowerCase().endsWith(".torrent"));
-        if (torrents.length !== files.length) showToast(t("torrent_files_ignored"), "error");
-        const transfer = new DataTransfer();
-        torrents.forEach(file => transfer.items.add(file));
-        input.files = transfer.files;
-        updateTorrentFileLabel(input.files);
-      }
-    });
-  });
-})();
+document.addEventListener("click", event => {
+  if (!event.target.closest(".history-more-wrap") && !event.target.closest(".history-context-menu")) closeHistoryMenus();
+});
+document.addEventListener("keydown", event => {
+  if (event.key === "Escape") { closeHistoryMenus(); closeHistoryDetails(); }
+});
 
 // ---- Render torrents ----
 
@@ -862,39 +1064,6 @@ async function checkPendingDuplicateConflicts() {
     console.warn("Duplicate conflict check failed", error);
   } finally {
     duplicateConflictBusy = false;
-  }
-}
-
-async function addLinks() {
-  const textarea  = document.getElementById("links-input");
-  const rawUrls   = textarea.value.trim();
-
-  if (!rawUrls) { showToast(t("links_empty"), "error"); return; }
-
-  let destination = getDestinationValue("dest-path");
-  if (!destination) {
-    try {
-      const cfg = await API.get("/api/settings/");
-      destination = cfg.default_destination || "/opt/download-manager/downloads";
-    } catch {
-      destination = "/opt/download-manager/downloads";
-    }
-  }
-
-  const formData = new FormData();
-  formData.append("links", rawUrls);
-  formData.append("destination", destination);
-  formData.append("package_name", t("auto_batch_name", { date: new Date().toLocaleString(getLang()) }));
-
-  try {
-    const result = await preflightAndCommit(formData);
-    textarea.value = "";
-    const message = result.package_name
-      ? t("batch_added", { n: result.added, name: result.package_name })
-      : t("links_added", { n: result.added, s: result.added > 1 ? "s" : "" });
-    showToast(result.failed ? `${message} · ${t("batch_failed", { n: result.failed })}` : message, result.failed ? "error" : "ok");
-  } catch (error) {
-    showToast(t("error_prefix") + error.message, "error");
   }
 }
 
@@ -1132,7 +1301,7 @@ document.addEventListener("keydown", (e) => {
   if ((e.ctrlKey || e.metaKey) && e.key === "Enter") {
     const textarea = document.getElementById("links-input");
     if (document.activeElement === textarea) {
-      addLinks();
+      addUnifiedSources();
     }
   }
 });
@@ -1203,9 +1372,11 @@ function startApp() {
       if (!_prevCompleteIds.has(id)) { newCompletion = true; break; }
     }
     _prevCompleteIds = curCompleteIds;
-    if (newCompletion || now - _lastHistoryLoad > 5000) {
+    const historyVisible = !document.getElementById("history-section").classList.contains("hidden");
+    const safeToRefresh = !historyVisible || !historyInteractionInProgress();
+    if ((newCompletion || now - _lastHistoryLoad > 30000) && safeToRefresh) {
       _lastHistoryLoad = now;
-      loadHistory();
+      loadHistory(true);
     }
   });
   WS.init();

@@ -605,8 +605,9 @@ class QueueManager:
 
         await db.execute(
             """INSERT OR REPLACE INTO history
-               (id, name, url, destination, size, status, error_msg, package_name, created_at, completed_at)
-               VALUES (?, ?, ?, ?, ?, 'failed', ?, ?, ?, ?)""",
+               (id, name, url, destination, size, status, error_msg, package_name,
+                created_at, completed_at, package_id, source_key)
+               VALUES (?, ?, ?, ?, ?, 'failed', ?, ?, ?, ?, ?, ?)""",
             (
                 row["id"],
                 row["name"],
@@ -617,6 +618,8 @@ class QueueManager:
                 pkg_name,
                 row["created_at"],
                 now,
+                row["package_id"],
+                row["source_key"],
             ),
         )
 
@@ -768,11 +771,11 @@ class QueueManager:
         await db.execute(
             """INSERT OR REPLACE INTO history
                (id, name, url, destination, size, status, error_msg, package_name,
-                created_at, completed_at, source_key)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                created_at, completed_at, source_key, package_id)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (row["id"], row["name"], row["url"], row["destination"],
              row["size"], row["status"], row["error_msg"], pkg_name,
-             row["created_at"], now, row["source_key"]),
+             row["created_at"], now, row["source_key"], row["package_id"]),
         )
         await db.commit()
         if row["status"] == "complete":

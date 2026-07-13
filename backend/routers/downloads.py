@@ -11,7 +11,7 @@ import aiosqlite
 from database import DB_PATH
 from models import (
     AddDownloadsRequest, AddPackageRequest, BulkActionRequest, ReorderRequest,
-    DuplicateCommitRequest, DuplicateResolutionRequest,
+    DuplicateCommitRequest, DuplicateResolutionRequest, HistoryRemoveRequest,
 )
 from auth import get_current_user
 from config import get_config
@@ -20,6 +20,7 @@ from services.duplicates import (
     STAGING_ROOT, apply_replacement, create_submission, finish_submission,
     load_submission,
 )
+from services.history import history_group, history_view, remove_history_entries
 from utils import validate_destination as _validate_destination
 
 router = APIRouter()
@@ -172,11 +173,11 @@ async def add_automatic_batch(
                 await db.execute(
                     """INSERT OR REPLACE INTO history
                        (id, name, url, destination, size, status, error_msg,
-                        package_name, created_at, completed_at)
-                       VALUES (?, ?, '', ?, 0, 'failed', ?, ?, ?, ?)""",
+                        package_name, created_at, completed_at, package_id)
+                       VALUES (?, ?, '', ?, 0, 'failed', ?, ?, ?, ?, ?)""",
                     (
                         str(uuid.uuid4()), name, destination,
-                        error[:400], safe_package_name, now, now,
+                        error[:400], safe_package_name, now, now, package_id,
                     ),
                 )
         await db.commit()
@@ -427,6 +428,28 @@ async def remove_package(package_id: str, request: Request, _=Depends(get_curren
 
 
 # ---- History ---- #
+
+@router.get("/history/view")
+async def get_history_view(
+    scope: str = Query(default="all"),
+    limit: int = Query(default=30, ge=1, le=100),
+    cursor: str = Query(default=""),
+    today_from: str = Query(default=""),
+    _=Depends(get_current_user),
+):
+    return await history_view(scope, limit, cursor, today_from)
+
+
+@router.get("/history/groups/{group_id}")
+async def get_history_group(group_id: str, _=Depends(get_current_user)):
+    return await history_group(group_id)
+
+
+@router.post("/history/remove")
+async def remove_history_items(body: HistoryRemoveRequest, _=Depends(get_current_user)):
+    removed = await remove_history_entries(body.ids)
+    return {"status": "removed", "removed": removed}
+
 
 @router.get("/history")
 async def get_history(

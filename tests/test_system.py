@@ -45,7 +45,7 @@ class SystemTests(unittest.TestCase):
             config = root / "config.yml"
             version = root / "VERSION"
             config.write_text("server:\n  port: 45678\n")
-            version.write_text("1.12.0")
+            version.write_text("1.13.0")
             class Response:
                 status = 200
                 def __enter__(self):
@@ -59,7 +59,7 @@ class SystemTests(unittest.TestCase):
                 patch.object(update_runner, "run", return_value=SimpleNamespace(returncode=0)),
                 patch.object(update_runner.urllib.request, "urlopen", return_value=response) as urlopen,
             ):
-                self.assertTrue(update_runner.healthy("1.12.0", timeout=1))
+                self.assertTrue(update_runner.healthy("1.13.0", timeout=1))
             self.assertIn(":45678/api/auth/status", urlopen.call_args.args[0])
 
     def test_update_status_file_is_private_and_atomic(self):

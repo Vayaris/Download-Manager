@@ -36,6 +36,10 @@ class DuplicateResolutionRequest(BaseModel):
     confirm_overwrite: bool = False
 
 
+class HistoryRemoveRequest(BaseModel):
+    ids: List[str]
+
+
 class SettingsUpdate(BaseModel):
     alldebrid_api_key: Optional[str] = None
     alldebrid_enabled: Optional[bool] = None
