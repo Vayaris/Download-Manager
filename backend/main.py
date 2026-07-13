@@ -1,4 +1,6 @@
 import sys
+import logging
+import re
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -18,6 +20,26 @@ from routers import auth as auth_router
 
 BASE_DIR = Path(__file__).parent
 FRONTEND_DIR = BASE_DIR.parent / "frontend"
+
+
+class _SensitiveQueryFilter(logging.Filter):
+    _token = re.compile(r"([?&]token=)[^&\s\"]+")
+
+    def filter(self, record):
+        if isinstance(record.msg, str):
+            record.msg = self._token.sub(r"\1[redacted]", record.msg)
+        if isinstance(record.args, tuple):
+            record.args = tuple(
+                self._token.sub(r"\1[redacted]", value) if isinstance(value, str) else value
+                for value in record.args
+            )
+        return True
+
+
+for _logger_name in ("uvicorn.error", "uvicorn.access"):
+    _logger = logging.getLogger(_logger_name)
+    if not any(isinstance(item, _SensitiveQueryFilter) for item in _logger.filters):
+        _logger.addFilter(_SensitiveQueryFilter())
 
 
 # ------------------------------------------------------------------ #

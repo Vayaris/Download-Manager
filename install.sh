@@ -226,6 +226,8 @@ cat > /etc/systemd/system/download-manager.service <<EOF
 Description=Download Manager
 After=network-online.target
 Wants=network-online.target
+StartLimitIntervalSec=60
+StartLimitBurst=5
 
 [Service]
 Type=simple
@@ -240,8 +242,6 @@ ExecStopPost=-/usr/bin/pkill -f ^aria2c.*--rpc-listen-port=
 
 Restart=on-failure
 RestartSec=5
-StartLimitIntervalSec=60
-StartLimitBurst=5
 
 StandardOutput=journal
 StandardError=journal
