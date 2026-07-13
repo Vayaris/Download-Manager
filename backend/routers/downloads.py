@@ -1,4 +1,5 @@
 import uuid
+from io import BytesIO
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -8,10 +9,17 @@ from typing import List, Optional
 import aiosqlite
 
 from database import DB_PATH
-from models import AddDownloadsRequest, AddPackageRequest, BulkActionRequest, ReorderRequest
+from models import (
+    AddDownloadsRequest, AddPackageRequest, BulkActionRequest, ReorderRequest,
+    DuplicateCommitRequest, DuplicateResolutionRequest,
+)
 from auth import get_current_user
 from config import get_config
 from services.alldebrid import alldebrid
+from services.duplicates import (
+    STAGING_ROOT, apply_replacement, create_submission, finish_submission,
+    load_submission,
+)
 from utils import validate_destination as _validate_destination
 
 router = APIRouter()
@@ -50,6 +58,7 @@ async def add_automatic_batch(
     destination: str = Form(...),
     package_name: str = Form(""),
     files: Optional[List[UploadFile]] = File(None),
+    allow_duplicates: bool = Form(False),
     _=Depends(get_current_user),
 ):
     """Accept direct links, magnets and torrent files as one submission."""
@@ -119,7 +128,9 @@ async def add_automatic_batch(
     if not use_package and (magnet_links or files_data) and not uploaded:
         raise HTTPException(status_code=502, detail=failed_sources[0][1] if failed_sources else "Torrent rejected by AllDebrid")
 
-    direct_ids = await qm.add_downloads(direct_links, destination, package_id=package_id)
+    direct_ids = await qm.add_downloads(
+        direct_links, destination, package_id=package_id, allow_duplicates=allow_duplicates
+    )
     added_torrents = []
     now = datetime.now(timezone.utc).isoformat()
 
@@ -183,6 +194,157 @@ async def add_automatic_batch(
     if package_id:
         response.update({"package_id": package_id, "package_name": safe_package_name})
     return response
+
+
+@router.post("/preflight")
+async def preflight_batch(
+    links: str = Form(""),
+    destination: str = Form(...),
+    package_name: str = Form(""),
+    files: Optional[List[UploadFile]] = File(None),
+    user=Depends(get_current_user),
+):
+    _validate_destination(destination)
+    normalized_links = [line.strip() for line in links.splitlines() if line.strip()]
+    files_data = []
+    for file in list(files or []):
+        filename = (file.filename or "").strip()
+        if not filename.lower().endswith(".torrent"):
+            raise HTTPException(status_code=400, detail=".torrent files required")
+        content = await file.read()
+        if len(content) > 10 * 1024 * 1024:
+            raise HTTPException(status_code=400, detail=f"{filename} is too large (max 10MB)")
+        files_data.append((filename, content))
+    if not normalized_links and not files_data:
+        raise HTTPException(status_code=400, detail="Add at least one link or .torrent file")
+    return await create_submission(
+        user["username"], destination, package_name.strip()[:160], normalized_links, files_data
+    )
+
+
+@router.post("/submissions/{submission_id}/commit")
+async def commit_submission(
+    submission_id: str,
+    body: DuplicateCommitRequest,
+    request: Request,
+    user=Depends(get_current_user),
+):
+    submission = await load_submission(submission_id, user["username"])
+    decisions = {decision.source_id: decision for decision in body.decisions}
+    selected = []
+    for item in submission["items"]:
+        decision = decisions.get(item["id"])
+        action = decision.action if decision else ("download" if not item["conflicts"] else "")
+        if action not in ("ignore", "download", "replace"):
+            raise HTTPException(status_code=400, detail=f"A decision is required for {item['display_name']}")
+        if action == "ignore":
+            continue
+        disk_conflict = any(conflict["type"] == "destination" for conflict in item["conflicts"])
+        if action == "download" and disk_conflict and not decision.confirm_overwrite:
+            raise HTTPException(status_code=409, detail="Explicit overwrite confirmation is required")
+        if action == "replace":
+            await apply_replacement(item, _qm(request))
+        selected.append((item, action, bool(decision and decision.confirm_overwrite)))
+
+    if not selected:
+        await finish_submission(submission_id)
+        return {"added": 0, "ignored": len(submission["items"]), "cancelled": True}
+
+    link_items = [entry for entry in selected if entry[0]["kind"] in ("url", "magnet")]
+    file_items = [entry for entry in selected if entry[0]["kind"] == "torrent"]
+    staged_files = []
+    handles = []
+    try:
+        for item, _, _ in file_items:
+            handle = open(STAGING_ROOT / submission_id / item["stored"], "rb")
+            handles.append(handle)
+            staged_files.append(UploadFile(filename=item["display_name"], file=handle))
+        result = await add_automatic_batch(
+            request=request,
+            links="\n".join(item["value"] for item, _, _ in link_items),
+            destination=submission["destination"],
+            package_name=submission["package_name"],
+            files=staged_files,
+            allow_duplicates=True,
+            _=user,
+        )
+        if result.get("download_ids"):
+            db = await aiosqlite.connect(str(DB_PATH))
+            try:
+                for download_id, (item, action, confirmed) in zip(result["download_ids"], link_items):
+                    await db.execute(
+                        "UPDATE downloads SET source_key = ?, overwrite_confirmed = ? WHERE id = ?",
+                        (item["source_key"], 1 if confirmed or action == "replace" else 0, download_id),
+                    )
+                await db.commit()
+            finally:
+                await db.close()
+        torrent_sources = [entry for entry in selected if entry[0]["kind"] in ("magnet", "torrent")]
+        if result.get("torrents") and torrent_sources:
+            db = await aiosqlite.connect(str(DB_PATH))
+            try:
+                for torrent, (item, _, _) in zip(result["torrents"], torrent_sources):
+                    await db.execute("UPDATE torrents SET source_key = ? WHERE id = ?", (item["source_key"], torrent["id"]))
+                await db.commit()
+            finally:
+                await db.close()
+        result["ignored"] = len(submission["items"]) - len(selected)
+        await finish_submission(submission_id)
+        return result
+    finally:
+        for handle in handles:
+            handle.close()
+
+
+@router.get("/conflicts")
+async def pending_conflicts(_=Depends(get_current_user)):
+    async with aiosqlite.connect(str(DB_PATH)) as db:
+        db.row_factory = aiosqlite.Row
+        cursor = await db.execute(
+            """SELECT id, name, url, destination, target_path, package_id
+               FROM downloads WHERE status = 'duplicate_pending' ORDER BY created_at"""
+        )
+        return [dict(row) for row in await cursor.fetchall()]
+
+
+@router.post("/conflicts/{download_id}/resolve")
+async def resolve_pending_conflict(
+    download_id: str,
+    body: DuplicateResolutionRequest,
+    request: Request,
+    _=Depends(get_current_user),
+):
+    if body.action not in ("ignore", "download", "replace"):
+        raise HTTPException(status_code=400, detail="Invalid duplicate action")
+    async with aiosqlite.connect(str(DB_PATH)) as db:
+        db.row_factory = aiosqlite.Row
+        cursor = await db.execute("SELECT * FROM downloads WHERE id = ? AND status = 'duplicate_pending'", (download_id,))
+        row = await cursor.fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="Duplicate conflict not found")
+        target = Path(row["target_path"] or "")
+        if body.action == "ignore":
+            await db.execute("DELETE FROM downloads WHERE id = ?", (download_id,))
+        else:
+            if body.action == "download" and not body.confirm_overwrite:
+                raise HTTPException(status_code=409, detail="Explicit overwrite confirmation is required")
+            if body.action == "replace":
+                from services.duplicates import _path_allowed
+                if target.is_file():
+                    if not _path_allowed(target):
+                        raise HTTPException(status_code=403, detail="Duplicate path cannot be replaced safely")
+                    target.unlink()
+                await db.execute(
+                    "DELETE FROM history WHERE status = 'complete' AND destination = ? AND name = ?",
+                    (row["destination"], row["name"]),
+                )
+            await db.execute(
+                """UPDATE downloads SET status = 'pending', overwrite_confirmed = 1,
+                   error_msg = NULL, updated_at = ? WHERE id = ?""",
+                (datetime.now(timezone.utc).isoformat(), download_id),
+            )
+        await db.commit()
+    return {"status": "resolved", "action": body.action}
 
 
 @router.post("/{download_id}/pause")

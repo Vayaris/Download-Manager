@@ -6,95 +6,30 @@ from collections import deque
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Optional
-from urllib.parse import unquote, urlparse
 
 
 def log(msg):
     print(f"[queue] {msg}", flush=True)
 
 import aiosqlite
-import httpx
 
 from config import get_config
 from database import DB_PATH
-from services.aria2_service import Aria2RpcError, aria2
+from services.aria2_service import aria2
 from services.alldebrid import alldebrid
 from services.media_refresh import auto_refresh_recommended_libraries
+from services.diagnostics import record_event_nowait
+from services.duplicates import inferred_name, source_key
 from services.webhook import send_webhook
-
-
-def _looks_like_nfo(value: str) -> bool:
-    if not value:
-        return False
-    parsed = urlparse(str(value))
-    path = unquote(parsed.path or str(value)).lower().rstrip("/")
-    return path.rsplit("/", 1)[-1].endswith(".nfo")
-
-
-def _is_missing_aria2_gid_error(exc: Exception) -> bool:
-    if isinstance(exc, Aria2RpcError):
-        return exc.category == "missing_gid"
-    msg = str(exc).lower()
-    return (
-        "gid" in msg
-        and ("not found" in msg or "no such" in msg or "unknown" in msg)
-    )
-
-
-def _is_transient_aria2_error(exc: Exception) -> bool:
-    if isinstance(exc, (httpx.TimeoutException, httpx.TransportError)):
-        return True
-    if isinstance(exc, httpx.HTTPStatusError):
-        return exc.response.status_code >= 500
-    if isinstance(exc, Aria2RpcError):
-        return exc.category not in ("missing_gid", "download_error")
-    return not _is_missing_aria2_gid_error(exc)
-
-
-def _parse_datetime(value: str | None) -> datetime | None:
-    if not value:
-        return None
-    try:
-        parsed = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
-        if parsed.tzinfo is None:
-            return parsed.replace(tzinfo=timezone.utc)
-        return parsed.astimezone(timezone.utc)
-    except Exception:
-        return None
-
-
-def _path_is_allowed(path: Path, destination: str, config: dict) -> bool:
-    try:
-        resolved = path.resolve()
-    except OSError:
-        return False
-
-    roots = [destination, config["downloads"].get("default_destination", "")]
-    roots.extend(config["downloads"].get("allowed_paths", []))
-    for root in roots:
-        if not root:
-            continue
-        try:
-            resolved.relative_to(Path(root).resolve())
-            return True
-        except (ValueError, OSError):
-            continue
-    return False
-
-
-def _aria2_file_path(data: dict) -> Path | None:
-    files = data.get("files") or []
-    if not files:
-        return None
-    raw_path = str(files[0].get("path") or "").strip()
-    return Path(raw_path) if raw_path else None
-
-
-def _file_matches_size(path: Path, expected_size: int) -> bool:
-    try:
-        return path.is_file() and path.stat().st_size == expected_size
-    except OSError:
-        return False
+from services.queue_utils import (
+    aria2_file_path as _aria2_file_path,
+    file_matches_size as _file_matches_size,
+    is_missing_aria2_gid_error as _is_missing_aria2_gid_error,
+    is_transient_aria2_error as _is_transient_aria2_error,
+    looks_like_nfo as _looks_like_nfo,
+    parse_datetime as _parse_datetime,
+    path_is_allowed as _path_is_allowed,
+)
 
 
 class QueueManager:
@@ -134,6 +69,7 @@ class QueueManager:
             "source": source,
             "message": str(message)[:200],
         })
+        record_event_nowait("queue", source, message)
 
     async def _finalize_download(self, db, row, parsed: dict, now: str):
         cursor = await db.execute(
@@ -469,6 +405,17 @@ class QueueManager:
 
                     try:
                         direct_url = await alldebrid.process_url(item["url"])
+                        resolved_name = inferred_name(direct_url) or inferred_name(item["url"])
+                        target_path = Path(item["destination"]) / resolved_name if resolved_name else None
+                        if target_path and target_path.is_file() and not item["overwrite_confirmed"]:
+                            await db.execute(
+                                """UPDATE downloads SET status = 'duplicate_pending', name = ?,
+                                   target_path = ?, error_msg = 'A file with this name already exists', updated_at = ?
+                                   WHERE id = ? AND status = 'submitting'""",
+                                (resolved_name, str(target_path), now, item["id"]),
+                            )
+                            await db.commit()
+                            continue
                         gid = await aria2.add_uri(direct_url, item["destination"], split=segments)
                         cursor = await db.execute(
                             "UPDATE downloads SET aria2_gid = ?, status = 'downloading', error_msg = NULL, updated_at = ? WHERE id = ? AND status = 'submitting'",
@@ -820,11 +767,12 @@ class QueueManager:
 
         await db.execute(
             """INSERT OR REPLACE INTO history
-               (id, name, url, destination, size, status, error_msg, package_name, created_at, completed_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+               (id, name, url, destination, size, status, error_msg, package_name,
+                created_at, completed_at, source_key)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (row["id"], row["name"], row["url"], row["destination"],
              row["size"], row["status"], row["error_msg"], pkg_name,
-             row["created_at"], now),
+             row["created_at"], now, row["source_key"]),
         )
         await db.commit()
         if row["status"] == "complete":
@@ -894,7 +842,10 @@ class QueueManager:
     #  Public API                                                          #
     # ------------------------------------------------------------------ #
 
-    async def add_downloads(self, urls: list, destination: str, package_id: str = None) -> list:
+    async def add_downloads(
+        self, urls: list, destination: str, package_id: str = None,
+        allow_duplicates: bool = False,
+    ) -> list:
         now = datetime.now(timezone.utc).isoformat()
         ids = []
         seen = set()
@@ -908,25 +859,26 @@ class QueueManager:
 
             for url in urls:
                 url = url.strip()
-                if not url or url in seen or (skip_nfo and _looks_like_nfo(url)):
+                if not url or (url in seen and not allow_duplicates) or (skip_nfo and _looks_like_nfo(url)):
                     continue
                 seen.add(url)
 
                 # Skip if this URL is already in the active queue
-                cursor = await db.execute(
-                    "SELECT id FROM downloads WHERE url = ? AND status IN ('pending', 'submitting', 'downloading', 'debrid', 'paused', 'error')",
-                    (url,),
-                )
-                if await cursor.fetchone():
-                    continue
+                if not allow_duplicates:
+                    cursor = await db.execute(
+                        "SELECT id FROM downloads WHERE url = ? AND status IN ('pending', 'submitting', 'downloading', 'debrid', 'paused', 'error', 'duplicate_pending')",
+                        (url,),
+                    )
+                    if await cursor.fetchone():
+                        continue
 
                 dl_id = str(uuid.uuid4())
                 await db.execute(
                     """INSERT INTO downloads
                        (id, url, status, destination, created_at, updated_at, position,
-                        package_id, max_retries, last_progress_at)
-                       VALUES (?, ?, 'pending', ?, ?, ?, ?, ?, ?, ?)""",
-                    (dl_id, url, destination, now, now, pos, package_id, max_retries, now),
+                        package_id, max_retries, last_progress_at, source_key)
+                       VALUES (?, ?, 'pending', ?, ?, ?, ?, ?, ?, ?, ?)""",
+                    (dl_id, url, destination, now, now, pos, package_id, max_retries, now, source_key("url", url)),
                 )
                 ids.append(dl_id)
                 pos += 1

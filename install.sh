@@ -117,6 +117,8 @@ mkdir -p "${INSTALL_DIR}/backend"/{routers,services}
 mkdir -p "${INSTALL_DIR}/frontend/static"/{css,js}
 mkdir -p "${CONFIG_DIR}"
 mkdir -p "${LOG_DIR}"
+mkdir -p /var/lib/download-manager /var/backups/download-manager
+chmod 700 /var/lib/download-manager /var/backups/download-manager
 
 # ---- Copy project files ----
 info "Copying project files..."

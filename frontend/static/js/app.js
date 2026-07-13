@@ -632,12 +632,7 @@ async function submitTorrent() {
   torrentFiles.forEach(file => formData.append("files", file));
 
   try {
-    const token = API.token;
-    const headers = {};
-    if (token) headers["Authorization"] = `Bearer ${token}`;
-    const resp = await fetch("/api/downloads/batch", { method: "POST", headers, body: formData });
-    if (!resp.ok) throw new Error(await resp.text());
-    const result = await resp.json();
+    const result = await preflightAndCommit(formData);
     const message = result.package_name
       ? t("torrent_batch_added", { n: result.added, name: result.package_name })
       : t("torrent_added", { n: result.added });
@@ -736,6 +731,140 @@ async function removeTorrent(id) {
 
 // ---- Actions ----
 
+function duplicateText(fr, en) {
+  return getLang() === "fr" ? fr : en;
+}
+
+async function duplicateApi(path, options = {}) {
+  const headers = options.headers || {};
+  if (API.token) headers.Authorization = `Bearer ${API.token}`;
+  const response = await fetch(path, { ...options, headers });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(data.detail || `HTTP ${response.status}`);
+  return data;
+}
+
+function chooseDuplicateActions(preflight) {
+  const conflicts = preflight.items.filter(item => item.conflicts && item.conflicts.length);
+  if (!conflicts.length) return Promise.resolve([]);
+  return new Promise((resolve, reject) => {
+    const overlay = document.createElement("div");
+    overlay.className = "modal-overlay";
+    overlay.innerHTML = `
+      <div class="modal-box duplicate-modal" style="width:min(760px,calc(100vw - 24px));max-height:88vh;overflow:auto">
+        <div class="modal-header"><div class="modal-header-title"><h3>${duplicateText("Doublons détectés", "Duplicates detected")}</h3></div></div>
+        <div style="padding:20px">
+          <p class="form-hint" style="margin-bottom:14px">${duplicateText("Choisissez une action pour chaque élément. Aucun fichier ne sera remplacé automatiquement.", "Choose an action for each item. No file will be replaced automatically.")}</p>
+          <div style="display:flex;justify-content:flex-end;gap:8px;margin-bottom:12px;align-items:center">
+            <label class="form-hint" for="duplicate-apply-all">${duplicateText("Appliquer à tous", "Apply to all")}</label>
+            <select id="duplicate-apply-all" class="form-input" style="width:auto">
+              <option value="">—</option><option value="ignore">${duplicateText("Ignorer", "Ignore")}</option>
+              <option value="download">${duplicateText("Télécharger quand même", "Download anyway")}</option>
+              <option value="replace">${duplicateText("Remplacer", "Replace")}</option>
+            </select>
+          </div>
+          <div>${conflicts.map(item => {
+            const details = item.conflicts.map(conflict => conflict.path || conflict.name || conflict.destination || conflict.type).join(" · ");
+            return `<div class="settings-card" style="padding:12px;margin-bottom:8px">
+              <strong>${escHtml(item.display_name)}</strong>
+              <div class="form-hint" style="overflow-wrap:anywhere">${escHtml(details)}</div>
+              <select class="form-input duplicate-action" data-source-id="${item.id}" style="margin-top:8px">
+                <option value="ignore">${duplicateText("Ignorer", "Ignore")}</option>
+                <option value="download">${duplicateText("Télécharger quand même", "Download anyway")}</option>
+                <option value="replace">${duplicateText("Remplacer", "Replace")}</option>
+              </select>
+            </div>`;
+          }).join("")}</div>
+        </div>
+        <div class="modal-footer" style="display:flex;justify-content:flex-end;gap:8px">
+          <button class="btn duplicate-cancel">${duplicateText("Annuler", "Cancel")}</button>
+          <button class="btn btn-primary duplicate-confirm">${duplicateText("Continuer", "Continue")}</button>
+        </div>
+      </div>`;
+    document.body.appendChild(overlay);
+    overlay.querySelector("#duplicate-apply-all").addEventListener("change", event => {
+      if (event.target.value) overlay.querySelectorAll(".duplicate-action").forEach(select => { select.value = event.target.value; });
+    });
+    overlay.querySelector(".duplicate-cancel").addEventListener("click", () => {
+      overlay.remove();
+      reject(new Error(duplicateText("Ajout annulé", "Submission cancelled")));
+    });
+    overlay.querySelector(".duplicate-confirm").addEventListener("click", () => {
+      const decisions = Array.from(overlay.querySelectorAll(".duplicate-action")).map(select => {
+        const item = conflicts.find(candidate => candidate.id === select.dataset.sourceId);
+        const diskPaths = item.conflicts.filter(conflict => conflict.type === "destination").map(conflict => conflict.path);
+        return { source_id: item.id, action: select.value, diskPaths };
+      });
+      const overwrites = decisions.filter(decision => decision.action === "download" && decision.diskPaths.length).flatMap(decision => decision.diskPaths);
+      if (overwrites.length && !confirm(`${duplicateText("Ces fichiers seront écrasés :", "These files will be overwritten:")}\n\n${overwrites.join("\n")}`)) return;
+      decisions.forEach(decision => {
+        decision.confirm_overwrite = decision.action === "download" && decision.diskPaths.length > 0;
+        delete decision.diskPaths;
+      });
+      overlay.remove();
+      resolve(decisions);
+    });
+  });
+}
+
+async function preflightAndCommit(formData) {
+  const preflight = await duplicateApi("/api/downloads/preflight", { method: "POST", body: formData });
+  const decisions = await chooseDuplicateActions(preflight);
+  return duplicateApi(`/api/downloads/submissions/${preflight.submission_id}/commit`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ decisions }),
+  });
+}
+
+let duplicateConflictBusy = false;
+async function checkPendingDuplicateConflicts() {
+  if (duplicateConflictBusy || document.querySelector(".duplicate-modal")) return;
+  duplicateConflictBusy = true;
+  try {
+    const conflicts = await duplicateApi("/api/downloads/conflicts");
+    if (!conflicts.length) return;
+    const item = conflicts[0];
+    const path = item.target_path || `${item.destination}/${item.name || ""}`;
+    const overlay = document.createElement("div");
+    overlay.className = "modal-overlay";
+    overlay.innerHTML = `<div class="modal-box duplicate-modal" style="width:min(560px,calc(100vw - 24px))">
+      <div class="modal-header"><div class="modal-header-title"><h3>${duplicateText("Fichier déjà présent", "File already exists")}</h3></div></div>
+      <div style="padding:20px"><p>${duplicateText("Le nom final n’était disponible qu’après le traitement AllDebrid. Le téléchargement local est en attente.", "The final name became available after AllDebrid processing. The local download is waiting.")}</p>
+      <div class="form-hint" style="margin-top:10px;overflow-wrap:anywhere">${escHtml(path)}</div></div>
+      <div class="modal-footer" style="display:flex;justify-content:flex-end;gap:8px;flex-wrap:wrap">
+        <button class="btn" data-action="ignore">${duplicateText("Ignorer", "Ignore")}</button>
+        <button class="btn" data-action="download">${duplicateText("Télécharger quand même", "Download anyway")}</button>
+        <button class="btn btn-primary" data-action="replace">${duplicateText("Remplacer", "Replace")}</button>
+      </div></div>`;
+    document.body.appendChild(overlay);
+    await new Promise(resolve => {
+      overlay.querySelectorAll("[data-action]").forEach(button => button.addEventListener("click", async () => {
+        const action = button.dataset.action;
+        let confirmed = false;
+        if (action === "download") {
+          confirmed = confirm(`${duplicateText("Confirmer l’écrasement de", "Confirm overwrite of")}\n${path}`);
+          if (!confirmed) return;
+        }
+        try {
+          await duplicateApi(`/api/downloads/conflicts/${item.id}/resolve`, {
+            method: "POST", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ action, confirm_overwrite: confirmed }),
+          });
+          overlay.remove();
+          resolve();
+        } catch (error) {
+          showToast(t("error_prefix") + error.message, "error");
+        }
+      }));
+    });
+  } catch (error) {
+    console.warn("Duplicate conflict check failed", error);
+  } finally {
+    duplicateConflictBusy = false;
+  }
+}
+
 async function addLinks() {
   const textarea  = document.getElementById("links-input");
   const rawUrls   = textarea.value.trim();
@@ -758,11 +887,7 @@ async function addLinks() {
   formData.append("package_name", t("auto_batch_name", { date: new Date().toLocaleString(getLang()) }));
 
   try {
-    const headers = {};
-    if (API.token) headers.Authorization = `Bearer ${API.token}`;
-    const response = await fetch("/api/downloads/batch", { method: "POST", headers, body: formData });
-    const result = await response.json().catch(() => ({}));
-    if (!response.ok) throw new Error(result.detail || `HTTP ${response.status}`);
+    const result = await preflightAndCommit(formData);
     textarea.value = "";
     const message = result.package_name
       ? t("batch_added", { n: result.added, name: result.package_name })
@@ -1084,6 +1209,8 @@ function startApp() {
     }
   });
   WS.init();
+  checkPendingDuplicateConflicts();
+  setInterval(checkPendingDuplicateConflicts, 4000);
 
   if (typeof initAccountButton === "function") initAccountButton();
 }

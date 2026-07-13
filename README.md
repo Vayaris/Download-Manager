@@ -2,7 +2,7 @@
 
 Self-hosted download manager powered by **FastAPI**, **aria2** and **AllDebrid**. It provides a responsive web/PWA interface for direct links, magnets and `.torrent` files, with real-time queue updates and optional Plex or Jellyfin library refreshes.
 
-Current release: **v1.11.0**
+Current release: **v1.12.0**
 
 ![Python](https://img.shields.io/badge/Python-3.8+-3776AB?logo=python&logoColor=white)
 ![FastAPI](https://img.shields.io/badge/FastAPI-009688?logo=fastapi&logoColor=white)
@@ -13,6 +13,7 @@ Current release: **v1.11.0**
 ## Highlights
 
 - Direct links, magnets and one or many `.torrent` files through AllDebrid
+- Duplicate preflight for active URLs, successful history, destination files and repeated batch sources
 - Automatic mixed packages when at least two sources are submitted, with one final package notification
 - Queue priorities, drag and drop, pause/resume, configurable retries and up to 20 simultaneous downloads
 - Global aria2 speed limit in MB/s, with effective-limit verification in Settings
@@ -23,7 +24,7 @@ Current release: **v1.11.0**
 - Plex or Jellyfin integration with favorites, manual refresh suggestions and optional automatic refresh
 - Webhooks for Discord, Slack, Telegram, Gotify, ntfy, Signal and generic JSON
 - Mandatory authentication, optional TOTP 2FA, login rate limiting and IP blocking
-- Built-in diagnostics, updates, SMB/CIFS support and admin CLI
+- Persistent structured diagnostics, safe updates with automatic rollback, SMB/CIFS support and admin CLI
 
 ## Requirements
 
@@ -60,6 +61,12 @@ sudo bash install.sh
 | Package members | One aggregate progress view and one final webhook |
 
 AllDebrid resolves magnets and torrents before aria2 downloads the returned files. Remote AllDebrid caching is separate from the local aria2 speed limit. When `.nfo` filtering is enabled, matching files are ignored silently and never appear as failed or blocked items.
+
+## Duplicate protection
+
+Every web submission runs through a preflight check. Conflicts include an identical active URL, a successful history entry, a file already present in the selected destination, or a repeated source inside the same batch. The resolution dialog supports **Ignore**, **Download anyway**, and **Replace** per item, plus an apply-to-all control. Overwriting an existing destination always requires an additional explicit confirmation.
+
+Some final filenames are only known after AllDebrid resolves a source. Those downloads remain in a `duplicate_pending` state and prompt for a decision before aria2 starts the local transfer.
 
 ## Destination explorer
 
@@ -158,6 +165,8 @@ cd /opt/download-manager/backend
 ## Updates
 
 Use **Settings > Updates > Check for updates**. When a newer GitHub release is available, the interface shows its changelog, installs it, restarts Download Manager if required, and reloads the page.
+
+Updates run in an independent systemd unit. Before changing files, Download Manager saves the current commit, configuration and SQLite database. If the new service does not pass its health check, the previous version is restored automatically. The three most recent update backups are retained.
 
 For a manual update:
 

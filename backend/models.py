@@ -21,6 +21,21 @@ class ReorderRequest(BaseModel):
     ids: List[str]
 
 
+class DuplicateDecision(BaseModel):
+    source_id: str
+    action: str
+    confirm_overwrite: bool = False
+
+
+class DuplicateCommitRequest(BaseModel):
+    decisions: List[DuplicateDecision] = []
+
+
+class DuplicateResolutionRequest(BaseModel):
+    action: str
+    confirm_overwrite: bool = False
+
+
 class SettingsUpdate(BaseModel):
     alldebrid_api_key: Optional[str] = None
     alldebrid_enabled: Optional[bool] = None
