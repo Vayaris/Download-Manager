@@ -2208,24 +2208,35 @@ tr:hover .btn-copy-path { opacity: 1; }
 .runtime-alert strong { flex-shrink: 0; color: var(--red); font-size: 11px; }
 .runtime-alert span { overflow-wrap: anywhere; font-size: 10.5px; }
 
-.download-dashboard { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(300px, .8fr); gap: 12px; margin-bottom: 18px; }
 .dashboard-panel { min-width: 0; padding: 14px; border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--surface); box-shadow: var(--shadow-xs); }
 .dashboard-panel-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; margin-bottom: 12px; }
 .dashboard-panel-head > div { display: flex; flex-direction: column; min-width: 0; }
 .dashboard-panel-head strong { color: var(--text); font-size: 12px; }
 .dashboard-panel-head span { color: var(--text-3); font-size: 9.5px; }
-.quick-place-group + .quick-place-group { margin-top: 10px; }
-.quick-place-label { display: block; margin: 0 0 5px 2px; color: var(--text-3); font-size: 9px; font-weight: 750; letter-spacing: .55px; text-transform: uppercase; }
-.quick-places { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 6px; }
-.quick-place { display: grid; grid-template-columns: 28px minmax(0,1fr); align-items: center; gap: 8px; min-width: 0; padding: 8px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface-2); color: var(--text); text-align: left; cursor: pointer; transition: border-color var(--transition), background var(--transition); }
-.quick-place:hover { border-color: var(--accent); background: var(--accent-dim); }
-.quick-place.selected { border-color: var(--accent); background: var(--accent-dim); box-shadow: inset 3px 0 0 var(--accent); }
-.quick-place.unavailable { opacity: .5; cursor: not-allowed; }
-.quick-place-icon { display: flex; align-items: center; justify-content: center; width: 28px; height: 28px; border-radius: 7px; background: var(--accent-dim); color: var(--accent-text); }
-.quick-place > span:last-child { display: flex; flex-direction: column; min-width: 0; }
-.quick-place strong, .quick-place small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.quick-place strong { font-size: 10.5px; }
-.quick-place small { color: var(--text-3); font-size: 8.5px; font-style: italic; }
+.download-dashboard { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin-top: 18px; }
+.storage-overview-panel .btn.loading { opacity: .65; cursor: wait; }
+.storage-overview-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 7px; }
+.storage-overview-message { grid-column: 1 / -1; padding: 14px; border: 1px dashed var(--border); border-radius: var(--radius); color: var(--text-3); font-size: 10.5px; text-align: center; }
+.storage-overview-message.error { color: var(--red); border-color: var(--red-border); background: var(--red-dim); }
+.storage-overview-card { min-width: 0; padding: 8px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg-elevated); }
+.storage-overview-card.unavailable { opacity: .7; }
+.storage-overview-card-head { display: grid; grid-template-columns: 24px minmax(0, 1fr) auto; align-items: center; gap: 6px; }
+.storage-overview-icon { display: flex; align-items: center; justify-content: center; width: 24px; height: 24px; border-radius: 6px; color: var(--accent-text); background: var(--accent-dim); }
+.storage-overview-copy { display: flex; flex-direction: column; min-width: 0; }
+.storage-overview-copy strong, .storage-overview-copy small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.storage-overview-copy strong { color: var(--text); font-size: 10px; }
+.storage-overview-copy small { color: var(--text-3); font-size: 7.5px; }
+.storage-overview-kind { padding: 2px 4px; border-radius: var(--radius-full); color: var(--text-3); background: var(--surface-2); font-size: 7px; font-weight: 800; letter-spacing: .3px; text-transform: uppercase; }
+.storage-overview-kind.smb { color: var(--blue); background: var(--blue-dim); }
+.storage-overview-value { display: flex; align-items: baseline; gap: 4px; margin-top: 7px; min-height: 19px; }
+.storage-overview-value strong { color: var(--text); font-size: 13px; font-variant-numeric: tabular-nums; }
+.storage-overview-value span { color: var(--text-3); font-size: 8px; }
+.storage-overview-bar { height: 4px; margin-top: 4px; overflow: hidden; border-radius: var(--radius-full); background: var(--surface-3); }
+.storage-overview-bar span { display: block; height: 100%; border-radius: inherit; }
+.storage-overview-bar .ok { background: var(--green); }
+.storage-overview-bar .warning { background: var(--yellow); }
+.storage-overview-bar .critical { background: var(--red); }
+.storage-overview-details { display: block; margin-top: 4px; overflow: hidden; color: var(--text-3); font-size: 7.5px; text-overflow: ellipsis; white-space: nowrap; }
 .recent-activity { display: grid; gap: 5px; }
 .recent-activity-item { display: grid; grid-template-columns: 26px minmax(0,1fr) 16px; align-items: center; gap: 8px; width: 100%; padding: 8px; border: 0; border-radius: var(--radius); background: transparent; color: var(--text); text-align: left; cursor: pointer; }
 .recent-activity-item:hover { background: var(--surface-2); }
@@ -2243,12 +2254,14 @@ tr:hover .btn-copy-path { opacity: 1; }
 @media (max-width: 768px) {
   .download-dashboard { grid-template-columns: 1fr; }
   .dashboard-panel { padding: 12px; }
-  .quick-places { display: flex; overflow-x: auto; padding-bottom: 4px; scroll-snap-type: x proximity; }
-  .quick-place { flex: 0 0 min(78vw, 260px); scroll-snap-align: start; }
   .unified-source-row { grid-template-columns: 68px minmax(0,1fr) 24px; }
   .unified-source-meta { display: none; }
   .composer-entry-hint { display: none; }
   .runtime-alert { align-items: flex-start; flex-direction: column; gap: 2px; }
+}
+
+@media (max-width: 430px) {
+  .storage-overview-grid { grid-template-columns: 1fr; }
 }
 
 /* ================================================================

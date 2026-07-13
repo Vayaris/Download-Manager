@@ -8,6 +8,14 @@ AGENT = "download-manager"
 
 
 class AllDebridService:
+    @staticmethod
+    def error_message(error, default: str = "Unknown error") -> str:
+        if isinstance(error, dict):
+            code = str(error.get("code") or "").strip()
+            message = str(error.get("message") or default).strip()
+            return f"{code}: {message}" if code else message
+        return str(error or default).strip()
+
     def _get_api_key(self) -> str:
         config = get_config()
         if not config["alldebrid"]["enabled"] or not config["alldebrid"]["api_key"]:
@@ -75,14 +83,19 @@ class AllDebridService:
     async def magnet_upload(self, magnets: list[str]) -> list[dict]:
         api_key = self._get_api_key()
         async with httpx.AsyncClient(timeout=30.0) as client:
-            resp = await client.post(
-                f"{ALLDEBRID_API}/v4/magnet/upload",
-                params={"agent": AGENT, "apikey": api_key},
-                data=[("magnets[]", m) for m in magnets],
-            )
-            data = resp.json()
+            try:
+                resp = await client.post(
+                    f"{ALLDEBRID_API}/v4/magnet/upload",
+                    params={"agent": AGENT, "apikey": api_key},
+                    data={"magnets[]": magnets},
+                )
+                data = resp.json()
+            except httpx.HTTPError as exc:
+                raise Exception(f"AllDebrid request failed: {type(exc).__name__}") from exc
+            except ValueError as exc:
+                raise Exception("AllDebrid returned an invalid response") from exc
             if data.get("status") != "success":
-                msg = data.get("error", {}).get("message", "Unknown error")
+                msg = self.error_message(data.get("error"))
                 raise Exception(f"AllDebrid: {msg}")
             return data["data"]["magnets"]
 

@@ -696,10 +696,12 @@ class QueueManager:
                             await self._check_package_complete(db, row["package_id"], now)
                             continue
                         raise Exception("AllDebrid returned no files for ready torrent")
-                    if row["package_id"]:
-                        await self.add_downloads(links, row["destination"], package_id=row["package_id"])
-                    else:
-                        await self.add_downloads(links, row["destination"])
+                    await self.import_torrent_links(
+                        row["name"] or status_data.get("filename") or "Torrent",
+                        links,
+                        row["destination"],
+                        package_id=row["package_id"],
+                    )
                     await db.execute("DELETE FROM torrents WHERE id = ?", (row["id"],))
                     await db.commit()
                     if row["package_id"]:
@@ -926,6 +928,22 @@ class QueueManager:
         pkg_id = await self.create_package(name, destination, source_count=len(urls))
         ids = await self.add_downloads(urls, destination, package_id=pkg_id)
         return {"package_id": pkg_id, "download_ids": ids}
+
+    async def import_torrent_links(
+        self,
+        name: str,
+        links: list[str],
+        destination: str,
+        package_id: str | None = None,
+    ) -> dict:
+        """Import resolved torrent files, grouping multi-file contents."""
+        if package_id:
+            ids = await self.add_downloads(links, destination, package_id=package_id)
+            return {"package_id": package_id, "download_ids": ids}
+        if len(links) > 1:
+            return await self.add_package(name or "Torrent", links, destination)
+        ids = await self.add_downloads(links, destination)
+        return {"package_id": None, "download_ids": ids}
 
     async def pause_download(self, download_id: str):
         async with aiosqlite.connect(str(DB_PATH)) as db:

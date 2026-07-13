@@ -11,6 +11,8 @@ const ICONS = {
   copy:   `<svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>`,
   check:  `<svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>`,
   folder: `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>`,
+  disk: `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M3 5v14c0 1.7 4 3 9 3s9-1.3 9-3V5"/><path d="M3 12c0 1.7 4 3 9 3s9-1.3 9-3"/></svg>`,
+  network: `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="7" rx="2"/><rect x="3" y="14" width="18" height="7" rx="2"/><path d="M7 7h.01M7 18h.01"/></svg>`,
   chevDown: `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>`,
   chevRight: `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>`,
   pkg: `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16.5 9.4 7.55 4.24"/><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.29 7 12 12 20.71 7"/><line x1="12" y1="22" x2="12" y2="12"/></svg>`,
@@ -290,7 +292,6 @@ document.addEventListener("DOMContentLoaded", () => {
     textarea.value = "";
     updateUnifiedSourceState();
   });
-  document.getElementById("dest-path-text")?.addEventListener("input", renderQuickDestinations);
   card.addEventListener("dragenter", event => {
     if (!hasDraggedFiles(event)) return;
     event.preventDefault();
@@ -320,10 +321,12 @@ const downloadWorkspace = {
   downloads: [],
   packages: [],
   torrents: [],
-  preferences: { favorites: [], recents: [] },
-  storage: [],
   recentGroups: [],
+  storage: [],
+  storageLoaded: false,
 };
+
+let storageOverviewTimer = null;
 
 function activeWorkspaceDownloads() {
   return downloadWorkspace.downloads.filter(item => item.status !== "complete" && item.status !== "failed");
@@ -339,47 +342,71 @@ function updateDownloadWorkspace() {
   const torrents = activeWorkspaceTorrents();
   const count = downloads.length + torrents.length;
   document.getElementById("download-controls")?.classList.toggle("hidden", downloads.length === 0);
-  document.getElementById("download-dashboard")?.classList.toggle("hidden", count > 0);
   document.getElementById("active-tab-count").textContent = count;
   updateStats(downloads, torrents);
 }
 
-function matchingStorage(path) {
-  return downloadWorkspace.storage
-    .filter(item => path === item.path || path.startsWith(`${String(item.path).replace(/\/$/, "")}/`))
-    .sort((a, b) => b.path.length - a.path.length)[0];
+function storageCardHtml(item) {
+  const available = Boolean(item.available);
+  const kind = item.kind === "smb" ? "smb" : "disk";
+  const percent = Math.max(0, Math.min(100, Number(item.percent || 0)));
+  const level = percent >= 90 ? "critical" : percent >= 70 ? "warning" : "ok";
+  const name = item.name || String(item.path || "").split("/").filter(Boolean).pop() || item.path;
+  const details = available
+    ? t("storage_overview_usage", { free: fmtBytes(item.free), total: fmtBytes(item.total), percent })
+    : t("storage_overview_unavailable");
+  return `<article class="storage-overview-card ${available ? "" : "unavailable"}" title="${escHtml(item.path || "")}">
+    <div class="storage-overview-card-head">
+      <span class="storage-overview-icon">${kind === "smb" ? ICONS.network : ICONS.disk}</span>
+      <span class="storage-overview-copy"><strong>${escHtml(name)}</strong><small>${escHtml(item.path || "")}</small></span>
+      <span class="storage-overview-kind ${kind}">${t(`storage_overview_${kind}`)}</span>
+    </div>
+    <div class="storage-overview-value">${available ? `<strong>${escHtml(fmtBytes(item.free))}</strong><span>${t("storage_overview_free")}</span>` : `<strong>${t("storage_overview_unavailable")}</strong>`}</div>
+    <div class="storage-overview-bar" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${percent}" aria-label="${escHtml(details)}">
+      <span class="${level}" style="width:${available ? percent : 0}%"></span>
+    </div>
+    <small class="storage-overview-details">${escHtml(details)}</small>
+  </article>`;
 }
 
-function quickPlaceHtml(item) {
-  const storage = matchingStorage(item.path);
-  const selected = getDestinationValue("dest-path") === item.path;
-  const storageText = storage?.available
-    ? `${item.storage_label} · ${t("quick_free", { size: fmtBytes(storage.free) })}`
-    : item.storage_label;
-  return `<button type="button" class="quick-place${selected ? " selected" : ""}${item.available ? "" : " unavailable"}"
-      onclick="selectQuickDestination('${escJs(item.path)}')" ${item.available ? "" : "disabled"}>
-    <span class="quick-place-icon">${ICONS.folder}</span>
-    <span><strong>${escHtml(item.name)}</strong><small title="${escHtml(item.path)}">${escHtml(storageText)}</small></span>
-  </button>`;
+function renderStorageOverview(error = false) {
+  const container = document.getElementById("storage-overview");
+  if (!container) return;
+  if (error && !downloadWorkspace.storageLoaded) {
+    container.innerHTML = `<div class="storage-overview-message error">${t("storage_overview_error")}</div>`;
+    return;
+  }
+  if (!downloadWorkspace.storageLoaded) {
+    container.innerHTML = `<div class="storage-overview-message">${t("storage_overview_loading")}</div>`;
+    return;
+  }
+  if (!downloadWorkspace.storage.length) {
+    container.innerHTML = `<div class="storage-overview-message">${t("storage_overview_empty")}</div>`;
+    return;
+  }
+  container.innerHTML = downloadWorkspace.storage.map(storageCardHtml).join("");
 }
 
-function renderQuickDestinations() {
-  const favorites = downloadWorkspace.preferences.favorites || [];
-  const favoritePaths = new Set(favorites.map(item => item.path));
-  const recents = (downloadWorkspace.preferences.recents || []).filter(item => !favoritePaths.has(item.path));
-  document.getElementById("quick-favorites-wrap").classList.toggle("hidden", favorites.length === 0);
-  document.getElementById("quick-recents-wrap").classList.toggle("hidden", recents.length === 0);
-  document.getElementById("quick-destinations-empty").classList.toggle("hidden", favorites.length + recents.length > 0);
-  document.getElementById("quick-favorites").innerHTML = favorites.slice(0, 6).map(quickPlaceHtml).join("");
-  document.getElementById("quick-recents").innerHTML = recents.slice(0, 4).map(quickPlaceHtml).join("");
-}
-
-async function selectQuickDestination(path) {
-  setDestinationValue("dest-path", path);
-  renderQuickDestinations();
+async function loadStorageOverview(manual = false) {
+  const button = document.getElementById("storage-overview-refresh");
+  if (button?.disabled) return;
+  if (button) {
+    button.disabled = true;
+    button.classList.toggle("loading", manual);
+  }
+  renderStorageOverview();
   try {
-    await API.post("/api/files/recents", { path });
-  } catch {}
+    downloadWorkspace.storage = await API.get("/api/settings/storage?include_smb=true");
+    downloadWorkspace.storageLoaded = true;
+    renderStorageOverview();
+  } catch {
+    renderStorageOverview(true);
+  } finally {
+    if (button) {
+      button.disabled = false;
+      button.classList.remove("loading");
+    }
+  }
 }
 
 function renderRecentActivity() {
@@ -399,19 +426,8 @@ function renderRecentActivity() {
   }).join("");
 }
 
-async function loadDownloadDashboard() {
-  try {
-    const [preferences, storage] = await Promise.all([
-      API.get("/api/files/preferences"),
-      API.get("/api/settings/storage"),
-    ]);
-    downloadWorkspace.preferences = preferences;
-    downloadWorkspace.storage = storage;
-    renderQuickDestinations();
-  } catch {}
-}
-
 let lastRuntimeStatus = null;
+let consecutiveAria2Failures = 0;
 
 function renderRuntimeAlert(status = lastRuntimeStatus) {
   if (status) lastRuntimeStatus = status;
@@ -421,7 +437,7 @@ function renderRuntimeAlert(status = lastRuntimeStatus) {
   const warnings = [];
   if (!websocketOk) warnings.push(t("runtime_ws_unavailable"));
   if (status && !status.queue_running) warnings.push(t("runtime_queue_unavailable"));
-  if (status && !status.aria2_ok) warnings.push(t("runtime_aria2_unavailable"));
+  if (status && !status.aria2_ok && consecutiveAria2Failures >= 2) warnings.push(t("runtime_aria2_unavailable"));
   if (status?.queue_error) warnings.push(status.queue_error);
   alert.classList.toggle("hidden", warnings.length === 0);
   alert.innerHTML = warnings.length ? `<strong>${t("runtime_alert_title")}</strong><span>${escHtml(warnings.join(" · "))}</span>` : "";
@@ -429,7 +445,9 @@ function renderRuntimeAlert(status = lastRuntimeStatus) {
 
 async function checkRuntimeStatus() {
   try {
-    renderRuntimeAlert(await API.get("/api/settings/runtime-status"));
+    const status = await API.get("/api/settings/runtime-status");
+    consecutiveAria2Failures = status.aria2_ok ? 0 : consecutiveAria2Failures + 1;
+    renderRuntimeAlert(status);
   } catch {
     renderRuntimeAlert();
   }
@@ -838,7 +856,7 @@ async function loadHistory(reset = true) {
     const cursor = historyState.cursor ? `&cursor=${encodeURIComponent(historyState.cursor)}` : "";
     const data = await API.get(`/api/downloads/history/view?scope=${historyState.scope}&limit=30&today_from=${encodeURIComponent(today.toISOString())}${cursor}`);
     historyState.groups.push(...data.groups);
-    if (reset && historyState.scope === "all") downloadWorkspace.recentGroups = data.groups.slice(0, 3);
+    if (reset && historyState.scope === "all") downloadWorkspace.recentGroups = data.groups.slice(0, 6);
     historyState.cursor = data.next_cursor;
     renderHistorySummary(data.summary);
     renderHistoryGroups();
@@ -1539,7 +1557,7 @@ async function loadInitial() {
 
   loadPackages();
   loadHistory();
-  loadDownloadDashboard();
+  loadStorageOverview();
 }
 
 // ---- Start app (called ONLY after auth is confirmed) ----
@@ -1574,11 +1592,14 @@ function startApp() {
       _lastHistoryLoad = now;
       loadHistory(true);
     }
+    if (newCompletion) loadStorageOverview();
   });
   WS.on("connection_status", () => renderRuntimeAlert());
   WS.init();
   setTimeout(checkRuntimeStatus, 2500);
   setInterval(checkRuntimeStatus, 30000);
+  if (storageOverviewTimer) clearInterval(storageOverviewTimer);
+  storageOverviewTimer = setInterval(loadStorageOverview, 60000);
   checkPendingDuplicateConflicts();
   setInterval(checkPendingDuplicateConflicts, 4000);
 

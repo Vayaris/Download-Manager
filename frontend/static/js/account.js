@@ -95,6 +95,21 @@
         </div>
       </div>
 
+      <!-- Interface style -->
+      <div class="acct-section">
+        <h4 class="acct-section-title">
+          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06-2.83 2.83-.06-.06a1.65 1.65 0 0 0-1.82-.33A1.65 1.65 0 0 0 14 21.83V22h-4v-.17a1.65 1.65 0 0 0-1.08-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06-2.83-2.83.06-.06A1.65 1.65 0 0 0 4.6 15 1.65 1.65 0 0 0 3.17 14H3v-4h.17A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06L7.04 4.3l.06.06A1.65 1.65 0 0 0 8.92 4 1.65 1.65 0 0 0 10 2.17V2h4v.17A1.65 1.65 0 0 0 15.08 4a1.65 1.65 0 0 0 1.82-.33l.06-.06 2.83 2.83-.06.06A1.65 1.65 0 0 0 19.4 9 1.65 1.65 0 0 0 20.83 10H21v4h-.17A1.65 1.65 0 0 0 19.4 15z"/></svg>
+          <span data-i18n="acct_appearance_title">Interface style</span>
+        </h4>
+        <div class="form-group">
+          <select id="acct-ui-style-select" class="form-input" onchange="setUIStyle(this.value)">
+            <option value="classic" data-i18n="acct_ui_classic">Classic</option>
+            <option value="modern" data-i18n="acct_ui_modern">Minimal premium</option>
+          </select>
+          <p class="form-hint" data-i18n="acct_appearance_hint">This preference is saved on this device. The classic interface remains available at any time.</p>
+        </div>
+      </div>
+
       <!-- Logout -->
       <div class="acct-section" style="border-top:1px solid var(--border);padding-top:16px;margin-top:8px">
         <button class="btn btn-danger full-width" onclick="acctLogout()">
@@ -123,6 +138,8 @@ function openAccountModal() {
   document.getElementById("account-modal").classList.remove("hidden");
   const langSelect = document.getElementById("acct-lang-select");
   if (langSelect) langSelect.value = localStorage.getItem("dm_lang") || "en";
+  const styleSelect = document.getElementById("acct-ui-style-select");
+  if (styleSelect && typeof getUIStyle === "function") styleSelect.value = getUIStyle();
   acctLoadUserInfo();
 }
 

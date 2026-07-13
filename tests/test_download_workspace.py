@@ -46,6 +46,34 @@ class DownloadWorkspaceTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result["queue_error"], "tick failed")
         self.assertNotIn("recent_errors", result)
 
+    async def test_storage_overview_includes_and_deduplicates_smb(self):
+        config = {
+            "storage_extra_paths": ["/mnt/disk-one", "/mnt/smb/media"],
+            "smb_shares": [
+                {"name": "Media NAS", "mount_point": "/mnt/smb/media"},
+                {"name": "Offline NAS", "mount_point": "/mnt/smb/offline"},
+            ],
+        }
+        with (
+            patch.object(settings, "get_config", return_value=config),
+            patch.object(settings, "is_mounted", side_effect=lambda path: path.endswith("/media")),
+            patch.object(
+                settings, "_disk_usage_with_timeout",
+                AsyncMock(return_value=(1000, 400, 600, 40.0)),
+            ) as disk_usage,
+        ):
+            result = await settings.get_storage(include_smb=True, _={"username": "vayaris"})
+
+        self.assertEqual(len(result), 3)
+        media = next(item for item in result if item["name"] == "Media NAS")
+        offline = next(item for item in result if item["name"] == "Offline NAS")
+        self.assertEqual(media["kind"], "smb")
+        self.assertTrue(media["configured_storage"])
+        self.assertTrue(media["available"])
+        self.assertFalse(offline["configured_storage"])
+        self.assertFalse(offline["available"])
+        self.assertEqual(disk_usage.await_count, 2)
+
     def test_download_page_contains_workspace_components(self):
         root = Path(__file__).resolve().parents[1]
         html = (root / "frontend" / "index.html").read_text()
@@ -54,15 +82,48 @@ class DownloadWorkspaceTests(unittest.IsolatedAsyncioTestCase):
         for element_id in (
             "unified-sources",
             "download-dashboard",
-            "quick-favorites",
-            "quick-recents",
+            "storage-overview",
+            "recent-activity-section",
             "recent-activity",
             "runtime-alert",
         ):
             self.assertIn(f'id="{element_id}"', html)
+        self.assertNotIn('id="today-panel"', html)
+        self.assertNotIn('id="quick-favorites"', html)
+        self.assertLess(html.index('class="table-wrap dl-empty"'), html.index('id="download-dashboard"'))
+        self.assertLess(html.index('id="storage-overview-panel"'), html.index('id="recent-activity-section"'))
         self.assertIn('/api/settings/runtime-status', app)
-        self.assertIn('/api/files/preferences', app)
-        self.assertIn('slice(0, 3)', app)
+        self.assertIn('/api/settings/storage?include_smb=true', app)
+        self.assertIn('setInterval(loadStorageOverview, 60000)', app)
+        self.assertNotIn('renderTodayMetrics', app)
+        self.assertIn('slice(0, 6)', app)
+        self.assertIn('consecutiveAria2Failures >= 2', app)
+        self.assertIn('status.aria2_ok ? 0 : consecutiveAria2Failures + 1', app)
+
+    def test_modern_interface_is_optional_and_reversible(self):
+        root = Path(__file__).resolve().parents[1]
+        account = (root / "frontend" / "static" / "js" / "account.js").read_text()
+        theme = (root / "frontend" / "static" / "js" / "theme.js").read_text()
+        modern_css = root / "frontend" / "static" / "css" / "style-modern.css"
+
+        self.assertTrue(modern_css.is_file())
+        modern_styles = modern_css.read_text()
+        self.assertIn('html[data-ui-style="modern"]', modern_styles)
+        self.assertIn("persistent navigation rail", modern_styles)
+        self.assertIn("position: fixed", modern_styles)
+        self.assertIn("max-width: none", modern_styles)
+        self.assertIn("min-aspect-ratio: 2/1", modern_styles)
+        self.assertIn("column-count: 3", modern_styles)
+        self.assertIn("#account-modal .modal-box", modern_styles)
+        self.assertIn('id="acct-ui-style-select"', account)
+        self.assertIn('localStorage.setItem("dm_ui_style", next)', theme)
+
+        for page in ("index.html", "settings.html", "plex.html"):
+            html = (root / "frontend" / page).read_text()
+            self.assertIn('data-ui-style="classic"', html)
+            self.assertIn('/static/css/style-modern.css', html)
+            self.assertIn("params.get('ui')", html)
+            self.assertIn("localStorage.getItem('dm_ui_style') || 'classic'", html)
 
 
 if __name__ == "__main__":

@@ -3,7 +3,6 @@ import ipaddress
 import logging
 import os
 import re
-import shutil
 import socket
 import subprocess
 import secrets
@@ -11,7 +10,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import aiosqlite
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Request
 from urllib.parse import urlparse
 
 from models import SettingsUpdate, StoragePathRequest, PlexSettingsRequest, MediaSettingsRequest, SignalCheckRequest, SignalDeployRequest, SignalRegisterRequest, SignalVerifyRequest, SignalResetRequest
@@ -28,6 +27,7 @@ from services.media_refresh import (
     refresh_library_from_config,
 )
 from services.plex import plex
+from services.smb import is_mounted
 from services.webhook import send_webhook
 from services.diagnostics import clear_events, list_events, record_event_nowait
 
@@ -966,32 +966,89 @@ async def signal_test(_=Depends(get_current_user)):
         return {"success": False, "message": str(e)[:200]}
 
 
+async def _disk_usage_with_timeout(path: str) -> tuple[int, int, int, float]:
+    process = await asyncio.create_subprocess_exec(
+        "df", "-B1", "--output=size,used,avail,pcent", "--", path,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.DEVNULL,
+    )
+    try:
+        stdout, _ = await asyncio.wait_for(process.communicate(), timeout=3)
+    except asyncio.TimeoutError:
+        process.kill()
+        try:
+            await asyncio.wait_for(process.wait(), timeout=1)
+        except asyncio.TimeoutError:
+            pass
+        raise
+    if process.returncode != 0:
+        raise OSError(f"df failed for {path}")
+    lines = [line.split() for line in stdout.decode(errors="replace").splitlines() if line.strip()]
+    if len(lines) < 2 or len(lines[-1]) != 4:
+        raise ValueError(f"Invalid df output for {path}")
+    total, used, free, percent = lines[-1]
+    return int(total), int(used), int(free), float(percent.rstrip("%"))
+
+
+async def _storage_usage_entry(descriptor: dict) -> dict:
+    entry = dict(descriptor)
+    if entry["kind"] == "smb" and not entry.get("mounted", False):
+        entry.update(total=0, used=0, free=0, percent=0.0, available=False)
+        return entry
+    try:
+        total, used, free, percent = await _disk_usage_with_timeout(entry["path"])
+        entry.update(
+            total=total,
+            used=used,
+            free=free,
+            percent=round(percent, 1),
+            available=True,
+        )
+    except Exception:
+        entry.update(total=0, used=0, free=0, percent=0.0, available=False)
+    return entry
+
+
 @router.get("/storage")
-async def get_storage(_=Depends(get_current_user)):
+async def get_storage(
+    include_smb: bool = Query(default=False),
+    _=Depends(get_current_user),
+):
     cfg = get_config()
     paths = cfg.get("storage_extra_paths", [])
-
-    result = []
+    descriptors = {}
     for path in paths:
         if not path:
             continue
-        entry: dict = {"path": path}
-        try:
-            usage = shutil.disk_usage(path)
-            entry["total"] = usage.total
-            entry["used"] = usage.used
-            entry["free"] = usage.free
-            entry["percent"] = round(usage.used / usage.total * 100, 1) if usage.total > 0 else 0.0
-            entry["available"] = True
-        except Exception:
-            entry["total"] = 0
-            entry["used"] = 0
-            entry["free"] = 0
-            entry["percent"] = 0.0
-            entry["available"] = False
-        result.append(entry)
+        normalized = os.path.normpath(path)
+        descriptors[normalized] = {
+            "path": path,
+            "name": Path(normalized).name or normalized,
+            "kind": "disk",
+            "mounted": True,
+            "configured_storage": True,
+        }
 
-    return result
+    if include_smb:
+        for share in cfg.get("smb_shares", []):
+            path = str(share.get("mount_point") or "").strip()
+            if not path:
+                continue
+            normalized = os.path.normpath(path)
+            descriptor = descriptors.get(normalized, {
+                "path": path,
+                "configured_storage": False,
+            })
+            descriptor.update(
+                name=str(share.get("name") or Path(normalized).name or normalized),
+                kind="smb",
+                mounted=is_mounted(path),
+            )
+            descriptors[normalized] = descriptor
+
+    return await asyncio.gather(*(
+        _storage_usage_entry(descriptor) for descriptor in descriptors.values()
+    ))
 
 
 @router.post("/storage/paths")

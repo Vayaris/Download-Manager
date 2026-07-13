@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en" data-theme="light">
+<html lang="en" data-theme="light" data-ui-style="classic">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
@@ -11,15 +11,25 @@
   <link rel="apple-touch-icon" href="/static/icons/icon-192.svg">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link rel="stylesheet" href="/static/css/style.css?v=49">
   <script>
     (function() {
+      var params = new URLSearchParams(window.location.search);
+      var requested = params.get('ui');
+      if (requested === 'classic' || requested === 'modern') {
+        localStorage.setItem('dm_ui_style', requested);
+      }
+      var style = requested === 'classic' || requested === 'modern'
+        ? requested
+        : (localStorage.getItem('dm_ui_style') || 'classic');
+      document.documentElement.setAttribute('data-ui-style', style);
       var t = localStorage.getItem('dm_theme') || 'light';
       if (t === 'light' || t === 'dark') {
         document.documentElement.setAttribute('data-theme', t);
       }
     })();
   </script>
+  <link rel="stylesheet" href="/static/css/style.css?v=52">
+  <link rel="stylesheet" href="/static/css/style-modern.css?v=3">
 </head>
 <body>
 
@@ -249,33 +259,6 @@
 
   <div id="runtime-alert" class="runtime-alert hidden" role="alert"></div>
 
-  <section id="download-dashboard" class="download-dashboard hidden">
-    <div class="dashboard-panel quick-destinations-panel">
-      <div class="dashboard-panel-head">
-        <div><strong data-i18n="quick_destinations">Quick destinations</strong><span data-i18n="quick_destinations_hint">Choose a folder without opening the explorer</span></div>
-        <button type="button" class="btn btn-sm btn-ghost" onclick="openFileBrowser()" data-i18n="quick_browse_all">Browse</button>
-      </div>
-      <div id="quick-favorites-wrap" class="quick-place-group hidden">
-        <span class="quick-place-label" data-i18n="fb_favorites">Favorites</span>
-        <div id="quick-favorites" class="quick-places"></div>
-      </div>
-      <div id="quick-recents-wrap" class="quick-place-group hidden">
-        <span class="quick-place-label" data-i18n="fb_recent_paths">Recent</span>
-        <div id="quick-recents" class="quick-places"></div>
-      </div>
-      <div id="quick-destinations-empty" class="dashboard-empty hidden" data-i18n="quick_destinations_empty">Your favorite and recent folders will appear here.</div>
-    </div>
-
-    <div class="dashboard-panel recent-activity-panel">
-      <div class="dashboard-panel-head">
-        <div><strong data-i18n="recent_activity">Recent activity</strong><span data-i18n="recent_activity_hint">Your latest completed batches and files</span></div>
-        <button type="button" class="btn btn-sm btn-ghost" onclick="switchDownloadView('history')" data-i18n="recent_activity_all">View history</button>
-      </div>
-      <div id="recent-activity" class="recent-activity"></div>
-      <div id="recent-activity-empty" class="dashboard-empty hidden" data-i18n="recent_activity_empty">No completed downloads yet.</div>
-    </div>
-  </section>
-
   <!-- Control bar -->
   <section id="download-controls" class="controls-bar hidden">
     <div class="controls-left">
@@ -328,6 +311,29 @@
       </thead>
       <tbody id="dl-tbody"></tbody>
     </table>
+  </section>
+
+  <section id="download-dashboard" class="download-dashboard">
+    <div id="storage-overview-panel" class="dashboard-panel storage-overview-panel">
+      <div class="dashboard-panel-head">
+        <div><strong data-i18n="storage_overview_title">Storage</strong><span data-i18n="storage_overview_hint">Available space on disks and SMB shares</span></div>
+        <button id="storage-overview-refresh" type="button" class="btn btn-sm btn-ghost" onclick="loadStorageOverview(true)" data-i18n-title="storage_overview_refresh_title" title="Refresh storage">
+          <span data-i18n="storage_overview_refresh">Refresh</span>
+        </button>
+      </div>
+      <div id="storage-overview" class="storage-overview-grid">
+        <div class="storage-overview-message" data-i18n="storage_overview_loading">Checking available space...</div>
+      </div>
+    </div>
+
+    <div id="recent-activity-section" class="dashboard-panel recent-activity-panel">
+      <div class="dashboard-panel-head">
+        <div><strong data-i18n="recent_activity">Recent activity</strong><span data-i18n="recent_activity_hint">Your latest completed batches and files</span></div>
+        <button type="button" class="btn btn-sm btn-ghost" onclick="switchDownloadView('history')" data-i18n="recent_activity_all">View history</button>
+      </div>
+      <div id="recent-activity" class="recent-activity"></div>
+      <div id="recent-activity-empty" class="dashboard-empty hidden" data-i18n="recent_activity_empty">No completed downloads yet.</div>
+    </div>
   </section>
 
   </div>
@@ -407,13 +413,13 @@ window.addEventListener("beforeinstallprompt",e=>{e.preventDefault();pwaDeferred
 function pwaInstall(){if(pwaDeferred){pwaDeferred.prompt();pwaDeferred.userChoice.then(()=>{pwaDeferred=null;const b=document.getElementById("pwa-install-btn");if(b)b.classList.add("hidden")})}}
 </script>
 
-<script src="/static/js/theme.js?v=36"></script>
-<script src="/static/js/i18n.js?v=51"></script>
+<script src="/static/js/theme.js?v=37"></script>
+<script src="/static/js/i18n.js?v=54"></script>
 <script src="/static/js/api.js?v=30"></script>
 <script src="/static/js/websocket.js?v=28"></script>
 <script src="/static/js/filebrowser.js?v=37"></script>
-<script src="/static/js/app.js?v=43"></script>
-<script src="/static/js/account.js?v=29"></script>
+<script src="/static/js/app.js?v=45"></script>
+<script src="/static/js/account.js?v=30"></script>
 <script>if("serviceWorker"in navigator)navigator.serviceWorker.register("/sw.js").catch(()=>{})</script>
 </body>
 </html>

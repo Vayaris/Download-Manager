@@ -2,7 +2,7 @@
 
 Self-hosted download manager powered by **FastAPI**, **aria2** and **AllDebrid**. It provides a responsive web/PWA interface for direct links, magnets and `.torrent` files, with real-time queue updates and optional Plex or Jellyfin library refreshes.
 
-Current release: **v1.14.0**
+Current release: **v1.14.1**
 
 ![Python](https://img.shields.io/badge/Python-3.8+-3776AB?logo=python&logoColor=white)
 ![FastAPI](https://img.shields.io/badge/FastAPI-009688?logo=fastapi&logoColor=white)
@@ -17,7 +17,7 @@ Current release: **v1.14.0**
 - Automatic mixed packages when at least two sources are submitted, with one final package notification
 - Queue priorities, drag and drop, pause/resume, configurable retries and up to 20 simultaneous downloads
 - Global aria2 speed limit in MB/s, with effective-limit verification in Settings
-- Responsive desktop/mobile interface, dark/light themes, French/English and installable PWA
+- Responsive desktop/mobile interface with classic and optional Minimal premium layouts, dark/light themes, French/English and installable PWA
 - Account-synced destination explorer with favorites, recent paths, search, breadcrumbs and mobile tabs
 - Silent `.nfo` filtering enabled by default
 - Safe stalled-download watchdog and automatic history
@@ -59,7 +59,8 @@ Links, magnets and `.torrent` files share the same submission area. Torrent file
 
 | Submission | Result |
 |---|---|
-| One direct link, magnet or `.torrent` file | Standalone download |
+| One direct link, single-file magnet or single-file `.torrent` | Standalone download |
+| One magnet or `.torrent` resolving to multiple files | One automatic package |
 | Two or more valid sources, including mixed source types | One automatic package |
 | Package members | One aggregate progress view and one final webhook |
 
@@ -215,7 +216,9 @@ This project is designed for a single self-hosted user. SQLite and the current s
 
 ## Résumé français
 
-Download Manager centralise les liens directs, magnets et fichiers `.torrent` dans un composeur unique responsive. Les sources collées ou déposées sont identifiées avant l’envoi et, à partir de deux éléments, un lot unique est créé automatiquement avec une progression globale et une seule notification finale. Quand la file est vide, la page propose les destinations favorites et récentes avec l’espace disque disponible ainsi que les dernières activités ; pendant un téléchargement, elle affiche un résumé global des transferts et de leur vitesse. La vue Historique regroupe les lots, propose des filtres rapides et permet de retirer plusieurs entrées sans supprimer les fichiers téléchargés. Les intégrations Plex/Jellyfin permettent enfin un rafraîchissement manuel ou automatique des bibliothèques lorsque toute la file est terminée.
+Download Manager centralise les liens directs, magnets et fichiers `.torrent` dans un composeur unique responsive. Les sources collées ou déposées sont identifiées avant l’envoi et, à partir de deux éléments, un lot unique est créé automatiquement avec une progression globale et une seule notification finale. Un magnet ou fichier `.torrent` unique est également regroupé automatiquement lorsqu’il contient plusieurs fichiers. Quand la file est vide, la page propose les destinations favorites et récentes avec l’espace disque disponible ainsi que les dernières activités ; pendant un téléchargement, elle affiche un résumé global des transferts et de leur vitesse. La vue Historique regroupe les lots, propose des filtres rapides et permet de retirer plusieurs entrées sans supprimer les fichiers téléchargés. Les intégrations Plex/Jellyfin permettent enfin un rafraîchissement manuel ou automatique des bibliothèques lorsque toute la file est terminée.
+
+L’interface classique reste disponible par défaut. Le style optionnel **Minimal premium** ajoute une navigation latérale sur ordinateur, un affichage pleine largeur, une adaptation aux écrans ultralarges et conserve la navigation mobile dédiée.
 
 L’installation rapide, les chemins, commandes et réglages indiqués ci-dessus sont identiques pour l’interface française. La configuration courante se fait principalement depuis **Paramètres**.
 

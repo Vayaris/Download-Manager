@@ -20,11 +20,11 @@ def _qm(request: Request):
 
 
 async def _process_ready_magnet(magnet_id: int, name: str, destination: str, qm):
-    """Magnet is ready: get files, create package, clean up."""
+    """Magnet is ready: import its files and clean up."""
     links = await alldebrid.magnet_files(magnet_id)
     if not links:
         raise Exception("No files found in torrent")
-    await qm.add_package(name or "Torrent", links, destination)
+    await qm.import_torrent_links(name or "Torrent", links, destination)
     try:
         await alldebrid.magnet_delete(magnet_id)
     except Exception:
@@ -35,24 +35,24 @@ async def _process_ready_into_package(magnet_id: int, destination: str, package_
     links = await alldebrid.magnet_files(magnet_id)
     if not links:
         return 0
-    ids = await qm.add_downloads(links, destination, package_id=package_id)
+    result = await qm.import_torrent_links("Torrent", links, destination, package_id=package_id)
     try:
         await alldebrid.magnet_delete(magnet_id)
     except Exception:
         pass
-    return len(ids)
+    return len(result["download_ids"])
 
 
-async def _process_ready_without_package(magnet_id: int, destination: str, qm) -> int:
+async def _process_ready_without_package(magnet_id: int, name: str, destination: str, qm) -> int:
     links = await alldebrid.magnet_files(magnet_id)
     if not links:
         return 0
-    ids = await qm.add_downloads(links, destination)
+    result = await qm.import_torrent_links(name or "Torrent", links, destination)
     try:
         await alldebrid.magnet_delete(magnet_id)
     except Exception:
         pass
-    return len(ids)
+    return len(result["download_ids"])
 
 
 async def _insert_torrent(db, mag: dict, destination: str, now: str, package_id: Optional[str] = None) -> dict:
@@ -240,7 +240,7 @@ async def upload_torrent_batch(
                     imported = await (
                         _process_ready_into_package(ad_id, destination, package_id, qm)
                         if use_package
-                        else _process_ready_without_package(ad_id, destination, qm)
+                        else _process_ready_without_package(ad_id, name, destination, qm)
                     )
                     added.append({"id": ad_id, "name": name, "ready": True, "imported": imported})
                 except Exception:

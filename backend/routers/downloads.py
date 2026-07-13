@@ -21,6 +21,7 @@ from services.duplicates import (
     load_submission,
 )
 from services.history import history_group, history_view, remove_history_entries
+from services.diagnostics import record_event_nowait
 from utils import validate_destination as _validate_destination
 
 router = APIRouter()
@@ -109,10 +110,20 @@ async def add_automatic_batch(
             results = await alldebrid.magnet_upload(magnet_links)
             uploaded.extend(result for result in results if not result.get("error"))
             failed_sources.extend(
-                (result.get("name") or "Magnet", str(result.get("error")))
+                (result.get("name") or "Magnet", alldebrid.error_message(result.get("error")))
                 for result in results if result.get("error")
             )
+            rejected = sum(1 for result in results if result.get("error"))
+            if rejected:
+                record_event_nowait(
+                    "alldebrid", "magnet_rejected", "AllDebrid rejected magnet sources",
+                    severity="warning", context={"count": rejected},
+                )
     except Exception as exc:
+        record_event_nowait(
+            "alldebrid", "magnet_upload_failed", exc,
+            context={"count": len(magnet_links)},
+        )
         failed_sources.extend(("Magnet", str(exc)) for _ in magnet_links)
 
     try:
@@ -120,10 +131,14 @@ async def add_automatic_batch(
             results = await alldebrid.magnet_upload_files(files_data)
             uploaded.extend(result for result in results if not result.get("error"))
             failed_sources.extend(
-                (result.get("name") or "Torrent", str(result.get("error")))
+                (result.get("name") or "Torrent", alldebrid.error_message(result.get("error")))
                 for result in results if result.get("error")
             )
     except Exception as exc:
+        record_event_nowait(
+            "alldebrid", "torrent_upload_failed", exc,
+            context={"count": len(files_data)},
+        )
         failed_sources.extend((name, str(exc)) for name, _ in files_data)
 
     if not use_package and (magnet_links or files_data) and not uploaded:
@@ -151,7 +166,7 @@ async def add_automatic_batch(
                     imported = await (
                         _process_ready_into_package(magnet["id"], destination, package_id, qm)
                         if package_id
-                        else _process_ready_without_package(magnet["id"], destination, qm)
+                        else _process_ready_without_package(magnet["id"], name, destination, qm)
                     )
                     if imported == 0:
                         failed_sources.append((name, "AllDebrid returned no downloadable files"))

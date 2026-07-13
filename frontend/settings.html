@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en" data-theme="light">
+<html lang="en" data-theme="light" data-ui-style="classic">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
@@ -11,15 +11,25 @@
   <link rel="apple-touch-icon" href="/static/icons/icon-192.svg">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link rel="stylesheet" href="/static/css/style.css?v=48">
   <script>
     (function() {
+      var params = new URLSearchParams(window.location.search);
+      var requested = params.get('ui');
+      if (requested === 'classic' || requested === 'modern') {
+        localStorage.setItem('dm_ui_style', requested);
+      }
+      var style = requested === 'classic' || requested === 'modern'
+        ? requested
+        : (localStorage.getItem('dm_ui_style') || 'classic');
+      document.documentElement.setAttribute('data-ui-style', style);
       var t = localStorage.getItem('dm_theme') || 'light';
       if (t === 'light' || t === 'dark') {
         document.documentElement.setAttribute('data-theme', t);
       }
     })();
   </script>
+  <link rel="stylesheet" href="/static/css/style.css?v=52">
+  <link rel="stylesheet" href="/static/css/style-modern.css?v=3">
 </head>
 <body>
 
@@ -785,12 +795,12 @@ window.addEventListener("beforeinstallprompt",e=>{e.preventDefault();pwaDeferred
 function pwaInstall(){if(pwaDeferred){pwaDeferred.prompt();pwaDeferred.userChoice.then(()=>{pwaDeferred=null;const b=document.getElementById("pwa-install-btn");if(b)b.classList.add("hidden")})}}
 </script>
 
-<script src="/static/js/theme.js?v=36"></script>
-<script src="/static/js/i18n.js?v=50"></script>
+<script src="/static/js/theme.js?v=37"></script>
+<script src="/static/js/i18n.js?v=54"></script>
 <script src="/static/js/api.js?v=30"></script>
 <script src="/static/js/filebrowser.js?v=37"></script>
 <script src="/static/js/settings.js?v=49"></script>
-<script src="/static/js/account.js?v=29"></script>
+<script src="/static/js/account.js?v=30"></script>
 <script>if("serviceWorker"in navigator)navigator.serviceWorker.register("/sw.js").catch(()=>{})</script>
 </body>
 </html>
