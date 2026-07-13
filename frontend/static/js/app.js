@@ -119,8 +119,8 @@ async function pasteFromClipboard() {
   try {
     const text = await navigator.clipboard.readText();
     const textarea = document.getElementById("links-input");
-    const current = textarea.value.trim();
-    textarea.value = current ? current + "\n" + text.trim() : text.trim();
+    addUnifiedLinkText([textarea.value, text].filter(value => value.trim()).join("\n"));
+    textarea.value = "";
     updateUnifiedSourceState();
     textarea.focus();
     showToast(text.trim() ? t("paste_ok") : t("paste_empty"), text.trim() ? "ok" : "error");
@@ -131,10 +131,37 @@ async function pasteFromClipboard() {
 
 // ---- Unified links / magnets / torrents submission ----
 
+let unifiedLinkSources = [];
 let unifiedTorrentFiles = [];
+let unifiedSourcesExpanded = false;
+
+function unifiedLinks() {
+  const draft = document.getElementById("links-input").value
+    .split(/\r?\n/)
+    .map(line => line.trim())
+    .filter(Boolean);
+  return [...unifiedLinkSources, ...draft];
+}
 
 function unifiedLinkCount() {
-  return document.getElementById("links-input").value.split(/\r?\n/).filter(line => line.trim()).length;
+  return unifiedLinks().length;
+}
+
+function unifiedSourceType(value) {
+  return value.toLowerCase().startsWith("magnet:") ? "magnet" : "link";
+}
+
+function addUnifiedLinkText(text) {
+  const links = String(text || "").split(/\r?\n/).map(line => line.trim()).filter(Boolean);
+  unifiedLinkSources.push(...links);
+  renderUnifiedSources();
+}
+
+function unifiedSourceMeta(source) {
+  if (source.kind === "torrent") return fmtBytes(source.file.size);
+  if (source.kind === "magnet") return "";
+  try { return new URL(source.value).hostname; }
+  catch { return ""; }
 }
 
 function updateUnifiedSourceState() {
@@ -144,17 +171,39 @@ function updateUnifiedSourceState() {
   label.textContent = count ? t("unified_add_count", { n: count }) : t("btn_add");
 }
 
-function renderUnifiedTorrentFiles() {
-  const container = document.getElementById("unified-files");
-  container.classList.toggle("hidden", unifiedTorrentFiles.length === 0);
-  container.innerHTML = unifiedTorrentFiles.map((file, index) => `
-    <div class="unified-file-row">
-      <span class="unified-file-icon">${ICONS.pkg}</span>
-      <span class="unified-file-name" title="${escHtml(file.name)}">${escHtml(file.name)}</span>
-      <span class="unified-file-size">${fmtBytes(file.size)}</span>
-      <button type="button" onclick="removeUnifiedTorrentFile(${index})" aria-label="${t("unified_remove_file")}">×</button>
-    </div>`).join("");
+function renderUnifiedSources() {
+  const links = unifiedLinkSources.map((value, index) => ({ kind: unifiedSourceType(value), value, index }));
+  const files = unifiedTorrentFiles.map((file, index) => ({ kind: "torrent", file, index }));
+  const sources = [...links, ...files];
+  const container = document.getElementById("unified-sources");
+  container.classList.toggle("hidden", sources.length === 0);
+  const visible = unifiedSourcesExpanded ? sources : sources.slice(0, 6);
+  container.innerHTML = visible.map(source => {
+    const isFile = source.kind === "torrent";
+    const value = isFile ? source.file.name : source.value;
+    const meta = unifiedSourceMeta(source);
+    const remove = isFile ? `removeUnifiedTorrentFile(${source.index})` : `removeUnifiedLink(${source.index})`;
+    return `<div class="unified-source-row">
+      <span class="unified-source-type ${source.kind}">${isFile ? ICONS.pkg : ICONS.copy}<small>${t(`composer_type_${source.kind}`)}</small></span>
+      <span class="unified-source-name" title="${escHtml(value)}">${escHtml(value)}</span>
+      <span class="unified-source-meta">${escHtml(meta)}</span>
+      <button type="button" onclick="${remove}" aria-label="${t("composer_remove_source")}">×</button>
+    </div>`;
+  }).join("") + (sources.length > 6 ? `
+    <button type="button" class="unified-sources-toggle" onclick="toggleUnifiedSources()">
+      ${unifiedSourcesExpanded ? t("composer_show_less") : t("composer_show_more", { n: sources.length - 6 })}
+    </button>` : "");
   updateUnifiedSourceState();
+}
+
+function toggleUnifiedSources() {
+  unifiedSourcesExpanded = !unifiedSourcesExpanded;
+  renderUnifiedSources();
+}
+
+function removeUnifiedLink(index) {
+  unifiedLinkSources.splice(index, 1);
+  renderUnifiedSources();
 }
 
 function addUnifiedTorrentFiles(files) {
@@ -165,19 +214,19 @@ function addUnifiedTorrentFiles(files) {
     if (!duplicate) unifiedTorrentFiles.push(file);
   }
   document.getElementById("unified-torrent-input").value = "";
-  renderUnifiedTorrentFiles();
+  renderUnifiedSources();
   if (ignored) showToast(t("torrent_files_ignored"), "error");
 }
 
 function removeUnifiedTorrentFile(index) {
   unifiedTorrentFiles.splice(index, 1);
-  renderUnifiedTorrentFiles();
+  renderUnifiedSources();
 }
 
 async function addUnifiedSources() {
   const textarea = document.getElementById("links-input");
-  const links = textarea.value.trim();
-  const sourceCount = unifiedLinkCount() + unifiedTorrentFiles.length;
+  const links = unifiedLinks().join("\n");
+  const sourceCount = unifiedLinks().length + unifiedTorrentFiles.length;
   if (!sourceCount) { showToast(t("unified_empty"), "error"); return; }
 
   let destination = getDestinationValue("dest-path");
@@ -203,9 +252,11 @@ async function addUnifiedSources() {
   try {
     const result = await preflightAndCommit(form);
     textarea.value = "";
+    unifiedLinkSources = [];
     unifiedTorrentFiles = [];
+    unifiedSourcesExpanded = false;
     document.getElementById("unified-package-name").value = "";
-    renderUnifiedTorrentFiles();
+    renderUnifiedSources();
     const message = result.package_name
       ? t("batch_added", { n: result.added, name: result.package_name })
       : t("unified_added", { n: result.added });
@@ -226,6 +277,20 @@ document.addEventListener("DOMContentLoaded", () => {
   let dragDepth = 0;
   const hasDraggedFiles = event => Array.from(event.dataTransfer?.types || []).includes("Files");
   textarea.addEventListener("input", updateUnifiedSourceState);
+  textarea.addEventListener("paste", event => {
+    const text = event.clipboardData?.getData("text") || "";
+    if (!text.trim()) return;
+    event.preventDefault();
+    addUnifiedLinkText(text);
+  });
+  textarea.addEventListener("keydown", event => {
+    if (event.key !== "Enter" || event.shiftKey || event.ctrlKey || event.metaKey) return;
+    event.preventDefault();
+    addUnifiedLinkText(textarea.value);
+    textarea.value = "";
+    updateUnifiedSourceState();
+  });
+  document.getElementById("dest-path-text")?.addEventListener("input", renderQuickDestinations);
   card.addEventListener("dragenter", event => {
     if (!hasDraggedFiles(event)) return;
     event.preventDefault();
@@ -246,21 +311,140 @@ document.addEventListener("DOMContentLoaded", () => {
     overlay.classList.add("hidden");
     addUnifiedTorrentFiles(event.dataTransfer.files);
   });
-  updateUnifiedSourceState();
+  renderUnifiedSources();
 });
+
+// ---- Downloads workspace ----
+
+const downloadWorkspace = {
+  downloads: [],
+  packages: [],
+  torrents: [],
+  preferences: { favorites: [], recents: [] },
+  storage: [],
+  recentGroups: [],
+};
+
+function activeWorkspaceDownloads() {
+  return downloadWorkspace.downloads.filter(item => item.status !== "complete" && item.status !== "failed");
+}
+
+function activeWorkspaceTorrents() {
+  const packageIds = new Set(activeWorkspaceDownloads().map(item => item.package_id).filter(Boolean));
+  return downloadWorkspace.torrents.filter(item => !item.package_id || !packageIds.has(item.package_id));
+}
+
+function updateDownloadWorkspace() {
+  const downloads = activeWorkspaceDownloads();
+  const torrents = activeWorkspaceTorrents();
+  const count = downloads.length + torrents.length;
+  document.getElementById("download-controls")?.classList.toggle("hidden", downloads.length === 0);
+  document.getElementById("download-dashboard")?.classList.toggle("hidden", count > 0);
+  document.getElementById("active-tab-count").textContent = count;
+  updateStats(downloads, torrents);
+}
+
+function matchingStorage(path) {
+  return downloadWorkspace.storage
+    .filter(item => path === item.path || path.startsWith(`${String(item.path).replace(/\/$/, "")}/`))
+    .sort((a, b) => b.path.length - a.path.length)[0];
+}
+
+function quickPlaceHtml(item) {
+  const storage = matchingStorage(item.path);
+  const selected = getDestinationValue("dest-path") === item.path;
+  const storageText = storage?.available
+    ? `${item.storage_label} · ${t("quick_free", { size: fmtBytes(storage.free) })}`
+    : item.storage_label;
+  return `<button type="button" class="quick-place${selected ? " selected" : ""}${item.available ? "" : " unavailable"}"
+      onclick="selectQuickDestination('${escJs(item.path)}')" ${item.available ? "" : "disabled"}>
+    <span class="quick-place-icon">${ICONS.folder}</span>
+    <span><strong>${escHtml(item.name)}</strong><small title="${escHtml(item.path)}">${escHtml(storageText)}</small></span>
+  </button>`;
+}
+
+function renderQuickDestinations() {
+  const favorites = downloadWorkspace.preferences.favorites || [];
+  const favoritePaths = new Set(favorites.map(item => item.path));
+  const recents = (downloadWorkspace.preferences.recents || []).filter(item => !favoritePaths.has(item.path));
+  document.getElementById("quick-favorites-wrap").classList.toggle("hidden", favorites.length === 0);
+  document.getElementById("quick-recents-wrap").classList.toggle("hidden", recents.length === 0);
+  document.getElementById("quick-destinations-empty").classList.toggle("hidden", favorites.length + recents.length > 0);
+  document.getElementById("quick-favorites").innerHTML = favorites.slice(0, 6).map(quickPlaceHtml).join("");
+  document.getElementById("quick-recents").innerHTML = recents.slice(0, 4).map(quickPlaceHtml).join("");
+}
+
+async function selectQuickDestination(path) {
+  setDestinationValue("dest-path", path);
+  renderQuickDestinations();
+  try {
+    await API.post("/api/files/recents", { path });
+  } catch {}
+}
+
+function renderRecentActivity() {
+  const container = document.getElementById("recent-activity");
+  if (!container) return;
+  const groups = downloadWorkspace.recentGroups;
+  document.getElementById("recent-activity-empty").classList.toggle("hidden", groups.length > 0);
+  container.innerHTML = groups.map(group => {
+    const meta = group.kind === "package"
+      ? t("history_files_count", { n: group.item_count })
+      : fmtBytes(group.size);
+    return `<button type="button" class="recent-activity-item" onclick="openHistoryDetails('${group.id}')">
+      <span class="recent-activity-status ${group.status}">${group.status === "complete" ? ICONS.check : "!"}</span>
+      <span class="recent-activity-copy"><strong title="${escHtml(group.name)}">${escHtml(group.name)}</strong><small>${escHtml(meta)} · ${fmtDate(group.completed_at)}</small></span>
+      <span class="recent-activity-chevron">${ICONS.chevRight}</span>
+    </button>`;
+  }).join("");
+}
+
+async function loadDownloadDashboard() {
+  try {
+    const [preferences, storage] = await Promise.all([
+      API.get("/api/files/preferences"),
+      API.get("/api/settings/storage"),
+    ]);
+    downloadWorkspace.preferences = preferences;
+    downloadWorkspace.storage = storage;
+    renderQuickDestinations();
+  } catch {}
+}
+
+let lastRuntimeStatus = null;
+
+function renderRuntimeAlert(status = lastRuntimeStatus) {
+  if (status) lastRuntimeStatus = status;
+  const alert = document.getElementById("runtime-alert");
+  if (!alert) return;
+  const websocketOk = WS.isConnected();
+  const warnings = [];
+  if (!websocketOk) warnings.push(t("runtime_ws_unavailable"));
+  if (status && !status.queue_running) warnings.push(t("runtime_queue_unavailable"));
+  if (status && !status.aria2_ok) warnings.push(t("runtime_aria2_unavailable"));
+  if (status?.queue_error) warnings.push(status.queue_error);
+  alert.classList.toggle("hidden", warnings.length === 0);
+  alert.innerHTML = warnings.length ? `<strong>${t("runtime_alert_title")}</strong><span>${escHtml(warnings.join(" · "))}</span>` : "";
+}
+
+async function checkRuntimeStatus() {
+  try {
+    renderRuntimeAlert(await API.get("/api/settings/runtime-status"));
+  } catch {
+    renderRuntimeAlert();
+  }
+}
 
 // ---- Render downloads ----
 
 function renderDownloads(downloads) {
+  downloadWorkspace.downloads = downloads || [];
   const tbody = document.getElementById("dl-tbody");
   const tableSection = tbody.closest(".table-wrap");
-  const activeCount = downloads.filter(d => d.status !== "complete" && d.status !== "failed").length;
-  const activeTabCount = document.getElementById("active-tab-count");
-  if (activeTabCount) activeTabCount.textContent = activeCount;
   // Only show active downloads (not completed/failed — those go to history)
   const active = downloads.filter(d => !d.package_id && d.status !== "complete" && d.status !== "failed");
 
-  updateStats(downloads);
+  updateDownloadWorkspace();
 
   if (!active || active.length === 0) {
     // Hide the table section entirely when empty
@@ -454,11 +638,13 @@ function buildDownloadRowInner(item) {
 let expandedPackages = new Set();
 
 function renderPackages(packages) {
+  downloadWorkspace.packages = packages || [];
   const section = document.getElementById("packages-section");
   const list = document.getElementById("packages-list");
 
   if (!packages || packages.length === 0) {
     section.classList.add("hidden");
+    updateDownloadWorkspace();
     return;
   }
 
@@ -508,6 +694,7 @@ function renderPackages(packages) {
         ${downloadsHtml}
       </div>`;
   }).join("");
+  updateDownloadWorkspace();
 }
 
 function togglePackage(id) {
@@ -536,14 +723,14 @@ async function removePackage(id) {
 
 // ---- Stats chips ----
 
-function updateStats(downloads) {
+function updateStats(downloads, torrents = []) {
   const el = document.getElementById("stats-chips");
   if (!el) return;
 
-  // Count only active (non-completed, non-failed) standalone downloads
-  const queue   = downloads.filter(d => !d.package_id && d.status !== "complete" && d.status !== "failed");
-  const active  = queue.filter(d => d.status === "downloading").length;
-  const pending = queue.filter(d => d.status === "pending" || d.status === "submitting" || d.status === "paused" || d.status === "error").length;
+  const queue = [...downloads, ...torrents];
+  const active = queue.filter(item => item.status === "downloading" || item.status === "processing" || item.status === "ready_importing").length;
+  const pending = Math.max(0, queue.length - active);
+  const totalSpeed = queue.reduce((sum, item) => sum + Number(item.speed || 0), 0);
 
   if (queue.length === 0) { el.innerHTML = ""; return; }
 
@@ -551,6 +738,7 @@ function updateStats(downloads) {
     <div class="stat-chip total"><span class="dot"></span>${t("stats_files", { n: queue.length, s: queue.length > 1 ? "s" : "" })}</div>
     ${active > 0 ? `<div class="stat-chip active"><span class="dot"></span>${t("stats_active", { n: active, s: active > 1 ? "s" : "" })}</div>` : ""}
     ${pending > 0 ? `<div class="stat-chip"><span class="dot"></span>${t("stats_pending", { n: pending })}</div>` : ""}
+    ${totalSpeed > 0 ? `<div class="stat-chip speed"><span class="dot"></span>${escHtml(fmtSpeed(totalSpeed))}</div>` : ""}
   `;
 }
 
@@ -633,6 +821,7 @@ function renderHistoryGroups() {
       <div id="history-children-${group.id}" class="history-children hidden"></div>
     </article>`;
   }).join("");
+  renderRecentActivity();
 }
 
 async function loadHistory(reset = true) {
@@ -649,6 +838,7 @@ async function loadHistory(reset = true) {
     const cursor = historyState.cursor ? `&cursor=${encodeURIComponent(historyState.cursor)}` : "";
     const data = await API.get(`/api/downloads/history/view?scope=${historyState.scope}&limit=30&today_from=${encodeURIComponent(today.toISOString())}${cursor}`);
     historyState.groups.push(...data.groups);
+    if (reset && historyState.scope === "all") downloadWorkspace.recentGroups = data.groups.slice(0, 3);
     historyState.cursor = data.next_cursor;
     renderHistorySummary(data.summary);
     renderHistoryGroups();
@@ -873,11 +1063,13 @@ document.addEventListener("keydown", event => {
 // ---- Render torrents ----
 
 function renderTorrents(torrents) {
+  downloadWorkspace.torrents = torrents || [];
   const section = document.getElementById("torrents-section");
   const list = document.getElementById("torrents-list");
 
   if (!torrents || torrents.length === 0) {
     section.classList.add("hidden");
+    updateDownloadWorkspace();
     return;
   }
 
@@ -922,6 +1114,7 @@ function renderTorrents(torrents) {
         </div>
       </div>`;
   }).join("");
+  updateDownloadWorkspace();
 }
 
 async function removeTorrent(id) {
@@ -1329,11 +1522,13 @@ function updateMediaNavLabel(provider) {
 
 async function loadInitial() {
   try {
-    const [downloads, cfg] = await Promise.all([
+    const [downloads, torrents, cfg] = await Promise.all([
       API.get("/api/downloads/"),
+      API.get("/api/torrents/"),
       API.get("/api/settings/"),
     ]);
     renderDownloads(downloads);
+    renderTorrents(torrents);
 
     const destInput = document.getElementById("dest-path");
     if (!destInput.value && cfg.default_destination) {
@@ -1344,6 +1539,7 @@ async function loadInitial() {
 
   loadPackages();
   loadHistory();
+  loadDownloadDashboard();
 }
 
 // ---- Start app (called ONLY after auth is confirmed) ----
@@ -1379,7 +1575,10 @@ function startApp() {
       loadHistory(true);
     }
   });
+  WS.on("connection_status", () => renderRuntimeAlert());
   WS.init();
+  setTimeout(checkRuntimeStatus, 2500);
+  setInterval(checkRuntimeStatus, 30000);
   checkPendingDuplicateConflicts();
   setInterval(checkPendingDuplicateConflicts, 4000);
 

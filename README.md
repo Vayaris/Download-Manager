@@ -2,7 +2,7 @@
 
 Self-hosted download manager powered by **FastAPI**, **aria2** and **AllDebrid**. It provides a responsive web/PWA interface for direct links, magnets and `.torrent` files, with real-time queue updates and optional Plex or Jellyfin library refreshes.
 
-Current release: **v1.13.0**
+Current release: **v1.14.0**
 
 ![Python](https://img.shields.io/badge/Python-3.8+-3776AB?logo=python&logoColor=white)
 ![FastAPI](https://img.shields.io/badge/FastAPI-009688?logo=fastapi&logoColor=white)
@@ -215,7 +215,7 @@ This project is designed for a single self-hosted user. SQLite and the current s
 
 ## Résumé français
 
-Download Manager centralise les liens directs, magnets et fichiers `.torrent` dans un formulaire unique responsive. À partir de deux sources, un lot unique est créé automatiquement avec une progression globale et une seule notification finale. La vue Historique regroupe les lots, propose des filtres rapides et permet de retirer plusieurs entrées sans supprimer les fichiers téléchargés. L’explorateur de destination synchronise favoris et récents côté serveur, et les intégrations Plex/Jellyfin permettent un rafraîchissement manuel ou automatique des bibliothèques lorsque toute la file est terminée.
+Download Manager centralise les liens directs, magnets et fichiers `.torrent` dans un composeur unique responsive. Les sources collées ou déposées sont identifiées avant l’envoi et, à partir de deux éléments, un lot unique est créé automatiquement avec une progression globale et une seule notification finale. Quand la file est vide, la page propose les destinations favorites et récentes avec l’espace disque disponible ainsi que les dernières activités ; pendant un téléchargement, elle affiche un résumé global des transferts et de leur vitesse. La vue Historique regroupe les lots, propose des filtres rapides et permet de retirer plusieurs entrées sans supprimer les fichiers téléchargés. Les intégrations Plex/Jellyfin permettent enfin un rafraîchissement manuel ou automatique des bibliothèques lorsque toute la file est terminée.
 
 L’installation rapide, les chemins, commandes et réglages indiqués ci-dessus sont identiques pour l’interface française. La configuration courante se fait principalement depuis **Paramètres**.
 

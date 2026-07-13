@@ -1111,6 +1111,27 @@ async def get_speed_limit_status(_=Depends(get_current_user)):
         }
 
 
+@router.get("/runtime-status")
+async def get_runtime_status(request: Request, _=Depends(get_current_user)):
+    """Return the small health snapshot needed by the downloads workspace."""
+    from services.aria2_service import aria2
+
+    queue_manager = getattr(request.app.state, "queue_manager", None)
+    queue = queue_manager.health_snapshot() if queue_manager else {"running": False}
+    try:
+        await asyncio.wait_for(aria2.get_global_option(), timeout=2)
+        aria2_ok = True
+    except Exception:
+        aria2_ok = False
+
+    return {
+        "ok": bool(queue.get("running")) and aria2_ok and not queue.get("last_tick_error"),
+        "aria2_ok": aria2_ok,
+        "queue_running": bool(queue.get("running")),
+        "queue_error": str(queue.get("last_tick_error") or "")[:200],
+    }
+
+
 @router.get("/diagnostics")
 async def diagnostics(request: Request, _=Depends(get_current_user)):
     import asyncio

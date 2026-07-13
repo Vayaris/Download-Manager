@@ -193,7 +193,7 @@
       </div>
       <div class="add-card-inner">
 
-        <div class="textarea-header">
+        <div class="textarea-header composer-header">
           <label class="textarea-label">
             <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
             <span data-i18n="unified_sources_label">Links, magnets and torrents</span>
@@ -210,16 +210,19 @@
           </div>
         </div>
 
-        <textarea
-          id="links-input"
-          class="links-textarea"
-          data-i18n-placeholder="input_links_placeholder"
-          placeholder="Paste your links here, one per line..."
-          rows="4"
-          spellcheck="false"
-        ></textarea>
+        <div class="composer-entry">
+          <textarea
+            id="links-input"
+            class="links-textarea composer-textarea"
+            data-i18n-placeholder="composer_placeholder"
+            placeholder="Paste links or magnets, one per line..."
+            rows="2"
+            spellcheck="false"
+          ></textarea>
+          <span class="composer-entry-hint" data-i18n="composer_entry_hint">Paste several lines or drop .torrent files anywhere in this area</span>
+        </div>
         <input type="file" id="unified-torrent-input" accept=".torrent" class="hidden" multiple onchange="addUnifiedTorrentFiles(this.files)">
-        <div id="unified-files" class="unified-files hidden"></div>
+        <div id="unified-sources" class="unified-sources hidden"></div>
         <div id="unified-package-name-wrap" class="unified-package-name hidden">
           <label for="unified-package-name" data-i18n="unified_package_name">Batch name (optional)</label>
           <input type="text" id="unified-package-name" class="form-input form-input-sm" data-i18n-placeholder="unified_package_placeholder" placeholder="Automatic name if empty" maxlength="160">
@@ -244,8 +247,37 @@
     </div>
   </section>
 
+  <div id="runtime-alert" class="runtime-alert hidden" role="alert"></div>
+
+  <section id="download-dashboard" class="download-dashboard hidden">
+    <div class="dashboard-panel quick-destinations-panel">
+      <div class="dashboard-panel-head">
+        <div><strong data-i18n="quick_destinations">Quick destinations</strong><span data-i18n="quick_destinations_hint">Choose a folder without opening the explorer</span></div>
+        <button type="button" class="btn btn-sm btn-ghost" onclick="openFileBrowser()" data-i18n="quick_browse_all">Browse</button>
+      </div>
+      <div id="quick-favorites-wrap" class="quick-place-group hidden">
+        <span class="quick-place-label" data-i18n="fb_favorites">Favorites</span>
+        <div id="quick-favorites" class="quick-places"></div>
+      </div>
+      <div id="quick-recents-wrap" class="quick-place-group hidden">
+        <span class="quick-place-label" data-i18n="fb_recent_paths">Recent</span>
+        <div id="quick-recents" class="quick-places"></div>
+      </div>
+      <div id="quick-destinations-empty" class="dashboard-empty hidden" data-i18n="quick_destinations_empty">Your favorite and recent folders will appear here.</div>
+    </div>
+
+    <div class="dashboard-panel recent-activity-panel">
+      <div class="dashboard-panel-head">
+        <div><strong data-i18n="recent_activity">Recent activity</strong><span data-i18n="recent_activity_hint">Your latest completed batches and files</span></div>
+        <button type="button" class="btn btn-sm btn-ghost" onclick="switchDownloadView('history')" data-i18n="recent_activity_all">View history</button>
+      </div>
+      <div id="recent-activity" class="recent-activity"></div>
+      <div id="recent-activity-empty" class="dashboard-empty hidden" data-i18n="recent_activity_empty">No completed downloads yet.</div>
+    </div>
+  </section>
+
   <!-- Control bar -->
-  <section class="controls-bar">
+  <section id="download-controls" class="controls-bar hidden">
     <div class="controls-left">
       <button class="btn-ctrl play" onclick="bulkAction('resume_all')" data-i18n-title="btn_resume_all" title="Resume all">
         <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>

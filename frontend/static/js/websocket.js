@@ -5,6 +5,10 @@ const WS = (() => {
   const handlers = {};
   let reconnectDelay = 2000;
 
+  function emitStatus(connected) {
+    if (handlers.connection_status) handlers.connection_status(connected);
+  }
+
   function connect() {
     const protocol = location.protocol === "https:" ? "wss" : "ws";
     const token = localStorage.getItem("dm_token") || "";
@@ -13,6 +17,7 @@ const WS = (() => {
 
     socket.onopen = () => {
       reconnectDelay = 2000;
+      emitStatus(true);
       console.debug("[WS] connected");
       socket._pingInterval = setInterval(() => {
         if (socket.readyState === WebSocket.OPEN) socket.send("ping");
@@ -30,6 +35,7 @@ const WS = (() => {
 
     socket.onclose = () => {
       clearInterval(socket._pingInterval);
+      emitStatus(false);
       console.debug(`[WS] closed, reconnecting in ${reconnectDelay}ms`);
       reconnectTimer = setTimeout(() => {
         reconnectDelay = Math.min(reconnectDelay * 1.5, 30000);
@@ -43,5 +49,6 @@ const WS = (() => {
   return {
     init: connect,
     on(type, fn) { handlers[type] = fn; },
+    isConnected() { return Boolean(socket && socket.readyState === WebSocket.OPEN); },
   };
 })();
