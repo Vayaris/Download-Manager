@@ -6,6 +6,7 @@ import re
 import shutil
 import sqlite3
 import subprocess
+import sys
 import time
 import urllib.request
 from datetime import datetime, timezone
@@ -163,7 +164,7 @@ def rollback(git_dir: Path, target: Path, previous_commit: str):
     run(["systemctl", "restart", "download-manager"], timeout=30)
 
 
-def main():
+def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--job-id", required=True)
     parser.add_argument("--git-dir", required=True)
@@ -194,6 +195,7 @@ def main():
             version=args.expected_version,
             commit=installed_commit,
         )
+        return 0
     except Exception as exc:
         if target and previous_commit:
             try:
@@ -202,14 +204,15 @@ def main():
                 previous_version = (INSTALL_DIR / "VERSION").read_text().strip()
                 if healthy(previous_version, timeout=60):
                     write_status(args.job_id, "rolled_back", f"Update failed and was rolled back: {exc}", version=previous_version)
-                    return
+                    return 1
                 raise RuntimeError("rollback service failed its health check")
             except Exception as rollback_exc:
                 write_status(args.job_id, "failed", f"Update failed: {exc}; rollback failed: {rollback_exc}")
-                return
+                return 1
         write_status(args.job_id, "failed", f"Update failed before backup: {exc}")
         run(["systemctl", "restart", "download-manager"], check=False, timeout=30)
+        return 1
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

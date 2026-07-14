@@ -2,7 +2,7 @@
 
 Self-hosted download manager powered by **FastAPI**, **aria2** and **AllDebrid**. It provides a responsive web/PWA interface for direct links, magnets and `.torrent` files, with real-time queue updates and optional Plex or Jellyfin library refreshes.
 
-Current pre-release: **v2.0.0-rc.1**. Use v1.14.2 for the current stable channel.
+Current pre-release: **v2.0.0-rc.2**. Use v1.14.2 for the current stable channel.
 
 ![Python](https://img.shields.io/badge/Python-3.10+-3776AB?logo=python&logoColor=white)
 ![FastAPI](https://img.shields.io/badge/FastAPI-009688?logo=fastapi&logoColor=white)

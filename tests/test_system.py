@@ -123,6 +123,11 @@ class SystemTests(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, "does not match"):
                 update_runner.install_target(Path("/repo"), "v2.0.0", "a" * 40)
 
+    def test_update_runner_propagates_failure_exit_code(self):
+        source = (ROOT / "backend" / "update_runner.py").read_text()
+        self.assertIn("return 1", source)
+        self.assertIn("sys.exit(main())", source)
+
 
 if __name__ == "__main__":
     unittest.main()
