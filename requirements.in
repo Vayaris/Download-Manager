@@ -1,0 +1,13 @@
+aiofiles
+aiosqlite
+bcrypt<5
+defusedxml
+fastapi
+httpx
+passlib[bcrypt]
+pyotp
+PyJWT[crypto]
+python-multipart
+pyyaml
+qrcode[pil]
+uvicorn[standard]

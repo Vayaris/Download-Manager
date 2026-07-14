@@ -4,8 +4,6 @@
    original interface remains available without a rebuild.
 ================================================================ */
 
-@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Manrope:wght@400;500;600;700;800&display=swap');
-
 html[data-ui-style="modern"] {
   --font-sans: 'Manrope', 'Avenir Next', sans-serif;
   --font-mono: 'IBM Plex Mono', monospace;

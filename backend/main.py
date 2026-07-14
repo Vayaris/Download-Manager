@@ -112,8 +112,7 @@ class NoCacheStaticMiddleware(BaseHTTPMiddleware):
             response.headers["Cache-Control"] = "no-store"
         response.headers["Content-Security-Policy"] = (
             "default-src 'self'; base-uri 'self'; frame-ancestors 'none'; object-src 'none'; "
-            "img-src 'self' data:; font-src 'self' https://fonts.gstatic.com; "
-            "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
+            "img-src 'self' data:; font-src 'self'; style-src 'self' 'unsafe-inline'; "
             "script-src 'self' 'unsafe-inline'; connect-src 'self' ws: wss:; form-action 'self'"
         )
         response.headers["X-Content-Type-Options"] = "nosniff"

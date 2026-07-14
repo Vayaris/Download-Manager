@@ -66,6 +66,7 @@ async def history_view(scope: str, limit: int, cursor: str, today_from: str):
         )
         cursor_params = [completed_at, completed_at, group_key]
 
+    # Interpolated clauses are selected exclusively from constants above.
     sql = f"""
         WITH source AS (
             SELECT *,
@@ -92,7 +93,7 @@ async def history_view(scope: str, limit: int, cursor: str, today_from: str):
         {group_where}{cursor_where}
         ORDER BY completed_at DESC, group_key DESC
         LIMIT ?
-    """
+    """  # nosec B608
 
     db = await open_db(row_factory=True)
     try:
@@ -146,7 +147,7 @@ async def history_group(group_id: str):
     try:
         rows = [dict(row) for row in await (
             await db.execute(
-                f"SELECT * FROM history WHERE {where} ORDER BY completed_at DESC, name COLLATE NOCASE",
+                f"SELECT * FROM history WHERE {where} ORDER BY completed_at DESC, name COLLATE NOCASE",  # nosec B608
                 (value,),
             )
         ).fetchall()]
@@ -169,7 +170,7 @@ async def remove_history_entries(ids: list[str]):
     placeholders = ",".join("?" for _ in unique_ids)
     db = await open_db()
     try:
-        cursor = await db.execute(f"DELETE FROM history WHERE id IN ({placeholders})", unique_ids)
+        cursor = await db.execute(f"DELETE FROM history WHERE id IN ({placeholders})", unique_ids)  # nosec B608
         await db.commit()
         return cursor.rowcount
     finally:

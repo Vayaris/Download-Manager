@@ -5,7 +5,6 @@ import os
 import re
 import socket
 import subprocess
-import secrets
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -29,39 +28,14 @@ from services.plex import plex
 from services.smb import is_mounted
 from services.webhook import send_webhook
 from services.diagnostics import clear_events, list_events, record_event_nowait
+from services.update_service import (
+    UpdateError, check_latest, get_current_version, read_update_status,
+    start_latest_update,
+)
 from utils import validate_destination
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
-
-REPO = "Vayaris/Download-Manager"
-INSTALL_DIR = Path("/opt/download-manager")
-# Find the git repo: could be /opt/download-manager or the dev repo
-_runtime_root = Path(__file__).parent.parent.parent
-GIT_DIR = _runtime_root if (_runtime_root / ".git").exists() else INSTALL_DIR
-
-
-def _is_git_dirty(path: Path) -> bool:
-    result = subprocess.run(
-        ["git", "status", "--porcelain"],
-        cwd=str(path),
-        capture_output=True,
-        text=True,
-        timeout=10,
-    )
-    return bool(result.stdout.strip())
-
-
-def _git_head(path: Path) -> str:
-    result = subprocess.run(
-        ["git", "rev-parse", "--short", "HEAD"],
-        cwd=str(path),
-        capture_output=True,
-        text=True,
-        timeout=10,
-    )
-    return result.stdout.strip() if result.returncode == 0 else ""
-
 
 def _plex_public_config(cfg: dict, include_status: bool = False) -> dict:
     plex_cfg = cfg.get("plex", {})
@@ -864,75 +838,9 @@ async def remove_storage_path(body: StoragePathRequest, _=Depends(get_current_us
     return {"status": "removed"}
 
 
-def _get_current_version() -> str:
-    # Check install dir first, then git dir
-    for d in [INSTALL_DIR, GIT_DIR]:
-        vf = d / "VERSION"
-        if vf.exists():
-            return vf.read_text().strip()
-    return "0.0.0"
-
-
-def _parse_version_tag(value: str) -> tuple[int, int, int] | None:
-    match = re.fullmatch(r"v?(\d+)\.(\d+)\.(\d+)", (value or "").strip())
-    if not match:
-        return None
-    return tuple(int(part) for part in match.groups())
-
-
-async def _get_latest_github_version(client) -> dict:
-    resp = await client.get(
-        f"https://api.github.com/repos/{REPO}/tags",
-        params={"per_page": 100},
-        headers={"Accept": "application/vnd.github+json"},
-    )
-    if resp.status_code != 200:
-        raise HTTPException(status_code=502, detail=f"GitHub error ({resp.status_code})")
-
-    latest_tag = ""
-    latest_version = None
-    latest_commit = ""
-    for item in resp.json():
-        name = str(item.get("name", "")).strip()
-        version = _parse_version_tag(name)
-        if version is None:
-            continue
-        if latest_version is None or version > latest_version:
-            latest_version = version
-            latest_tag = name
-            latest_commit = str(item.get("commit", {}).get("sha", "")).strip()
-
-    if latest_version is None:
-        raise HTTPException(status_code=502, detail="No valid version tag found")
-
-    body = ""
-    release_resp = await client.get(
-        f"https://api.github.com/repos/{REPO}/releases/tags/{latest_tag}",
-        headers={"Accept": "application/vnd.github+json"},
-    )
-    if release_resp.status_code == 200:
-        body = release_resp.json().get("body", "") or ""
-
-    return {
-        "tag": latest_tag,
-        "version": ".".join(str(part) for part in latest_version),
-        "version_tuple": latest_version,
-        "commit_sha": latest_commit,
-        "changelog": body,
-    }
-
-
-def _find_git_dir() -> Path:
-    """Find the git repo directory (may differ from install dir)."""
-    for d in [INSTALL_DIR, GIT_DIR]:
-        if (d / ".git").exists():
-            return d
-    return INSTALL_DIR
-
-
 @router.get("/version")
 async def get_version(_=Depends(get_current_user)):
-    return {"version": _get_current_version()}
+    return {"version": get_current_version()}
 
 
 @router.get("/speed-limit/status")
@@ -989,7 +897,8 @@ async def diagnostics(request: Request, _=Depends(get_current_user)):
     db_info = {"tables": {}, "download_statuses": []}
     async with db_session() as db:
         for table in ("downloads", "packages", "torrents", "history", "users", "blocked_ips"):
-            cursor = await db.execute(f"SELECT COUNT(*) FROM {table}")
+            # Table names come exclusively from the static tuple above.
+            cursor = await db.execute(f"SELECT COUNT(*) FROM {table}")  # nosec B608
             (count,) = await cursor.fetchone()
             db_info["tables"][table] = count
         cursor = await db.execute(
@@ -1023,7 +932,7 @@ async def diagnostics(request: Request, _=Depends(get_current_user)):
     queue_info = qm.health_snapshot() if qm and hasattr(qm, "health_snapshot") else {"running": False}
 
     return {
-        "version": _get_current_version(),
+        "version": get_current_version(),
         "database": db_info,
         "aria2": aria2_info,
         "queue": queue_info,
@@ -1044,92 +953,25 @@ async def delete_diagnostic_events(_=Depends(get_current_user)):
 
 @router.get("/check-update")
 async def check_update(_=Depends(get_current_user)):
-    import httpx
-
-    current = _get_current_version()
-    current_version = _parse_version_tag(current)
-
     try:
-        async with httpx.AsyncClient(timeout=15.0) as client:
-            latest_info = await _get_latest_github_version(client)
-            update_available = current_version is not None and latest_info["version_tuple"] > current_version
-            return {
-                "update_available": update_available,
-                "current": current,
-                "latest": latest_info["version"],
-                "latest_tag": latest_info["tag"],
-                "changelog": latest_info["changelog"],
-                "message": "Update available" if update_available else "Up to date",
-            }
-    except HTTPException as e:
-        return {"update_available": False, "current": current, "message": e.detail, "error": True}
-    except Exception as e:
-        return {"update_available": False, "current": current, "message": f"Error: {str(e)[:200]}", "error": True}
-
-
-UPDATE_STATUS_FILE = Path("/var/lib/download-manager/update-status.json")
+        return await check_latest()
+    except UpdateError as exc:
+        return {
+            "update_available": False,
+            "current": get_current_version(),
+            "message": str(exc),
+            "error": True,
+        }
 
 
 @router.get("/update-status")
 async def update_status(_=Depends(get_current_user)):
-    if not UPDATE_STATUS_FILE.exists():
-        return {"state": "idle", "message": "No update has run yet"}
-    try:
-        import json
-        return json.loads(UPDATE_STATUS_FILE.read_text())
-    except (OSError, ValueError):
-        return {"state": "unknown", "message": "Update status is unreadable"}
+    return read_update_status()
 
 
 @router.post("/update")
 async def perform_update(_=Depends(get_current_user)):
-    import httpx
-
-    current = _get_current_version()
-    current_version = _parse_version_tag(current)
-
     try:
-        # Fetch latest release info
-        async with httpx.AsyncClient(timeout=15.0) as client:
-            latest_info = await _get_latest_github_version(client)
-            latest = latest_info["version"]
-            changelog = latest_info["changelog"]
-
-            if current_version is None or latest_info["version_tuple"] <= current_version:
-                return {"success": True, "message": "Already up to date", "version": current, "changelog": ""}
-
-        git_dir = _find_git_dir()
-        if _is_git_dirty(git_dir):
-            raise HTTPException(
-                status_code=409,
-                detail="Update blocked: local files have uncommitted changes.",
-            )
-
-        job_id = f"dm-{secrets.token_hex(6)}"
-        runner = INSTALL_DIR / "backend" / "update_runner.py"
-        command = [
-            "systemd-run", "--quiet", f"--unit=download-manager-update-{job_id}",
-            "--property=Type=exec", str(INSTALL_DIR / "venv" / "bin" / "python"),
-            str(runner), "--job-id", job_id, "--git-dir", str(git_dir),
-            "--expected-version", latest,
-            "--expected-tag", latest_info["tag"],
-            "--expected-commit", latest_info["commit_sha"],
-        ]
-        result = subprocess.run(command, capture_output=True, text=True, timeout=15)
-        if result.returncode != 0:
-            detail = (result.stderr or result.stdout or "systemd-run failed").strip()
-            raise HTTPException(status_code=500, detail=f"Unable to start updater: {detail[:300]}")
-
-        return {
-            "success": True,
-            "message": f"Update to v{latest} started",
-            "version": latest,
-            "changelog": changelog,
-            "job_id": job_id,
-        }
-
-    except HTTPException:
-        raise
-    except Exception as e:
-        record_event_nowait("updates", "update_failed", e)
-        raise HTTPException(status_code=500, detail="Internal error during update")
+        return await start_latest_update()
+    except UpdateError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc))

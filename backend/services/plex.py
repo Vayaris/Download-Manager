@@ -1,6 +1,6 @@
 import httpx
 from typing import Any
-from xml.etree import ElementTree
+from defusedxml import ElementTree
 
 
 class PlexService:

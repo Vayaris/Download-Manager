@@ -4,6 +4,7 @@ import json
 import os
 import re
 import shutil
+import sqlite3
 import subprocess
 import time
 import urllib.request
@@ -58,6 +59,13 @@ def sync_runtime(git_dir: Path):
             shutil.copy2(source, INSTALL_DIR / name)
 
 
+def backup_database(source: Path, destination: Path):
+    """Create a consistent SQLite snapshot, including committed WAL pages."""
+    with sqlite3.connect(source) as source_db, sqlite3.connect(destination) as backup_db:
+        source_db.backup(backup_db)
+    os.chmod(destination, 0o600)
+
+
 def backup(job_id: str, git_dir: Path) -> tuple[Path, str]:
     target = BACKUP_DIR / job_id
     target.mkdir(parents=True, exist_ok=False, mode=0o700)
@@ -66,7 +74,7 @@ def backup(job_id: str, git_dir: Path) -> tuple[Path, str]:
     if CONFIG_FILE.exists():
         shutil.copy2(CONFIG_FILE, target / "config.yml")
     if DB_FILE.exists():
-        shutil.copy2(DB_FILE, target / "downloads.db")
+        backup_database(DB_FILE, target / "downloads.db")
     if git_dir != INSTALL_DIR:
         shutil.copytree(INSTALL_DIR / "backend", target / "backend")
         shutil.copytree(INSTALL_DIR / "frontend", target / "frontend")
@@ -87,7 +95,8 @@ def install_dependencies():
         run([str(pip), "install", "--quiet", "-r", str(requirements)], timeout=300)
     start = INSTALL_DIR / "start.sh"
     if start.exists():
-        os.chmod(start, 0o755)
+        # The launcher must be executable and contains no secret data.
+        os.chmod(start, 0o755)  # nosec B103
 
 
 def install_target(git_dir: Path, tag: str, expected_commit: str) -> str:
@@ -118,7 +127,10 @@ def healthy(expected_version: str, timeout: int = 90) -> bool:
         active = run(["systemctl", "is-active", "download-manager"], check=False, timeout=10)
         if active.returncode == 0:
             try:
-                with urllib.request.urlopen(f"http://127.0.0.1:{port}/api/auth/status", timeout=3) as response:
+                # URL is a fixed loopback HTTP health endpoint.
+                with urllib.request.urlopen(  # nosec B310
+                    f"http://127.0.0.1:{port}/api/auth/status", timeout=3
+                ) as response:
                     if response.status == 200:
                         installed = (INSTALL_DIR / "VERSION").read_text().strip()
                         if not expected_version or installed == expected_version:

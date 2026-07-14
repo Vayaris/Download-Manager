@@ -10,7 +10,8 @@ CONFIG_PATH = Path(os.environ.get("DM_CONFIG", "/etc/download-manager/config.yml
 DEFAULT_CONFIG = {
     "server": {
         "port": 40320,
-        "host": "0.0.0.0"
+        # Intentional self-hosted LAN default; users can bind a narrower address.
+        "host": "0.0.0.0"  # nosec B104
     },
     "alldebrid": {
         "api_key": "",

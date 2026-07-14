@@ -14,9 +14,20 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "backend"))
 
 import update_runner
+from services import update_service
 
 
 class SystemTests(unittest.TestCase):
+    def test_release_candidate_sorts_before_stable_release(self):
+        self.assertLess(
+            update_service.parse_version_tag("2.0.0-rc.3"),
+            update_service.parse_version_tag("2.0.0"),
+        )
+        self.assertGreater(
+            update_service.parse_version_tag("2.0.0-rc.3"),
+            update_service.parse_version_tag("1.14.2"),
+        )
+
     def test_installer_embedded_yaml_matches_current_settings(self):
         installer = (ROOT / "install.sh").read_text()
         match = re.search(
@@ -72,7 +83,23 @@ class SystemTests(unittest.TestCase):
                 update_runner.write_status("job", "success", "ok")
                 status = state / "status.json"
                 self.assertEqual(status.stat().st_mode & 0o777, 0o600)
-                self.assertIn('"state": "success"', status.read_text())
+            self.assertIn('"state": "success"', status.read_text())
+
+    def test_update_database_backup_includes_wal_data(self):
+        import sqlite3
+
+        with tempfile.TemporaryDirectory() as temp:
+            source = Path(temp) / "source.db"
+            destination = Path(temp) / "backup.db"
+            with sqlite3.connect(source) as db:
+                db.execute("PRAGMA journal_mode=WAL")
+                db.execute("CREATE TABLE values_test (value TEXT)")
+                db.execute("INSERT INTO values_test VALUES ('committed')")
+                db.commit()
+                update_runner.backup_database(source, destination)
+            with sqlite3.connect(destination) as backup:
+                self.assertEqual(backup.execute("SELECT value FROM values_test").fetchone()[0], "committed")
+            self.assertEqual(destination.stat().st_mode & 0o777, 0o600)
 
     def test_update_installs_the_exact_verified_tag_commit(self):
         expected = "a" * 40

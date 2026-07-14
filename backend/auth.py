@@ -2,7 +2,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Optional
 from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-from jose import JWTError, jwt
+import jwt
 from passlib.context import CryptContext
 from config import get_config
 from database import open_db
@@ -76,5 +76,5 @@ async def validate_access_token(token: str):
         if not user or int(payload.get("ver", -1)) != int(user["token_version"] or 0):
             raise HTTPException(status_code=401, detail="Session expired")
         return {"username": user["username"], "token_version": int(user["token_version"] or 0)}
-    except JWTError:
+    except jwt.PyJWTError:
         raise HTTPException(status_code=401, detail="Invalid token")

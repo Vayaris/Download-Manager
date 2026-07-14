@@ -2,9 +2,9 @@
 
 Self-hosted download manager powered by **FastAPI**, **aria2** and **AllDebrid**. It provides a responsive web/PWA interface for direct links, magnets and `.torrent` files, with real-time queue updates and optional Plex or Jellyfin library refreshes.
 
-Current release: **v1.14.2**
+Current pre-release: **v2.0.0-rc.1**. Use v1.14.2 for the current stable channel.
 
-![Python](https://img.shields.io/badge/Python-3.8+-3776AB?logo=python&logoColor=white)
+![Python](https://img.shields.io/badge/Python-3.10+-3776AB?logo=python&logoColor=white)
 ![FastAPI](https://img.shields.io/badge/FastAPI-009688?logo=fastapi&logoColor=white)
 ![aria2](https://img.shields.io/badge/aria2-Download_Engine-blue)
 ![PWA](https://img.shields.io/badge/PWA-Installable-0f766e?logo=pwa&logoColor=white)
@@ -32,6 +32,7 @@ Current release: **v1.14.2**
 ## Requirements
 
 - Ubuntu 20.04+ or Debian 11+
+- Python 3.10 or newer
 - Root access and systemd recommended
 - A reachable download destination, usually under `/mnt` or `/opt/download-manager/downloads`
 - An AllDebrid API key for debrid and torrent workflows
@@ -180,6 +181,8 @@ Use **Settings > Updates > Check for updates**. When a newer GitHub release is a
 
 Updates run in an independent systemd unit. Before changing files, Download Manager saves the current commit, configuration and SQLite database. If the new service does not pass its health check, the previous version is restored automatically. The three most recent update backups are retained.
 
+The v2 release candidate makes the modern interface the default and requires one new login so the browser can move the session into a secure HttpOnly cookie. **Old look v1** remains selectable in the account settings and will be kept through the v2.1 stabilization period; it will not be removed without explicit validation.
+
 For a manual update:
 
 ```bash
@@ -194,9 +197,10 @@ Back up `/etc/download-manager/config.yml` and `/opt/download-manager/config/dow
 
 - Authentication is mandatory; TOTP 2FA can be enabled per account.
 - Five failed login attempts within 15 minutes block the source IP for four hours.
-- JWTs and WebSockets require authentication. JWT sessions currently last seven days.
+- Browser sessions use HttpOnly, SameSite cookies; bearer JWTs remain available for the admin CLI. Sessions currently last seven days and are revoked after a password change.
 - File operations are constrained to configured allowed paths.
 - Webhook targets are checked to reduce SSRF risk.
+- Dependencies are locked and audited in CI; browser assets, including fonts, are served locally.
 - CORS is disabled by default. Configure explicit origins and trusted proxies when using a reverse proxy.
 - The service runs as `root` to support mounts and arbitrary configured destinations. Do not expose port `40320` directly to the public Internet; use a firewall and a properly configured HTTPS reverse proxy.
 
