@@ -32,13 +32,13 @@ function formatSpeed(bps) {
 // ---- Auth token helper ----
 
 function getAuthToken() {
-  return localStorage.getItem("dm_token") || "";
+  return "";
 }
 
 // ---- API fetch helper ----
 
 const apiFetch = {
-  token: localStorage.getItem("dm_token") || "",
+  token: "",
 
   _headers() {
     const h = { "Content-Type": "application/json" };
@@ -51,7 +51,7 @@ const apiFetch = {
   },
 
   async _request(url, opts) {
-    const r = await fetch(url, opts);
+    const r = await fetch(url, { credentials: "same-origin", ...opts });
     if (r.status === 401) {
       this._handleUnauth();
       throw new Error("Unauthorized");

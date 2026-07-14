@@ -12,11 +12,19 @@ async def open_db(*, row_factory: bool = False) -> aiosqlite.Connection:
     await db.execute("PRAGMA foreign_keys = ON")
     if row_factory:
         db.row_factory = aiosqlite.Row
+    try:
+        os.chmod(DB_PATH, 0o600)
+    except OSError:
+        pass
     return db
 
 
 async def init_db():
     DB_PATH.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        os.chmod(DB_PATH.parent, 0o700)
+    except OSError:
+        pass
     async with aiosqlite.connect(str(DB_PATH)) as db:
         await db.execute("PRAGMA journal_mode = WAL")
         await db.execute("PRAGMA busy_timeout = 15000")
@@ -84,6 +92,8 @@ async def init_db():
                 password_hash TEXT NOT NULL,
                 otp_secret    TEXT,
                 otp_enabled   INTEGER DEFAULT 0,
+                token_version INTEGER NOT NULL DEFAULT 0,
+                ui_style      TEXT NOT NULL DEFAULT 'modern',
                 created_at    TEXT
             )
         """)
@@ -215,6 +225,13 @@ async def init_db():
         if "source_key" not in torrent_columns:
             await db.execute("ALTER TABLE torrents ADD COLUMN source_key TEXT")
 
+        user_columns = [row[1] for row in await (await db.execute("PRAGMA table_info(users)")).fetchall()]
+        if "token_version" not in user_columns:
+            await db.execute("ALTER TABLE users ADD COLUMN token_version INTEGER NOT NULL DEFAULT 0")
+        if "ui_style" not in user_columns:
+            # v2 is intentionally selected once for every existing account.
+            await db.execute("ALTER TABLE users ADD COLUMN ui_style TEXT NOT NULL DEFAULT 'modern'")
+
         await db.execute("CREATE INDEX IF NOT EXISTS idx_downloads_source_key ON downloads (source_key)")
         await db.execute("CREATE INDEX IF NOT EXISTS idx_history_source_key ON history (source_key)")
         await db.execute("CREATE INDEX IF NOT EXISTS idx_history_completed ON history (completed_at DESC)")
@@ -223,3 +240,7 @@ async def init_db():
         await db.execute("CREATE INDEX IF NOT EXISTS idx_torrents_source_key ON torrents (source_key)")
 
         await db.commit()
+    try:
+        os.chmod(DB_PATH, 0o600)
+    except OSError:
+        pass

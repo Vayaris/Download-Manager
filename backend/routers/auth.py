@@ -4,11 +4,11 @@ import base64
 from datetime import datetime, timedelta, timezone
 
 import aiosqlite
-from fastapi import APIRouter, HTTPException, Depends, Request
+from fastapi import APIRouter, HTTPException, Depends, Request, Response
 
 from models import (
     LoginRequest, LoginResponse, SetupAdminRequest,
-    SetupOTPResponse, VerifyOTPRequest,
+    SetupOTPResponse, UserPreferencesRequest, VerifyOTPRequest,
 )
 from auth import verify_password, get_password_hash, create_access_token, get_current_user
 from database import DB_PATH
@@ -18,6 +18,20 @@ router = APIRouter()
 MAX_ATTEMPTS = 5
 ATTEMPT_WINDOW_MINUTES = 15
 BLOCK_DURATION_HOURS = 4
+SESSION_COOKIE = "dm_session"
+SESSION_MAX_AGE = 7 * 24 * 60 * 60
+
+
+def _set_session_cookie(response: Response, token: str, request: Request):
+    response.set_cookie(
+        SESSION_COOKIE,
+        token,
+        max_age=SESSION_MAX_AGE,
+        httponly=True,
+        secure=request.url.scheme == "https",
+        samesite="strict",
+        path="/",
+    )
 
 
 def _get_client_ip(request: Request) -> str:
@@ -103,7 +117,7 @@ async def _clear_attempts(ip: str):
 
 
 @router.post("/login", response_model=LoginResponse)
-async def login(body: LoginRequest, request: Request):
+async def login(body: LoginRequest, request: Request, response: Response):
     client_ip = _get_client_ip(request)
     await _check_ip_blocked(client_ip)
 
@@ -128,6 +142,7 @@ async def login(body: LoginRequest, request: Request):
             # Password OK — return partial token requiring OTP
             token = create_access_token({
                 "sub": body.username,
+                "ver": int(user["token_version"] or 0),
                 "otp_required": True,
                 "otp_verified": False,
             })
@@ -150,9 +165,11 @@ async def login(body: LoginRequest, request: Request):
 
     token = create_access_token({
         "sub": body.username,
+        "ver": int(user["token_version"] or 0),
         "otp_required": bool(user["otp_enabled"]),
         "otp_verified": True,
     })
+    _set_session_cookie(response, token, request)
     return LoginResponse(token=token)
 
 
@@ -169,9 +186,10 @@ async def auth_status():
 
 
 @router.post("/setup-admin")
-async def setup_admin(body: SetupAdminRequest):
+async def setup_admin(body: SetupAdminRequest, request: Request, response: Response):
     """Create the initial admin account. Only works if no users exist."""
     async with aiosqlite.connect(str(DB_PATH)) as db:
+        await db.execute("BEGIN IMMEDIATE")
         cursor = await db.execute("SELECT COUNT(*) FROM users")
         (count,) = await cursor.fetchone()
 
@@ -181,8 +199,8 @@ async def setup_admin(body: SetupAdminRequest):
         if not body.username.strip() or not body.password:
             raise HTTPException(status_code=400, detail="Username and password required")
 
-        if len(body.password) < 6:
-            raise HTTPException(status_code=400, detail="Password must be at least 6 characters")
+        if len(body.password) < 12:
+            raise HTTPException(status_code=400, detail="Password must be at least 12 characters")
 
         user_id = str(uuid.uuid4())
         now = datetime.now(timezone.utc).isoformat()
@@ -194,28 +212,48 @@ async def setup_admin(body: SetupAdminRequest):
         )
         await db.commit()
 
-    token = create_access_token({"sub": body.username.strip(), "otp_verified": True})
+    token = create_access_token({"sub": body.username.strip(), "ver": 0, "otp_verified": True})
+    _set_session_cookie(response, token, request)
     return {"status": "created", "token": token, "access_token": token}
 
 
 @router.post("/change-password")
-async def change_password(body: SetupAdminRequest, user=Depends(get_current_user)):
+async def change_password(
+    body: SetupAdminRequest,
+    request: Request,
+    response: Response,
+    user=Depends(get_current_user),
+):
     """Change password for current user."""
     if user["username"] == "anonymous":
         raise HTTPException(status_code=403, detail="Auth not enabled")
 
-    if len(body.password) < 6:
-        raise HTTPException(status_code=400, detail="Password must be at least 6 characters")
+    if len(body.password) < 12:
+        raise HTTPException(status_code=400, detail="Password must be at least 12 characters")
 
     pw_hash = get_password_hash(body.password)
     async with aiosqlite.connect(str(DB_PATH)) as db:
         await db.execute(
-            "UPDATE users SET password_hash = ? WHERE username = ?",
+            "UPDATE users SET password_hash = ?, token_version = token_version + 1 WHERE username = ?",
             (pw_hash, user["username"]),
         )
+        cursor = await db.execute(
+            "SELECT token_version FROM users WHERE username = ?", (user["username"],)
+        )
+        (token_version,) = await cursor.fetchone()
         await db.commit()
 
-    return {"status": "updated"}
+    token = create_access_token({
+        "sub": user["username"], "ver": int(token_version), "otp_verified": True,
+    })
+    _set_session_cookie(response, token, request)
+    return {"status": "updated", "token": token}
+
+
+@router.post("/logout")
+async def logout(response: Response):
+    response.delete_cookie(SESSION_COOKIE, path="/", samesite="strict")
+    return {"status": "logged_out"}
 
 
 @router.post("/setup-otp", response_model=SetupOTPResponse)
@@ -331,16 +369,33 @@ async def disable_otp(body: VerifyOTPRequest, user=Depends(get_current_user)):
 async def user_info(user=Depends(get_current_user)):
     """Get current user info including OTP status."""
     if user["username"] == "anonymous":
-        return {"username": "anonymous", "otp_enabled": False}
+        return {"username": "anonymous", "otp_enabled": False, "ui_style": "modern"}
 
     async with aiosqlite.connect(str(DB_PATH)) as db:
         db.row_factory = aiosqlite.Row
         cursor = await db.execute(
-            "SELECT username, otp_enabled FROM users WHERE username = ?", (user["username"],)
+            "SELECT username, otp_enabled, ui_style FROM users WHERE username = ?", (user["username"],)
         )
         row = await cursor.fetchone()
 
     if not row:
-        return {"username": user["username"], "otp_enabled": False}
+        return {"username": user["username"], "otp_enabled": False, "ui_style": "modern"}
 
-    return {"username": row["username"], "otp_enabled": bool(row["otp_enabled"])}
+    return {
+        "username": row["username"],
+        "otp_enabled": bool(row["otp_enabled"]),
+        "ui_style": row["ui_style"] if row["ui_style"] in ("classic", "modern") else "modern",
+    }
+
+
+@router.put("/preferences")
+async def update_preferences(body: UserPreferencesRequest, user=Depends(get_current_user)):
+    if user["username"] == "anonymous":
+        raise HTTPException(status_code=403, detail="Auth not enabled")
+    async with aiosqlite.connect(str(DB_PATH)) as db:
+        await db.execute(
+            "UPDATE users SET ui_style = ? WHERE username = ?",
+            (body.ui_style, user["username"]),
+        )
+        await db.commit()
+    return {"status": "updated", "ui_style": body.ui_style}

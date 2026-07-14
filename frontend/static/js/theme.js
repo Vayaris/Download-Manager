@@ -11,13 +11,26 @@ function updateThemeColor() {
   meta.setAttribute("content", modern ? (dark ? "#11110f" : "#171715") : (dark ? "#0d1110" : "#f5f3ed"));
 }
 
-function setUIStyle(style) {
-  var next = style === "modern" ? "modern" : "classic";
+function applyUIStyle(style) {
+  var next = style === "classic" ? "classic" : "modern";
   document.documentElement.setAttribute("data-ui-style", next);
   localStorage.setItem("dm_ui_style", next);
   var select = document.getElementById("acct-ui-style-select");
   if (select) select.value = next;
   updateThemeColor();
+  return next;
+}
+
+async function setUIStyle(style) {
+  var previous = getUIStyle();
+  var next = applyUIStyle(style);
+  if (typeof apiFetch === "undefined") return;
+  try {
+    await apiFetch.put("/api/auth/preferences", { ui_style: next });
+  } catch (error) {
+    applyUIStyle(previous);
+    if (typeof showToast === "function") showToast(error.message, "error");
+  }
 }
 
 // Theme — read from DOM, persist to localStorage

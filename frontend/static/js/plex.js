@@ -504,15 +504,8 @@ async function checkPlexAuth() {
       return false;
     }
 
-    const token = getAuthToken();
-    if (!token) { showPlexLogin(); return false; }
-
-    const check = await fetch("/api/settings/media", {
-      headers: { "Authorization": `Bearer ${token}` },
-    });
+    const check = await fetch("/api/settings/media", { credentials: "same-origin" });
     if (check.status === 401) {
-      localStorage.removeItem("dm_token");
-      API.token = "";
       showPlexLogin();
       return false;
     }
@@ -568,8 +561,8 @@ async function doPlexLogin() {
     }
 
     _plexOtpRequired = false;
-    localStorage.setItem("dm_token", data.token);
-    API.token = data.token;
+    localStorage.removeItem("dm_token");
+    API.token = "";
     document.getElementById("login-modal").classList.add("hidden");
     bootPlexPage();
   } catch {

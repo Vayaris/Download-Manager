@@ -1450,20 +1450,8 @@ async function checkAuth() {
       return;
     }
 
-    const token = localStorage.getItem("dm_token");
-    if (!token) {
-      showLogin();
-      return;
-    }
-
-    // Validate token with raw fetch (no API.get side effects)
-    API.token = token;
-    const check = await fetch("/api/settings/", {
-      headers: { "Authorization": `Bearer ${token}` },
-    });
+    const check = await fetch("/api/settings/", { credentials: "same-origin" });
     if (check.status === 401) {
-      localStorage.removeItem("dm_token");
-      API.token = "";
       showLogin();
       return;
     }
@@ -1574,7 +1562,7 @@ async function doLogin() {
     // Success
     _loginOtpRequired = false;
     _loginBusy = false;
-    loginSuccess(data.token);
+    loginSuccess();
   } catch {
     errEl.textContent = t("login_server_error");
     errEl.classList.remove("hidden");
@@ -1589,7 +1577,7 @@ async function doSetupAdmin() {
   const errEl    = document.getElementById("setup-error");
 
   if (!username) { errEl.textContent = t("setup_username_required"); errEl.classList.remove("hidden"); return; }
-  if (password.length < 6) { errEl.textContent = t("setup_password_min"); errEl.classList.remove("hidden"); return; }
+  if (password.length < 12) { errEl.textContent = t("setup_password_min"); errEl.classList.remove("hidden"); return; }
   if (password !== confirm) { errEl.textContent = t("setup_password_mismatch"); errEl.classList.remove("hidden"); return; }
 
   try {
@@ -1606,16 +1594,16 @@ async function doSetupAdmin() {
     }
     const data = await resp.json();
     showToast(t("setup_success"), "ok");
-    loginSuccess(data.token);
+    loginSuccess();
   } catch {
     errEl.textContent = t("login_server_error");
     errEl.classList.remove("hidden");
   }
 }
 
-function loginSuccess(token) {
-  localStorage.setItem("dm_token", token);
-  API.token = token;
+function loginSuccess() {
+  localStorage.removeItem("dm_token");
+  API.token = "";
   document.getElementById("login-modal").classList.add("hidden");
   // Reset form state
   document.getElementById("login-username").disabled = false;

@@ -105,7 +105,7 @@ class DownloadWorkspaceTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn('consecutiveAria2Failures >= 2', app)
         self.assertIn('status.aria2_ok ? 0 : consecutiveAria2Failures + 1', app)
 
-    def test_modern_interface_is_optional_and_reversible(self):
+    def test_v2_interface_is_default_and_v1_fallback_is_reversible(self):
         root = Path(__file__).resolve().parents[1]
         account = (root / "frontend" / "static" / "js" / "account.js").read_text()
         theme = (root / "frontend" / "static" / "js" / "theme.js").read_text()
@@ -121,15 +121,18 @@ class DownloadWorkspaceTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("column-count: 3", modern_styles)
         self.assertIn("#account-modal .modal-box", modern_styles)
         self.assertIn('id="acct-ui-style-select"', account)
-        self.assertIn("Minimal premium (Beta)", account)
+        self.assertIn("Interface v2", account)
+        self.assertIn("Old look v1", account)
         self.assertIn('localStorage.setItem("dm_ui_style", next)', theme)
+        self.assertIn('/api/auth/preferences', theme)
 
         for page in ("index.html", "settings.html", "plex.html"):
             html = (root / "frontend" / page).read_text()
-            self.assertIn('data-ui-style="classic"', html)
+            self.assertIn('data-ui-style="modern"', html)
             self.assertIn('/static/css/style-modern.css', html)
             self.assertIn("params.get('ui')", html)
-            self.assertIn("localStorage.getItem('dm_ui_style') || 'classic'", html)
+            self.assertIn("localStorage.getItem('dm_ui_style') || 'modern'", html)
+            self.assertIn("localStorage.getItem('dm_ui_generation') !== '2'", html)
 
 
 if __name__ == "__main__":

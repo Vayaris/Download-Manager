@@ -39,7 +39,7 @@
           <span data-i18n="acct_change_password">Change password</span>
         </h4>
         <div class="form-group">
-          <input type="password" id="acct-new-password" class="form-input" data-i18n-placeholder="acct_password_placeholder" placeholder="New password (min. 6 characters)" autocomplete="new-password">
+          <input type="password" id="acct-new-password" class="form-input" data-i18n-placeholder="acct_password_placeholder" placeholder="New password (min. 12 characters)" autocomplete="new-password">
         </div>
         <button class="btn" onclick="acctChangePassword()" data-i18n="acct_password_update">Update</button>
       </div>
@@ -103,10 +103,10 @@
         </h4>
         <div class="form-group">
           <select id="acct-ui-style-select" class="form-input" onchange="setUIStyle(this.value)">
-            <option value="classic" data-i18n="acct_ui_classic">Classic</option>
-            <option value="modern" data-i18n="acct_ui_modern">Minimal premium (Beta)</option>
+            <option value="modern" data-i18n="acct_ui_modern">Interface v2</option>
+            <option value="classic" data-i18n="acct_ui_classic">Old look v1</option>
           </select>
-          <p class="form-hint" data-i18n="acct_appearance_hint">The Minimal premium interface is a beta preview saved on this device. The classic interface remains available at any time.</p>
+          <p class="form-hint" data-i18n="acct_appearance_hint">This preference is synchronized across your devices. The v1 look remains available as a temporary fallback.</p>
         </div>
       </div>
 
@@ -163,6 +163,7 @@ async function acctLoadUserInfo() {
   try {
     const info = await _acctGet("/api/auth/user-info");
     document.getElementById("acct-username").textContent = info.username;
+    if (typeof applyUIStyle === "function") applyUIStyle(info.ui_style || "modern");
 
     const badge = document.getElementById("acct-otp-badge");
     const badgeText = document.getElementById("acct-otp-badge-text");
@@ -187,7 +188,7 @@ async function acctLoadUserInfo() {
 
 async function acctChangePassword() {
   const pw = document.getElementById("acct-new-password").value;
-  if (pw.length < 6) { showToast(t("acct_password_min"), "error"); return; }
+  if (pw.length < 12) { showToast(t("acct_password_min"), "error"); return; }
   try {
     await _acctPost("/api/auth/change-password", { username: "", password: pw });
     showToast(t("acct_password_updated"), "ok");
@@ -249,7 +250,8 @@ async function acctDisableOTP() {
 
 // ---- Logout ----
 
-function acctLogout() {
+async function acctLogout() {
+  try { await _acctPost("/api/auth/logout", {}); } catch {}
   localStorage.removeItem("dm_token");
   if (typeof API !== "undefined") API.token = "";
   closeAccountModal();
@@ -258,12 +260,14 @@ function acctLogout() {
 
 // ---- Show/hide account button based on auth state ----
 
-function initAccountButton() {
+async function initAccountButton() {
   const btn = document.getElementById("account-btn");
   if (!btn) return;
-  if (localStorage.getItem("dm_token")) {
+  try {
+    const info = await _acctGet("/api/auth/user-info");
+    if (typeof applyUIStyle === "function") applyUIStyle(info.ui_style || "modern");
     btn.classList.remove("hidden");
-  } else {
+  } catch {
     btn.classList.add("hidden");
   }
 }

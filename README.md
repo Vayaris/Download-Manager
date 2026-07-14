@@ -19,7 +19,7 @@ Current release: **v1.14.2**
 - Download workspace with queue completion estimate, aggregate storage capacity and per-destination space warnings
 - Page-wide link and magnet paste with `Ctrl+V`, plus five recent completed activities kept visible beside storage
 - Global aria2 speed limit in MB/s, with effective-limit verification in Settings
-- Responsive desktop/mobile interface with classic and optional Minimal premium **beta** layouts, dark/light themes, French/English and installable PWA
+- Responsive desktop/mobile interface with the v2 layout by default and a temporary v1 fallback, dark/light themes, French/English and installable PWA
 - Account-synced destination explorer with favorites, recent paths, search, breadcrumbs and mobile tabs
 - Silent `.nfo` filtering enabled by default
 - Safe stalled-download watchdog and automatic history
@@ -220,7 +220,7 @@ This project is designed for a single self-hosted user. SQLite and the current s
 
 Download Manager centralise les liens directs, magnets et fichiers `.torrent` dans un composeur unique responsive. Les sources collées ou déposées sont identifiées avant l’envoi et, à partir de deux éléments, un lot unique est créé automatiquement avec une progression globale et une seule notification finale. Un magnet ou fichier `.torrent` unique est également regroupé automatiquement lorsqu’il contient plusieurs fichiers. Quand la file est vide, la page propose les destinations favorites et récentes avec l’espace disque disponible ainsi que les dernières activités ; pendant un téléchargement, elle affiche un résumé global des transferts et de leur vitesse. La vue Historique regroupe les lots, propose des filtres rapides et permet de retirer plusieurs entrées sans supprimer les fichiers téléchargés. Les intégrations Plex/Jellyfin permettent enfin un rafraîchissement manuel ou automatique des bibliothèques lorsque toute la file est terminée.
 
-L’interface classique reste disponible par défaut. Le style optionnel **Minimal premium (Bêta)** ajoute une navigation latérale sur ordinateur, un affichage pleine largeur, une adaptation aux écrans ultralarges et conserve la navigation mobile dédiée. Il restera en bêta pendant la série v1.x et ne deviendra l’interface stable qu’après validation pour la v2.0.0.
+L’interface v2 devient le style par défaut avec une navigation latérale sur ordinateur, un affichage pleine largeur et une adaptation aux écrans ultralarges. L’ancien look v1 reste temporairement disponible dans les paramètres du compte comme solution de secours.
 
 L’installation rapide, les chemins, commandes et réglages indiqués ci-dessus sont identiques pour l’interface française. La configuration courante se fait principalement depuis **Paramètres**.
 

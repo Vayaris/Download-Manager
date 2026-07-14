@@ -37,8 +37,8 @@ def cmd_reset_admin(username=None, password=None):
     print("All accounts have been deleted.")
 
     if username and password:
-        if len(password) < 6:
-            print("Error: password must be at least 6 characters.")
+        if len(password) < 12:
+            print("Error: password must be at least 12 characters.")
             db.close()
             sys.exit(1)
 

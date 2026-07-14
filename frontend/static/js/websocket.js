@@ -11,9 +11,7 @@ const WS = (() => {
 
   function connect() {
     const protocol = location.protocol === "https:" ? "wss" : "ws";
-    const token = localStorage.getItem("dm_token") || "";
-    const qs = token ? `?token=${encodeURIComponent(token)}` : "";
-    socket = new WebSocket(`${protocol}://${location.host}/ws/downloads${qs}`);
+    socket = new WebSocket(`${protocol}://${location.host}/ws/downloads`);
 
     socket.onopen = () => {
       reconnectDelay = 2000;

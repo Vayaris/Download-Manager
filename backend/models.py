@@ -1,5 +1,5 @@
 from pydantic import BaseModel
-from typing import Optional, List
+from typing import Optional, List, Literal
 
 
 class AddDownloadsRequest(BaseModel):
@@ -81,6 +81,10 @@ class SetupOTPResponse(BaseModel):
 
 class VerifyOTPRequest(BaseModel):
     code: str
+
+
+class UserPreferencesRequest(BaseModel):
+    ui_style: Literal["classic", "modern"]
 
 
 class MkdirRequest(BaseModel):

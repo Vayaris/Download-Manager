@@ -963,16 +963,8 @@ async function checkSettingsAuth() {
       return false;
     }
 
-    const token = getAuthToken();
-    if (!token) { showSettingsLogin(); return false; }
-
-    // Validate token with raw fetch
-    const check = await fetch("/api/settings/", {
-      headers: { "Authorization": `Bearer ${token}` },
-    });
+    const check = await fetch("/api/settings/", { credentials: "same-origin" });
     if (check.status === 401) {
-      localStorage.removeItem("dm_token");
-      API.token = "";
       showSettingsLogin();
       return false;
     }
@@ -1032,8 +1024,8 @@ async function doSettingsLogin() {
     }
 
     _settingsOtpRequired = false;
-    localStorage.setItem("dm_token", data.token);
-    API.token = data.token;
+    localStorage.removeItem("dm_token");
+    API.token = "";
     document.getElementById("login-modal").classList.add("hidden");
     bootSettings();
   } catch {

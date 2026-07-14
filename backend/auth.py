@@ -1,10 +1,11 @@
 from datetime import datetime, timedelta, timezone
 from typing import Optional
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from jose import JWTError, jwt
 from passlib.context import CryptContext
 from config import get_config
+from database import open_db
 
 ALGORITHM = "HS256"
 TOKEN_EXPIRE_HOURS = 24 * 7
@@ -32,20 +33,23 @@ def create_access_token(data: dict) -> str:
 
 
 async def get_current_user(
+    request: Request,
     credentials: Optional[HTTPAuthorizationCredentials] = Depends(security),
 ):
-    import aiosqlite
-    from database import DB_PATH
-    async with aiosqlite.connect(str(DB_PATH)) as db:
-        cursor = await db.execute("SELECT COUNT(*) FROM users")
-        (count,) = await cursor.fetchone()
+    token = credentials.credentials if credentials else request.cookies.get("dm_session", "")
+    return await validate_access_token(token)
 
-    # No users yet — allow anonymous access for setup-admin
-    if count == 0:
-        return {"username": "anonymous"}
 
-    # Users exist — require valid Bearer token
-    if not credentials:
+async def validate_access_token(token: str):
+    db = await open_db(row_factory=True)
+    try:
+        cursor = await db.execute("SELECT COUNT(*) AS count FROM users")
+        if (await cursor.fetchone())["count"] == 0:
+            return {"username": "anonymous", "token_version": 0}
+    finally:
+        await db.close()
+
+    if not token:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Authentication required",
@@ -53,13 +57,24 @@ async def get_current_user(
         )
 
     try:
-        payload = jwt.decode(credentials.credentials, _get_secret(), algorithms=[ALGORITHM])
+        payload = jwt.decode(token, _get_secret(), algorithms=[ALGORITHM])
         username = payload.get("sub")
         if not username:
             raise HTTPException(status_code=401, detail="Invalid token")
         # Check otp_verified claim if user has 2FA
         if payload.get("otp_required") and not payload.get("otp_verified"):
             raise HTTPException(status_code=401, detail="OTP verification required")
-        return {"username": username}
+        db = await open_db(row_factory=True)
+        try:
+            cursor = await db.execute(
+                "SELECT username, token_version FROM users WHERE username = ?",
+                (username,),
+            )
+            user = await cursor.fetchone()
+        finally:
+            await db.close()
+        if not user or int(payload.get("ver", -1)) != int(user["token_version"] or 0):
+            raise HTTPException(status_code=401, detail="Session expired")
+        return {"username": user["username"], "token_version": int(user["token_version"] or 0)}
     except JWTError:
         raise HTTPException(status_code=401, detail="Invalid token")

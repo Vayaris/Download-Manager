@@ -156,34 +156,17 @@ async def service_worker():
 
 @app.websocket("/ws/downloads")
 async def websocket_endpoint(ws: WebSocket):
-    # Authenticate WebSocket: require token as query param or first message
-    import aiosqlite
-    from database import DB_PATH
-    from jose import jwt as ws_jwt, JWTError as WSJWTError
+    # Browsers authenticate with the HttpOnly session cookie. Query tokens are
+    # retained only for compatible non-browser clients during the v2 transition.
+    from fastapi import HTTPException
+    from auth import validate_access_token
 
-    # Check if auth is required (users exist)
-    async with aiosqlite.connect(str(DB_PATH)) as db:
-        cursor = await db.execute("SELECT COUNT(*) FROM users")
-        (count,) = await cursor.fetchone()
-
-    if count > 0:
-        # Require token in query string: /ws/downloads?token=...
-        token = ws.query_params.get("token")
-        if not token:
-            await ws.close(code=4001, reason="Authentication required")
-            return
-        try:
-            from auth import _get_secret, ALGORITHM
-            payload = ws_jwt.decode(token, _get_secret(), algorithms=[ALGORITHM])
-            if not payload.get("sub"):
-                await ws.close(code=4001, reason="Invalid token")
-                return
-            if payload.get("otp_required") and not payload.get("otp_verified"):
-                await ws.close(code=4001, reason="OTP verification required")
-                return
-        except WSJWTError:
-            await ws.close(code=4001, reason="Invalid token")
-            return
+    token = ws.cookies.get("dm_session") or ws.query_params.get("token", "")
+    try:
+        await validate_access_token(token)
+    except HTTPException as exc:
+        await ws.close(code=4001, reason=str(exc.detail)[:120])
+        return
 
     await ws_manager.connect(ws)
     try:
@@ -201,7 +184,7 @@ if __name__ == "__main__":
         host=cfg["server"]["host"],
         port=cfg["server"]["port"],
         reload=False,
-        # WebSocket authentication currently uses a query parameter; access
-        # logs would persist the JWT in journald.
+        # Keep access logs disabled because compatible non-browser WebSocket
+        # clients may still use the transitional query-token fallback.
         access_log=False,
     )

@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en" data-theme="light" data-ui-style="classic">
+<html lang="en" data-theme="light" data-ui-style="modern">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
@@ -18,9 +18,13 @@
       if (requested === 'classic' || requested === 'modern') {
         localStorage.setItem('dm_ui_style', requested);
       }
+      if (localStorage.getItem('dm_ui_generation') !== '2') {
+        localStorage.setItem('dm_ui_generation', '2');
+        localStorage.setItem('dm_ui_style', 'modern');
+      }
       var style = requested === 'classic' || requested === 'modern'
         ? requested
-        : (localStorage.getItem('dm_ui_style') || 'classic');
+        : (localStorage.getItem('dm_ui_style') || 'modern');
       document.documentElement.setAttribute('data-ui-style', style);
       var t = localStorage.getItem('dm_theme') || 'light';
       if (t === 'light' || t === 'dark') {
@@ -65,7 +69,7 @@
         <input type="text" id="setup-username" class="form-input" placeholder="Username" data-i18n-placeholder="setup_username_placeholder" autocomplete="username" value="admin">
       </div>
       <div class="form-group">
-        <input type="password" id="setup-password" class="form-input" placeholder="Password (min. 6 characters)" data-i18n-placeholder="setup_password_placeholder" autocomplete="new-password">
+        <input type="password" id="setup-password" class="form-input" placeholder="Password (min. 12 characters)" data-i18n-placeholder="setup_password_placeholder" autocomplete="new-password">
       </div>
       <div class="form-group">
         <input type="password" id="setup-password-confirm" class="form-input" placeholder="Confirm password" data-i18n-placeholder="setup_password_confirm_placeholder" autocomplete="new-password">
@@ -173,7 +177,6 @@
       <button id="account-btn" class="btn-account" onclick="openAccountModal()" title="Mon compte">
         <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
       </button>
-      <script>if(!localStorage.getItem("dm_token"))document.getElementById("account-btn").classList.add("hidden")</script>
       <button class="theme-toggle" onclick="toggleTheme()" title="Basculer thème clair/sombre">
         <svg class="icon-moon" xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
         <svg class="icon-sun" xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
