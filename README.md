@@ -2,7 +2,7 @@
 
 Self-hosted download manager powered by **FastAPI**, **aria2** and **AllDebrid**. It provides a responsive web/PWA interface for direct links, magnets and `.torrent` files, with real-time queue updates and optional Plex or Jellyfin library refreshes.
 
-Current pre-release: **v2.0.0-rc.3**. Use v1.14.2 for the current stable channel.
+Current release: **v2.0.0**
 
 ![Python](https://img.shields.io/badge/Python-3.10+-3776AB?logo=python&logoColor=white)
 ![FastAPI](https://img.shields.io/badge/FastAPI-009688?logo=fastapi&logoColor=white)
@@ -181,7 +181,7 @@ Use **Settings > Updates > Check for updates**. When a newer GitHub release is a
 
 Updates run in an independent systemd unit. Before changing files, Download Manager saves the current commit, configuration and SQLite database. If the new service does not pass its health check, the previous version is restored automatically. The three most recent update backups are retained.
 
-The v2 release candidate makes the modern interface the default and requires one new login so the browser can move the session into a secure HttpOnly cookie. **Old look v1** remains selectable in the account settings and will be kept through the v2.1 stabilization period; it will not be removed without explicit validation.
+Version 2 makes the modern interface the default and requires one new login so the browser can move the session into a secure HttpOnly cookie. **Old look v1** remains selectable in the account settings and will be kept through the v2.1 stabilization period; it will not be removed without explicit validation.
 
 For a manual update:
 
