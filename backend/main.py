@@ -3,6 +3,7 @@ import logging
 import re
 from contextlib import asynccontextmanager
 from pathlib import Path
+from urllib.parse import urlsplit
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
@@ -96,13 +97,41 @@ async def lifespan(app: FastAPI):
 app = FastAPI(title="Download Manager", lifespan=lifespan)
 
 
+def _normalized_origin(value: str) -> tuple[str, str, int] | None:
+    try:
+        parsed = urlsplit(value)
+        if parsed.scheme not in {"http", "https"} or not parsed.hostname:
+            return None
+        port = parsed.port or (443 if parsed.scheme == "https" else 80)
+        return parsed.scheme.lower(), parsed.hostname.lower(), port
+    except ValueError:
+        return None
+
+
+def _cross_origin_cookie_request(request: Request) -> bool:
+    if request.method not in {"POST", "PUT", "PATCH", "DELETE"}:
+        return False
+    if not request.cookies.get("dm_session"):
+        return False
+
+    fetch_site = request.headers.get("sec-fetch-site", "").lower()
+    if fetch_site == "same-origin":
+        return False
+    if fetch_site == "cross-site":
+        return True
+
+    origin = request.headers.get("origin")
+    if not origin:
+        return False
+    host = request.headers.get("host", request.url.netloc)
+    expected = _normalized_origin(f"{request.url.scheme}://{host}")
+    return _normalized_origin(origin.rstrip("/")) != expected
+
+
 class NoCacheStaticMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
-        if request.method in {"POST", "PUT", "PATCH", "DELETE"} and request.cookies.get("dm_session"):
-            origin = request.headers.get("origin")
-            expected = f"{request.url.scheme}://{request.headers.get('host', request.url.netloc)}"
-            if origin and origin.rstrip("/") != expected.rstrip("/"):
-                return JSONResponse(status_code=403, content={"detail": "Cross-origin request rejected"})
+        if _cross_origin_cookie_request(request):
+            return JSONResponse(status_code=403, content={"detail": "Cross-origin request rejected"})
 
         response = await call_next(request)
         if request.url.path.startswith("/static/") or request.url.path in ("/", "/plex-page", "/settings-page"):

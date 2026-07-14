@@ -16,6 +16,7 @@ import config as config_module
 from auth import create_access_token, validate_access_token
 from models import AddDownloadsRequest, LoginRequest, SetupAdminRequest, UserPreferencesRequest
 from routers import auth as auth_router
+from main import _cross_origin_cookie_request, _normalized_origin
 
 
 class V2FoundationTests(unittest.IsolatedAsyncioTestCase):
@@ -125,6 +126,35 @@ class V2FoundationTests(unittest.IsolatedAsyncioTestCase):
     def test_submission_models_reject_unbounded_batches(self):
         with self.assertRaises(ValueError):
             AddDownloadsRequest(urls=[f"https://example.com/{index}" for index in range(101)], destination="/mnt")
+
+    def test_csrf_origin_normalization_and_browser_fetch_metadata(self):
+        self.assertEqual(
+            _normalized_origin("HTTP://Download.Example:80/"),
+            ("http", "download.example", 80),
+        )
+
+        def request(headers):
+            return SimpleNamespace(
+                method="POST",
+                cookies={"dm_session": "session"},
+                headers=headers,
+                url=SimpleNamespace(scheme="http", netloc="127.0.0.1:40320"),
+            )
+
+        self.assertFalse(_cross_origin_cookie_request(request({
+            "origin": "https://downloads.example",
+            "host": "127.0.0.1:40320",
+            "sec-fetch-site": "same-origin",
+        })))
+        self.assertTrue(_cross_origin_cookie_request(request({
+            "origin": "https://attacker.example",
+            "host": "downloads.example",
+            "sec-fetch-site": "cross-site",
+        })))
+        self.assertFalse(_cross_origin_cookie_request(request({
+            "origin": "http://DOWNLOADS.example:80/",
+            "host": "downloads.example",
+        })))
 
     async def test_config_updates_are_atomic_and_preserve_disjoint_changes(self):
         with tempfile.TemporaryDirectory() as temp:
