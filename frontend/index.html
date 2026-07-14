@@ -28,8 +28,8 @@
       }
     })();
   </script>
-  <link rel="stylesheet" href="/static/css/style.css?v=52">
-  <link rel="stylesheet" href="/static/css/style-modern.css?v=3">
+  <link rel="stylesheet" href="/static/css/style.css?v=54">
+  <link rel="stylesheet" href="/static/css/style-modern.css?v=5">
 </head>
 <body>
 
@@ -276,6 +276,7 @@
       </button>
     </div>
     <div class="controls-right">
+      <div id="queue-estimate" class="queue-estimate hidden" aria-live="polite"></div>
       <div class="stats-chips" id="stats-chips"></div>
     </div>
   </section>
@@ -324,6 +325,7 @@
       <div id="storage-overview" class="storage-overview-grid">
         <div class="storage-overview-message" data-i18n="storage_overview_loading">Checking available space...</div>
       </div>
+      <div id="storage-overview-summary" class="storage-overview-summary hidden" aria-live="polite"></div>
     </div>
 
     <div id="recent-activity-section" class="dashboard-panel recent-activity-panel">
@@ -414,11 +416,12 @@ function pwaInstall(){if(pwaDeferred){pwaDeferred.prompt();pwaDeferred.userChoic
 </script>
 
 <script src="/static/js/theme.js?v=37"></script>
-<script src="/static/js/i18n.js?v=55"></script>
+<script src="/static/js/i18n.js?v=56"></script>
 <script src="/static/js/api.js?v=30"></script>
 <script src="/static/js/websocket.js?v=28"></script>
 <script src="/static/js/filebrowser.js?v=37"></script>
-<script src="/static/js/app.js?v=45"></script>
+<script src="/static/js/workspace-utils.js?v=1"></script>
+<script src="/static/js/app.js?v=48"></script>
 <script src="/static/js/account.js?v=31"></script>
 <script>if("serviceWorker"in navigator)navigator.serviceWorker.register("/sw.js").catch(()=>{})</script>
 </body>

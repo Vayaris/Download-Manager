@@ -22,5 +22,6 @@ jobs:
       - run: node --check frontend/static/js/app.js
       - run: node --check frontend/static/js/settings.js
       - run: node --check frontend/static/js/plex.js
+      - run: node --test tests/frontend_workspace.test.js
       - run: bash -n install.sh
       - run: bash -n start.sh

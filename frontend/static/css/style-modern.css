@@ -272,6 +272,13 @@ html[data-ui-style="modern"] .storage-overview-card {
   border-radius: 6px;
   background: transparent;
 }
+html[data-ui-style="modern"] .storage-overview-summary {
+  margin-inline: -4px;
+  padding-top: 13px;
+}
+html[data-ui-style="modern"] .storage-summary-metric { min-height: 66px; }
+html[data-ui-style="modern"] .storage-summary-icon { border-radius: 5px; }
+html[data-ui-style="modern"] .queue-estimate { border-radius: 5px; }
 html[data-ui-style="modern"] .storage-overview-icon { border-radius: 4px; }
 html[data-ui-style="modern"] .recent-activity-item { border-radius: 5px; }
 html[data-ui-style="modern"] .recent-activity-status { border-radius: 5px; }
@@ -592,7 +599,7 @@ html[data-ui-style="modern"] .history-menu { border-radius: 6px; }
   }
 
   html[data-ui-style="modern"] .download-dashboard {
-    grid-template-columns: minmax(360px, .85fr) minmax(480px, 1.15fr);
+    grid-template-columns: minmax(0, 1.08fr) minmax(0, .92fr);
   }
 }
 
@@ -678,6 +685,13 @@ html[data-ui-style="modern"] .history-menu { border-radius: 6px; }
   html[data-ui-style="modern"] .dashboard-panel { padding: 17px; }
   html[data-ui-style="modern"] .dashboard-panel-head strong { font-size: 13.5px; }
   html[data-ui-style="modern"] .dashboard-panel-head span { font-size: 11px; }
+  html[data-ui-style="modern"] .storage-overview-card { padding: 15px; }
+  html[data-ui-style="modern"] .storage-overview-value strong { font-size: 20px; }
+  html[data-ui-style="modern"] .storage-summary-metric strong { font-size: 17px; }
+  html[data-ui-style="modern"] .storage-summary-metric small { font-size: 9.5px; }
+  html[data-ui-style="modern"] .recent-activity-item { min-height: 66px; padding: 14px; }
+  html[data-ui-style="modern"] .recent-activity-copy strong { font-size: 13.5px; }
+  html[data-ui-style="modern"] .recent-activity-copy small { font-size: 10.5px; }
 
   html[data-ui-style="modern"] .settings-card { padding: 24px 26px; }
   html[data-ui-style="modern"] .settings-card[data-settings-section] .card-title {

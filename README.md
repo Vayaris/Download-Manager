@@ -2,7 +2,7 @@
 
 Self-hosted download manager powered by **FastAPI**, **aria2** and **AllDebrid**. It provides a responsive web/PWA interface for direct links, magnets and `.torrent` files, with real-time queue updates and optional Plex or Jellyfin library refreshes.
 
-Current release: **v1.14.1**
+Current release: **v1.14.2**
 
 ![Python](https://img.shields.io/badge/Python-3.8+-3776AB?logo=python&logoColor=white)
 ![FastAPI](https://img.shields.io/badge/FastAPI-009688?logo=fastapi&logoColor=white)
@@ -16,6 +16,8 @@ Current release: **v1.14.1**
 - Duplicate preflight for active URLs, successful history, destination files and repeated batch sources
 - Automatic mixed packages when at least two sources are submitted, with one final package notification
 - Queue priorities, drag and drop, pause/resume, configurable retries and up to 20 simultaneous downloads
+- Download workspace with queue completion estimate, aggregate storage capacity and per-destination space warnings
+- Page-wide link and magnet paste with `Ctrl+V`, plus five recent completed activities kept visible beside storage
 - Global aria2 speed limit in MB/s, with effective-limit verification in Settings
 - Responsive desktop/mobile interface with classic and optional Minimal premium **beta** layouts, dark/light themes, French/English and installable PWA
 - Account-synced destination explorer with favorites, recent paths, search, breadcrumbs and mobile tabs

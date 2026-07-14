@@ -83,6 +83,8 @@ class DownloadWorkspaceTests(unittest.IsolatedAsyncioTestCase):
             "unified-sources",
             "download-dashboard",
             "storage-overview",
+            "storage-overview-summary",
+            "queue-estimate",
             "recent-activity-section",
             "recent-activity",
             "runtime-alert",
@@ -94,9 +96,12 @@ class DownloadWorkspaceTests(unittest.IsolatedAsyncioTestCase):
         self.assertLess(html.index('id="storage-overview-panel"'), html.index('id="recent-activity-section"'))
         self.assertIn('/api/settings/runtime-status', app)
         self.assertIn('/api/settings/storage?include_smb=true', app)
+        self.assertIn('WorkspaceUtils.parseGlobalPasteLinks', app)
+        self.assertIn('WorkspaceUtils.computeStoragePressure', app)
+        self.assertIn('/static/js/workspace-utils.js', html)
         self.assertIn('setInterval(loadStorageOverview, 60000)', app)
         self.assertNotIn('renderTodayMetrics', app)
-        self.assertIn('slice(0, 6)', app)
+        self.assertIn('data.groups.slice(0, 5)', app)
         self.assertIn('consecutiveAria2Failures >= 2', app)
         self.assertIn('status.aria2_ok ? 0 : consecutiveAria2Failures + 1', app)
 

@@ -34,6 +34,7 @@ API._handleUnauth = function() {
 
 const fmtBytes = formatSize;
 const fmtSpeed = formatSpeed;
+const WorkspaceUtils = DownloadWorkspaceUtils;
 
 function fmtEta(remaining, speed) {
   if (!speed || speed <= 0 || !remaining || remaining <= 0) return "";
@@ -292,6 +293,29 @@ document.addEventListener("DOMContentLoaded", () => {
     textarea.value = "";
     updateUnifiedSourceState();
   });
+  document.addEventListener("paste", event => {
+    if (event.defaultPrevented || !_appStarted) return;
+    const active = document.activeElement;
+    const editable = active && (
+      ["INPUT", "TEXTAREA", "SELECT"].includes(active.tagName)
+      || active.isContentEditable
+    );
+    const modalOpen = Boolean(document.querySelector(
+      ".modal-overlay:not(.hidden), .history-detail-panel:not(.hidden)",
+    ));
+    if (editable || modalOpen) return;
+    const links = WorkspaceUtils.parseGlobalPasteLinks(event.clipboardData?.getData("text") || "");
+    if (!links.length) return;
+    event.preventDefault();
+    switchDownloadView("active");
+    addUnifiedLinkText(links.join("\n"));
+    card.classList.remove("composer-paste-flash");
+    void card.offsetWidth;
+    card.classList.add("composer-paste-flash");
+    setTimeout(() => card.classList.remove("composer-paste-flash"), 1200);
+    card.scrollIntoView({ behavior: "smooth", block: "center" });
+    showToast(t("global_paste_added", { n: links.length }), "ok");
+  });
   card.addEventListener("dragenter", event => {
     if (!hasDraggedFiles(event)) return;
     event.preventDefault();
@@ -327,6 +351,7 @@ const downloadWorkspace = {
 };
 
 let storageOverviewTimer = null;
+let queueSpeedSamples = [];
 
 function activeWorkspaceDownloads() {
   return downloadWorkspace.downloads.filter(item => item.status !== "complete" && item.status !== "failed");
@@ -341,12 +366,55 @@ function updateDownloadWorkspace() {
   const downloads = activeWorkspaceDownloads();
   const torrents = activeWorkspaceTorrents();
   const count = downloads.length + torrents.length;
-  document.getElementById("download-controls")?.classList.toggle("hidden", downloads.length === 0);
+  document.getElementById("download-controls")?.classList.toggle("hidden", count === 0);
+  document.querySelector("#download-controls .controls-left")?.classList.toggle("hidden", downloads.length === 0);
   document.getElementById("active-tab-count").textContent = count;
   updateStats(downloads, torrents);
+  renderQueueEstimate(downloads, torrents);
+  if (downloadWorkspace.storageLoaded) renderStorageOverview();
 }
 
-function storageCardHtml(item) {
+function renderQueueEstimate(downloads, torrents) {
+  const container = document.getElementById("queue-estimate");
+  if (!container) return;
+  const metrics = WorkspaceUtils.computeQueueMetrics(downloads, torrents);
+  if (!metrics.total) {
+    queueSpeedSamples = [];
+    container.className = "queue-estimate hidden";
+    container.innerHTML = "";
+    return;
+  }
+
+  const now = Date.now();
+  const speed = [...downloads, ...torrents].reduce((sum, item) => sum + Number(item.speed || 0), 0);
+  queueSpeedSamples = queueSpeedSamples.filter(sample => now - sample.at <= 10000);
+  if (speed > 0) {
+    const last = queueSpeedSamples[queueSpeedSamples.length - 1];
+    if (last && now - last.at < 500) {
+      last.at = now;
+      last.speed = speed;
+    } else {
+      queueSpeedSamples.push({ at: now, speed });
+    }
+  }
+  const stableSpeed = WorkspaceUtils.medianPositive(queueSpeedSamples.map(sample => sample.speed));
+  let headline = t("queue_estimate_waiting");
+  if (metrics.blocked) {
+    headline = t("queue_estimate_blocked", { n: metrics.blocked });
+  } else if (stableSpeed > 0 && metrics.remaining > 0) {
+    const end = new Date(now + (metrics.remaining / stableSpeed) * 1000);
+    headline = t("queue_estimate_finish", {
+      time: end.toLocaleTimeString(t("date_locale"), { hour: "2-digit", minute: "2-digit" }),
+    });
+  }
+  const partial = metrics.known < metrics.total;
+  container.className = `queue-estimate${partial ? " partial" : ""}`;
+  container.innerHTML = `<strong>${escHtml(headline)}</strong>
+    <span>${t("queue_estimate_remaining", { size: fmtBytes(metrics.remaining) })}</span>
+    <small>${t("queue_estimate_coverage", { known: metrics.known, total: metrics.total })}</small>`;
+}
+
+function storageCardHtml(item, pressure) {
   const available = Boolean(item.available);
   const kind = item.kind === "smb" ? "smb" : "disk";
   const percent = Math.max(0, Math.min(100, Number(item.percent || 0)));
@@ -355,7 +423,18 @@ function storageCardHtml(item) {
   const details = available
     ? t("storage_overview_usage", { free: fmtBytes(item.free), total: fmtBytes(item.total), percent })
     : t("storage_overview_unavailable");
-  return `<article class="storage-overview-card ${available ? "" : "unavailable"}" title="${escHtml(item.path || "")}">
+  const pressureState = pressure?.state || "ok";
+  let pressureDetail = "";
+  if (pressure && (pressure.required > 0 || pressure.unknown > 0)) {
+    const pressureKey = pressureState === "critical"
+      ? "storage_space_critical"
+      : pressureState === "warning" ? "storage_space_warning" : "storage_space_required";
+    pressureDetail = t(pressureKey, { required: fmtBytes(pressure.required) });
+    if (pressure.unknown) {
+      pressureDetail += ` · ${t("storage_space_unknown", { n: pressure.unknown })}`;
+    }
+  }
+  return `<article class="storage-overview-card ${available ? "" : "unavailable"} ${pressureState}" title="${escHtml(item.path || "")}">
     <div class="storage-overview-card-head">
       <span class="storage-overview-icon">${kind === "smb" ? ICONS.network : ICONS.disk}</span>
       <span class="storage-overview-copy"><strong>${escHtml(name)}</strong><small>${escHtml(item.path || "")}</small></span>
@@ -366,7 +445,42 @@ function storageCardHtml(item) {
       <span class="${level}" style="width:${available ? percent : 0}%"></span>
     </div>
     <small class="storage-overview-details">${escHtml(details)}</small>
+    ${pressureDetail ? `<small class="storage-pressure ${pressureState}">${escHtml(pressureDetail)}</small>` : ""}
   </article>`;
+}
+
+function renderStorageSummary() {
+  const container = document.getElementById("storage-overview-summary");
+  if (!container) return;
+  if (!downloadWorkspace.storageLoaded || !downloadWorkspace.storage.length) {
+    container.classList.add("hidden");
+    container.innerHTML = "";
+    return;
+  }
+  const summary = WorkspaceUtils.summarizeStorage(downloadWorkspace.storage);
+  const percent = summary.percent === null ? 0 : summary.percent;
+  const availability = summary.unavailableCount
+    ? t("storage_summary_unavailable", { n: summary.unavailableCount })
+    : t("storage_summary_all_available", { n: summary.availableCount });
+  container.classList.remove("hidden");
+  container.innerHTML = `
+    <div class="storage-summary-metric">
+      <span class="storage-summary-icon">${ICONS.disk}</span>
+      <span><strong>${summary.count}</strong><small>${t("storage_summary_count")}</small></span>
+      <em>${availability}</em>
+    </div>
+    <div class="storage-summary-metric">
+      <span class="storage-summary-icon">${ICONS.disk}</span>
+      <span><strong>${fmtBytes(summary.free)}</strong><small>${t("storage_summary_free")}</small></span>
+    </div>
+    <div class="storage-summary-metric">
+      <span class="storage-summary-icon">${ICONS.disk}</span>
+      <span><strong>${fmtBytes(summary.total)}</strong><small>${t("storage_summary_capacity")}</small></span>
+    </div>
+    <div class="storage-summary-metric usage">
+      <span class="storage-summary-ring" style="--storage-percent:${percent}"><i>${summary.percent === null ? "—" : `${percent}%`}</i></span>
+      <span><strong>${summary.percent === null ? "—" : `${percent}%`}</strong><small>${t("storage_summary_usage")}</small></span>
+    </div>`;
 }
 
 function renderStorageOverview(error = false) {
@@ -374,17 +488,30 @@ function renderStorageOverview(error = false) {
   if (!container) return;
   if (error && !downloadWorkspace.storageLoaded) {
     container.innerHTML = `<div class="storage-overview-message error">${t("storage_overview_error")}</div>`;
+    renderStorageSummary();
     return;
   }
   if (!downloadWorkspace.storageLoaded) {
     container.innerHTML = `<div class="storage-overview-message">${t("storage_overview_loading")}</div>`;
+    renderStorageSummary();
     return;
   }
   if (!downloadWorkspace.storage.length) {
     container.innerHTML = `<div class="storage-overview-message">${t("storage_overview_empty")}</div>`;
+    renderStorageSummary();
     return;
   }
-  container.innerHTML = downloadWorkspace.storage.map(storageCardHtml).join("");
+  const pressure = WorkspaceUtils.computeStoragePressure(
+    downloadWorkspace.storage,
+    activeWorkspaceDownloads(),
+    activeWorkspaceTorrents(),
+  );
+  const pressureByPath = new Map(pressure.map(item => [WorkspaceUtils.normalizePath(item.path), item]));
+  container.innerHTML = downloadWorkspace.storage.map(item => storageCardHtml(
+    item,
+    pressureByPath.get(WorkspaceUtils.normalizePath(item.path)),
+  )).join("");
+  renderStorageSummary();
 }
 
 async function loadStorageOverview(manual = false) {
@@ -856,7 +983,7 @@ async function loadHistory(reset = true) {
     const cursor = historyState.cursor ? `&cursor=${encodeURIComponent(historyState.cursor)}` : "";
     const data = await API.get(`/api/downloads/history/view?scope=${historyState.scope}&limit=30&today_from=${encodeURIComponent(today.toISOString())}${cursor}`);
     historyState.groups.push(...data.groups);
-    if (reset && historyState.scope === "all") downloadWorkspace.recentGroups = data.groups.slice(0, 6);
+    if (reset && historyState.scope === "all") downloadWorkspace.recentGroups = data.groups.slice(0, 5);
     historyState.cursor = data.next_cursor;
     renderHistorySummary(data.summary);
     renderHistoryGroups();
