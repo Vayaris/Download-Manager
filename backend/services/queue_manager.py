@@ -11,10 +11,8 @@ from typing import Optional
 def log(msg):
     print(f"[queue] {msg}", flush=True)
 
-import aiosqlite
-
 from config import get_config
-from database import DB_PATH
+from database import db_session
 from services.aria2_service import aria2
 from services.alldebrid import alldebrid
 from services.media_refresh import auto_refresh_recommended_libraries
@@ -218,8 +216,7 @@ class QueueManager:
         now_dt = datetime.now(timezone.utc)
         stalled_timeout_hours = max(0, min(168, int(config["downloads"].get("stalled_timeout_hours", 3) or 0)))
 
-        async with aiosqlite.connect(str(DB_PATH)) as db:
-            db.row_factory = aiosqlite.Row
+        async with db_session(row_factory=True) as db:
 
             # ---- Update status for downloads submitted to aria2 ---- #
             cursor = await db.execute(
@@ -543,7 +540,7 @@ class QueueManager:
         await self._maybe_auto_refresh_media()
 
     async def _is_media_auto_refresh_idle(self) -> bool:
-        async with aiosqlite.connect(str(DB_PATH)) as db:
+        async with db_session() as db:
             cursor = await db.execute("SELECT COUNT(*) FROM downloads WHERE status NOT IN ('complete', 'failed')")
             (download_count,) = await cursor.fetchone()
             if download_count:
@@ -855,8 +852,7 @@ class QueueManager:
         ids = []
         seen = set()
         skip_nfo = bool(get_config()["downloads"].get("skip_nfo_files", True))
-        async with aiosqlite.connect(str(DB_PATH)) as db:
-            db.row_factory = aiosqlite.Row
+        async with db_session(row_factory=True) as db:
             cursor = await db.execute("SELECT COALESCE(MAX(position), 0) FROM downloads")
             (max_pos,) = await cursor.fetchone()
             pos = max_pos + 1
@@ -901,7 +897,7 @@ class QueueManager:
         now = datetime.now(timezone.utc).isoformat()
         pkg_id = str(uuid.uuid4())
 
-        async with aiosqlite.connect(str(DB_PATH)) as db:
+        async with db_session() as db:
             await db.execute(
                 """INSERT INTO packages
                    (id, name, destination, status, source_count, failed_sources, created_at, updated_at)
@@ -914,8 +910,7 @@ class QueueManager:
 
     async def activate_package(self, package_id: str, failed_sources: int = 0):
         now = datetime.now(timezone.utc).isoformat()
-        async with aiosqlite.connect(str(DB_PATH)) as db:
-            db.row_factory = aiosqlite.Row
+        async with db_session(row_factory=True) as db:
             await db.execute(
                 """UPDATE packages SET status = 'active', failed_sources = ?, updated_at = ?
                    WHERE id = ? AND status = 'assembling'""",
@@ -946,8 +941,7 @@ class QueueManager:
         return {"package_id": None, "download_ids": ids}
 
     async def pause_download(self, download_id: str):
-        async with aiosqlite.connect(str(DB_PATH)) as db:
-            db.row_factory = aiosqlite.Row
+        async with db_session(row_factory=True) as db:
             cursor = await db.execute(
                 "SELECT aria2_gid, status FROM downloads WHERE id = ?", (download_id,)
             )
@@ -966,8 +960,7 @@ class QueueManager:
             await db.commit()
 
     async def resume_download(self, download_id: str):
-        async with aiosqlite.connect(str(DB_PATH)) as db:
-            db.row_factory = aiosqlite.Row
+        async with db_session(row_factory=True) as db:
             cursor = await db.execute(
                 "SELECT aria2_gid, status FROM downloads WHERE id = ?", (download_id,)
             )
@@ -1000,8 +993,7 @@ class QueueManager:
             await db.commit()
 
     async def remove_download(self, download_id: str):
-        async with aiosqlite.connect(str(DB_PATH)) as db:
-            db.row_factory = aiosqlite.Row
+        async with db_session(row_factory=True) as db:
             cursor = await db.execute(
                 "SELECT aria2_gid FROM downloads WHERE id = ?", (download_id,)
             )
@@ -1012,8 +1004,7 @@ class QueueManager:
             await db.commit()
 
     async def pause_all(self):
-        async with aiosqlite.connect(str(DB_PATH)) as db:
-            db.row_factory = aiosqlite.Row
+        async with db_session(row_factory=True) as db:
             cursor = await db.execute(
                 "SELECT id FROM downloads WHERE status = 'downloading'"
             )
@@ -1022,8 +1013,7 @@ class QueueManager:
             await self.pause_download(row["id"])
 
     async def resume_all(self):
-        async with aiosqlite.connect(str(DB_PATH)) as db:
-            db.row_factory = aiosqlite.Row
+        async with db_session(row_factory=True) as db:
             cursor = await db.execute(
                 "SELECT id FROM downloads WHERE status IN ('paused', 'error')"
             )
@@ -1032,8 +1022,7 @@ class QueueManager:
             await self.resume_download(row["id"])
 
     async def remove_all(self):
-        async with aiosqlite.connect(str(DB_PATH)) as db:
-            db.row_factory = aiosqlite.Row
+        async with db_session(row_factory=True) as db:
             cursor = await db.execute("SELECT aria2_gid FROM downloads WHERE aria2_gid IS NOT NULL")
             rows = await cursor.fetchall()
             for row in rows:
@@ -1047,8 +1036,7 @@ class QueueManager:
 
     async def clear_completed(self):
         now = datetime.now(timezone.utc).isoformat()
-        async with aiosqlite.connect(str(DB_PATH)) as db:
-            db.row_factory = aiosqlite.Row
+        async with db_session(row_factory=True) as db:
             # Move completed/failed to history before deleting
             cursor = await db.execute(
                 "SELECT id FROM downloads WHERE status IN ('complete', 'failed')"
@@ -1063,7 +1051,7 @@ class QueueManager:
             await db.commit()
 
     async def reorder(self, ids: list):
-        async with aiosqlite.connect(str(DB_PATH)) as db:
+        async with db_session() as db:
             for i, dl_id in enumerate(ids):
                 await db.execute(
                     "UPDATE downloads SET position = ? WHERE id = ?", (i, dl_id)
@@ -1071,8 +1059,7 @@ class QueueManager:
             await db.commit()
 
     async def remove_package(self, package_id: str):
-        async with aiosqlite.connect(str(DB_PATH)) as db:
-            db.row_factory = aiosqlite.Row
+        async with db_session(row_factory=True) as db:
             cursor = await db.execute(
                 "SELECT id, aria2_gid FROM downloads WHERE package_id = ?", (package_id,)
             )

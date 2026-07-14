@@ -4,9 +4,7 @@ from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Request, UploadFile, File, Form
 
-import aiosqlite
-
-from database import DB_PATH
+from database import db_session
 from models import MagnetUploadRequest
 from auth import get_current_user
 from services.alldebrid import alldebrid
@@ -84,7 +82,7 @@ async def submit_magnets(body: MagnetUploadRequest, request: Request, _=Depends(
     qm = _qm(request)
     added = []
 
-    async with aiosqlite.connect(str(DB_PATH)) as db:
+    async with db_session() as db:
         for mag in results:
             if mag.get("error"):
                 continue
@@ -148,7 +146,7 @@ async def upload_torrent(
     qm = _qm(request)
     added = []
 
-    async with aiosqlite.connect(str(DB_PATH)) as db:
+    async with db_session() as db:
         for mag in results:
             if mag.get("error"):
                 continue
@@ -231,7 +229,7 @@ async def upload_torrent_batch(
     package_id = await qm.create_package(package_name, destination) if use_package else None
     added = []
 
-    async with aiosqlite.connect(str(DB_PATH)) as db:
+    async with db_session() as db:
         for mag in uploaded:
             ad_id = mag["id"]
             name = mag.get("name", "Torrent")
@@ -257,8 +255,7 @@ async def upload_torrent_batch(
 
 @router.get("/")
 async def list_torrents(_=Depends(get_current_user)):
-    async with aiosqlite.connect(str(DB_PATH)) as db:
-        db.row_factory = aiosqlite.Row
+    async with db_session(row_factory=True) as db:
         cursor = await db.execute(
             "SELECT * FROM torrents ORDER BY created_at DESC"
         )
@@ -268,8 +265,7 @@ async def list_torrents(_=Depends(get_current_user)):
 
 @router.delete("/{torrent_id}")
 async def delete_torrent(torrent_id: str, _=Depends(get_current_user)):
-    async with aiosqlite.connect(str(DB_PATH)) as db:
-        db.row_factory = aiosqlite.Row
+    async with db_session(row_factory=True) as db:
         cursor = await db.execute("SELECT * FROM torrents WHERE id = ?", (torrent_id,))
         row = await cursor.fetchone()
         if not row:

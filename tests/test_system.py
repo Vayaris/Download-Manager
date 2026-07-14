@@ -74,6 +74,28 @@ class SystemTests(unittest.TestCase):
                 self.assertEqual(status.stat().st_mode & 0o777, 0o600)
                 self.assertIn('"state": "success"', status.read_text())
 
+    def test_update_installs_the_exact_verified_tag_commit(self):
+        expected = "a" * 40
+        responses = [
+            SimpleNamespace(returncode=0, stdout="", stderr=""),
+            SimpleNamespace(returncode=0, stdout=expected + "\n", stderr=""),
+            SimpleNamespace(returncode=0, stdout="", stderr=""),
+        ]
+        with patch.object(update_runner, "run", side_effect=responses) as run:
+            installed = update_runner.install_target(Path("/repo"), "v2.0.0-rc.1", expected)
+        self.assertEqual(installed, expected)
+        self.assertEqual(run.call_args_list[0].args[0][:4], ["git", "fetch", "--force", "origin"])
+        self.assertEqual(run.call_args_list[2].args[0], ["git", "reset", "--hard", expected])
+
+    def test_update_rejects_a_tag_commit_mismatch(self):
+        responses = [
+            SimpleNamespace(returncode=0, stdout="", stderr=""),
+            SimpleNamespace(returncode=0, stdout="b" * 40 + "\n", stderr=""),
+        ]
+        with patch.object(update_runner, "run", side_effect=responses):
+            with self.assertRaisesRegex(RuntimeError, "does not match"):
+                update_runner.install_target(Path("/repo"), "v2.0.0", "a" * 40)
+
 
 if __name__ == "__main__":
     unittest.main()

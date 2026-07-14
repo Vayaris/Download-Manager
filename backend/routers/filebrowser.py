@@ -6,12 +6,11 @@ from collections import OrderedDict
 from datetime import datetime, timezone
 from pathlib import Path
 
-import aiosqlite
 from fastapi import APIRouter, Depends, HTTPException, Query
 
 from auth import get_current_user
 from config import get_config
-from database import DB_PATH
+from database import db_session
 from models import FileBrowserPathRequest, FileBrowserReorderRequest, MkdirRequest
 
 router = APIRouter()
@@ -40,7 +39,7 @@ def _get_allowed_roots() -> list[Path]:
 
     unique = []
     seen = set()
-    for root in allowed or [Path("/")]:
+    for root in allowed:
         key = str(root)
         if key not in seen:
             seen.add(key)
@@ -246,8 +245,7 @@ async def browse(
 
 @router.get("/preferences")
 async def get_preferences(user=Depends(get_current_user)):
-    async with aiosqlite.connect(str(DB_PATH)) as db:
-        db.row_factory = aiosqlite.Row
+    async with db_session(row_factory=True) as db:
         cursor = await db.execute(
             """SELECT path, kind, position, last_used_at
                FROM filebrowser_places WHERE username = ?
@@ -277,7 +275,7 @@ async def get_preferences(user=Depends(get_current_user)):
 @router.post("/favorites")
 async def add_favorite(body: FileBrowserPathRequest, user=Depends(get_current_user)):
     target = _normalize_place(body.path)
-    async with aiosqlite.connect(str(DB_PATH)) as db:
+    async with db_session() as db:
         cursor = await db.execute(
             "SELECT COUNT(*) FROM filebrowser_places WHERE username = ? AND kind = 'favorite'",
             (user["username"],),
@@ -300,7 +298,7 @@ async def remove_favorite(
     path: str = Query(...), user=Depends(get_current_user)
 ):
     target = _normalize_place(path)
-    async with aiosqlite.connect(str(DB_PATH)) as db:
+    async with db_session() as db:
         await db.execute(
             "DELETE FROM filebrowser_places WHERE username = ? AND path = ? AND kind = 'favorite'",
             (user["username"], str(target)),
@@ -318,7 +316,7 @@ async def reorder_favorites(
     if len(normalized) != len(set(normalized)):
         raise HTTPException(status_code=400, detail="Duplicate favorite path")
 
-    async with aiosqlite.connect(str(DB_PATH)) as db:
+    async with db_session() as db:
         cursor = await db.execute(
             "SELECT path FROM filebrowser_places WHERE username = ? AND kind = 'favorite'",
             (user["username"],),
@@ -340,7 +338,7 @@ async def reorder_favorites(
 async def add_recent(body: FileBrowserPathRequest, user=Depends(get_current_user)):
     target = _normalize_place(body.path)
     now = datetime.now(timezone.utc).isoformat()
-    async with aiosqlite.connect(str(DB_PATH)) as db:
+    async with db_session() as db:
         await db.execute(
             """INSERT INTO filebrowser_places
                (username, path, kind, position, last_used_at)

@@ -6,17 +6,16 @@ import re
 import socket
 import subprocess
 import secrets
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from pathlib import Path
 
-import aiosqlite
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Request
 from urllib.parse import urlparse
 
-from models import SettingsUpdate, StoragePathRequest, PlexSettingsRequest, MediaSettingsRequest, SignalCheckRequest, SignalDeployRequest, SignalRegisterRequest, SignalVerifyRequest, SignalResetRequest
+from models import SettingsUpdate, StoragePathRequest, MediaSettingsRequest, SignalCheckRequest, SignalDeployRequest, SignalRegisterRequest, SignalVerifyRequest, SignalResetRequest
 from auth import get_current_user, get_password_hash
-from config import get_config, save_config
-from database import DB_PATH
+from config import get_config, update_config
+from database import db_session
 from services.alldebrid import alldebrid
 from services.jellyfin import jellyfin
 from services.media_refresh import (
@@ -30,6 +29,7 @@ from services.plex import plex
 from services.smb import is_mounted
 from services.webhook import send_webhook
 from services.diagnostics import clear_events, list_events, record_event_nowait
+from utils import validate_destination
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -98,8 +98,10 @@ def _media_service(provider: str):
 
 def _validate_media_url(url: str, provider: str = "media") -> str:
     clean = (url or "").strip().rstrip("/")
+    if len(clean) > 2048:
+        raise HTTPException(status_code=400, detail=f"{provider.title()} URL is too long")
     parsed = urlparse(clean)
-    if parsed.scheme not in ("http", "https") or not parsed.netloc:
+    if parsed.scheme not in ("http", "https") or not parsed.netloc or parsed.username or parsed.password:
         raise HTTPException(status_code=400, detail=f"{provider.title()} URL must use http or https")
     return clean
 
@@ -145,21 +147,6 @@ def _require_media_config(cfg: dict) -> tuple[str, str, str]:
     return provider, url, token
 
 
-def _require_plex_config(cfg: dict) -> tuple[str, str]:
-    plex_cfg = cfg.get("plex", {})
-    if not plex_cfg.get("enabled"):
-        raise HTTPException(status_code=400, detail="Plex integration is disabled")
-    url = (plex_cfg.get("url") or "").strip()
-    token = (plex_cfg.get("token") or "").strip()
-    if not url or not token:
-        raise HTTPException(status_code=400, detail="Plex URL or token is missing")
-    return url, token
-
-
-def _validate_plex_url(url: str) -> str:
-    return _validate_media_url(url, "Plex")
-
-
 def _normalize_plex_favorite_keys(keys: list[str] | None) -> list[str]:
     if keys is None:
         return []
@@ -172,117 +159,6 @@ def _normalize_plex_favorite_keys(keys: list[str] | None) -> list[str]:
         seen.add(clean)
         result.append(clean)
     return result
-
-
-def _parse_iso_datetime(value: str | None) -> datetime | None:
-    if not value:
-        return None
-    try:
-        clean = value.replace("Z", "+00:00")
-        parsed = datetime.fromisoformat(clean)
-        if parsed.tzinfo is None:
-            return parsed.replace(tzinfo=timezone.utc)
-        return parsed.astimezone(timezone.utc)
-    except Exception:
-        return None
-
-
-def _normalize_media_path(value: str | None) -> str:
-    clean = os.path.normpath(str(value or "").strip())
-    if clean == ".":
-        return ""
-    return clean.rstrip("/")
-
-
-def _path_is_inside(candidate: str, root: str) -> bool:
-    candidate_norm = _normalize_media_path(candidate)
-    root_norm = _normalize_media_path(root)
-    if not candidate_norm or not root_norm:
-        return False
-    return candidate_norm == root_norm or candidate_norm.startswith(root_norm + "/")
-
-
-async def _media_refresh_suggestions(cfg: dict, limit: int = 20) -> list[dict]:
-    provider, url, token = _require_media_config(cfg)
-    libraries = await _media_service(provider).libraries(url, token)
-    libraries_with_locations = [
-        library for library in libraries
-        if library.get("locations") and library.get("key") and library.get("title")
-    ]
-    if not libraries_with_locations:
-        return []
-
-    cutoff = datetime.now(timezone.utc) - timedelta(hours=24)
-    async with aiosqlite.connect(str(DB_PATH)) as db:
-        db.row_factory = aiosqlite.Row
-        cursor = await db.execute(
-            """SELECT id, name, destination, status, package_name, completed_at
-               FROM history
-               WHERE status = 'complete'
-               ORDER BY completed_at DESC
-               LIMIT 100"""
-        )
-        history_rows = [dict(row) for row in await cursor.fetchall()]
-
-    last_refreshes = cfg.get(provider, {}).get("last_refreshes", {})
-    suggestions: list[dict] = []
-    seen: set[tuple[str, str]] = set()
-
-    for row in history_rows:
-        completed_at = _parse_iso_datetime(row.get("completed_at"))
-        if not completed_at or completed_at < cutoff:
-            continue
-
-        destination = _normalize_media_path(row.get("destination"))
-        name = str(row.get("name") or "").strip()
-        candidates = [destination]
-        if destination and name:
-            candidates.insert(0, _normalize_media_path(os.path.join(destination, name)))
-
-        for library in libraries_with_locations:
-            library_key = str(library.get("key", "")).strip()
-            refreshed_at = _parse_iso_datetime(last_refreshes.get(library_key))
-            if refreshed_at and refreshed_at >= completed_at:
-                continue
-
-            matched_location = ""
-            for location in library.get("locations", []):
-                if any(_path_is_inside(candidate, location) for candidate in candidates):
-                    matched_location = _normalize_media_path(location)
-                    break
-
-            if not matched_location:
-                continue
-
-            package_name = str(row.get("package_name") or "").strip()
-            unique_key = (f"pkg:{package_name}" if package_name else f"history:{row['id']}", library_key)
-            if unique_key in seen:
-                continue
-            seen.add(unique_key)
-            suggestions.append({
-                "history_id": package_name or row["id"],
-                "library_key": library_key,
-                "library_title": library.get("title", ""),
-                "library_type": library.get("type", ""),
-                "download_name": package_name or name or row["id"],
-                "destination": destination,
-                "completed_at": row.get("completed_at"),
-                "matched_location": matched_location,
-            })
-            break
-
-        if len(suggestions) >= limit:
-            break
-
-    return suggestions
-
-
-async def _plex_refresh_suggestions(cfg: dict, limit: int = 20) -> list[dict]:
-    scoped = dict(cfg)
-    scoped["plex"] = {**cfg.get("plex", {}), "enabled": True}
-    scoped["jellyfin"] = {**cfg.get("jellyfin", {}), "enabled": False}
-    scoped["media"] = {"active": "plex"}
-    return await _media_refresh_suggestions(scoped, limit=limit)
 
 
 @router.get("/")
@@ -315,61 +191,78 @@ async def get_settings(_=Depends(get_current_user)):
 
 @router.put("/")
 async def update_settings(body: SettingsUpdate, _=Depends(get_current_user)):
-    cfg = get_config()
-
-    if body.alldebrid_api_key is not None:
-        cfg["alldebrid"]["api_key"] = body.alldebrid_api_key
-    if body.alldebrid_enabled is not None:
-        cfg["alldebrid"]["enabled"] = body.alldebrid_enabled
-    if body.simultaneous_downloads is not None and 1 <= body.simultaneous_downloads <= 20:
-        cfg["downloads"]["simultaneous"] = body.simultaneous_downloads
+    current = get_config()
+    ranges = (
+        ("simultaneous_downloads", body.simultaneous_downloads, 1, 20),
+        ("download_segments", body.download_segments, 1, 16),
+        ("speed_limit", body.speed_limit, 0, 1_000_000),
+        ("max_retries", body.max_retries, 0, 20),
+        ("retry_delay_seconds", body.retry_delay_seconds, 0, 3600),
+        ("stalled_timeout_hours", body.stalled_timeout_hours, 0, 168),
+    )
+    for name, value, minimum, maximum in ranges:
+        if value is not None and not minimum <= value <= maximum:
+            raise HTTPException(status_code=400, detail=f"{name} must be between {minimum} and {maximum}")
+    if body.alldebrid_api_key is not None and len(body.alldebrid_api_key) > 512:
+        raise HTTPException(status_code=400, detail="AllDebrid API key is too long")
     if body.default_destination is not None:
-        cfg["downloads"]["default_destination"] = body.default_destination
-    if body.download_segments is not None and 1 <= body.download_segments <= 16:
-        cfg["downloads"]["download_segments"] = body.download_segments
-    if body.speed_limit is not None and body.speed_limit >= 0:
-        cfg["downloads"]["speed_limit"] = body.speed_limit
-    if body.max_retries is not None and 0 <= body.max_retries <= 20:
-        cfg["downloads"]["max_retries"] = body.max_retries
-    if body.retry_delay_seconds is not None and 0 <= body.retry_delay_seconds <= 3600:
-        cfg["downloads"]["retry_delay_seconds"] = body.retry_delay_seconds
-    if body.skip_nfo_files is not None:
-        cfg["downloads"]["skip_nfo_files"] = bool(body.skip_nfo_files)
-    if body.stalled_timeout_hours is not None and 0 <= body.stalled_timeout_hours <= 168:
-        cfg["downloads"]["stalled_timeout_hours"] = body.stalled_timeout_hours
+        validate_destination(body.default_destination)
 
-    # Webhooks
-    if "webhooks" not in cfg:
-        cfg["webhooks"] = {"enabled": False, "url": "", "format": "generic", "events": []}
-    if body.webhook_enabled is not None:
-        cfg["webhooks"]["enabled"] = body.webhook_enabled
+    allowed_formats = {"generic", "discord", "slack", "telegram", "gotify", "ntfy", "signal"}
+    allowed_events = {"download_complete", "download_failed", "package_complete"}
+    effective_format = body.webhook_format or current.get("webhooks", {}).get("format", "generic")
+    if effective_format not in allowed_formats:
+        raise HTTPException(status_code=400, detail="Unsupported webhook format")
+    if body.webhook_events is not None and not set(body.webhook_events).issubset(allowed_events):
+        raise HTTPException(status_code=400, detail="Unsupported webhook event")
     if body.webhook_url is not None:
-        # Validate webhook URL: must be http/https and not target internal services
-        from urllib.parse import urlparse
+        if len(body.webhook_url) > 2048:
+            raise HTTPException(status_code=400, detail="Webhook URL is too long")
         if body.webhook_url:
             parsed = urlparse(body.webhook_url)
-            if parsed.scheme not in ("http", "https"):
+            if parsed.scheme not in ("http", "https") or not parsed.hostname or parsed.username or parsed.password:
                 raise HTTPException(status_code=400, detail="Webhook URL must use http or https")
-            # Signal intentionally targets a local service — skip SSRF check for that format
-            effective_format = body.webhook_format or cfg["webhooks"].get("format", "generic")
             if effective_format != "signal":
-                # Block private/reserved IPs (SSRF protection)
-                host = parsed.hostname or ""
                 try:
-                    infos = socket.getaddrinfo(host, None)
+                    infos = socket.getaddrinfo(parsed.hostname, None)
                     for info in infos:
                         addr = ipaddress.ip_address(info[4][0])
                         if addr.is_private or addr.is_reserved or addr.is_loopback or addr.is_link_local:
                             raise HTTPException(status_code=400, detail="Webhook URL cannot target a private or local address")
                 except socket.gaierror:
-                    pass  # DNS resolution failed, allow (will fail on actual webhook call anyway)
-        cfg["webhooks"]["url"] = body.webhook_url
-    if body.webhook_format is not None:
-        cfg["webhooks"]["format"] = body.webhook_format
-    if body.webhook_events is not None:
-        cfg["webhooks"]["events"] = body.webhook_events
+                    raise HTTPException(status_code=400, detail="Webhook hostname cannot be resolved")
 
-    save_config(cfg)
+    def mutate(cfg):
+        downloads_cfg = cfg.setdefault("downloads", {})
+        alldebrid_cfg = cfg.setdefault("alldebrid", {})
+        webhooks_cfg = cfg.setdefault("webhooks", {"enabled": False, "url": "", "format": "generic", "events": []})
+        updates = {
+            "simultaneous": body.simultaneous_downloads,
+            "default_destination": body.default_destination,
+            "download_segments": body.download_segments,
+            "speed_limit": body.speed_limit,
+            "max_retries": body.max_retries,
+            "retry_delay_seconds": body.retry_delay_seconds,
+            "skip_nfo_files": body.skip_nfo_files,
+            "stalled_timeout_hours": body.stalled_timeout_hours,
+        }
+        for key, value in updates.items():
+            if value is not None:
+                downloads_cfg[key] = value
+        if body.alldebrid_api_key is not None:
+            alldebrid_cfg["api_key"] = body.alldebrid_api_key.strip()
+        if body.alldebrid_enabled is not None:
+            alldebrid_cfg["enabled"] = body.alldebrid_enabled
+        if body.webhook_enabled is not None:
+            webhooks_cfg["enabled"] = body.webhook_enabled
+        if body.webhook_url is not None:
+            webhooks_cfg["url"] = body.webhook_url.strip()
+        if body.webhook_format is not None:
+            webhooks_cfg["format"] = body.webhook_format
+        if body.webhook_events is not None:
+            webhooks_cfg["events"] = list(dict.fromkeys(body.webhook_events))
+
+    cfg, _ = update_config(mutate)
     response = {"status": "saved"}
     if body.speed_limit is not None and body.speed_limit >= 0:
         from services.aria2_service import aria2
@@ -452,37 +345,44 @@ async def get_media_settings(_=Depends(get_current_user)):
 
 @router.put("/media")
 async def update_media_settings(body: MediaSettingsRequest, _=Depends(get_current_user)):
-    cfg = get_config()
-    provider = (body.provider or _active_media_provider(cfg)).strip().lower()
+    current = get_config()
+    provider = (body.provider or _active_media_provider(current)).strip().lower()
     if provider not in ("plex", "jellyfin"):
         raise HTTPException(status_code=400, detail="Media provider must be plex or jellyfin")
 
-    media_cfg = cfg.setdefault(provider, _media_defaults(provider))
-    other = "jellyfin" if provider == "plex" else "plex"
-    cfg.setdefault(other, _media_defaults(other))
-    cfg.setdefault("media", {})["active"] = provider
+    validated_url = _validate_media_url(body.url, provider) if body.url is not None else None
+    if body.token is not None and len(body.token) > 2048:
+        raise HTTPException(status_code=400, detail="Media token is too long")
+    if body.favorite_keys is not None and len(body.favorite_keys) > 500:
+        raise HTTPException(status_code=400, detail="Too many favorite libraries")
 
-    if body.enabled is not None:
-        media_cfg["enabled"] = bool(body.enabled)
-        if body.enabled:
-            cfg[other]["enabled"] = False
-    if body.url is not None:
-        media_cfg["url"] = _validate_media_url(body.url, provider)
-    if body.token is not None and body.token.strip():
-        media_cfg["token"] = body.token.strip()
-    if body.favorite_keys is not None:
-        media_cfg["favorite_keys"] = _normalize_plex_favorite_keys(body.favorite_keys)
-    if body.auto_refresh_enabled is not None:
-        previous = bool(media_cfg.get("auto_refresh_enabled", False))
-        media_cfg["auto_refresh_enabled"] = bool(body.auto_refresh_enabled)
-        if body.auto_refresh_enabled and not previous:
-            media_cfg["auto_refresh_enabled_at"] = datetime.now(timezone.utc).isoformat()
-    media_cfg.setdefault("last_refreshes", {})
-    media_cfg.setdefault("favorite_keys", [])
-    media_cfg.setdefault("auto_refreshes", {})
-    media_cfg.setdefault("auto_refresh_enabled", False)
-    media_cfg.setdefault("auto_refresh_enabled_at", None)
-    save_config(cfg)
+    def mutate(cfg):
+        media_cfg = cfg.setdefault(provider, _media_defaults(provider))
+        other = "jellyfin" if provider == "plex" else "plex"
+        cfg.setdefault(other, _media_defaults(other))
+        cfg.setdefault("media", {})["active"] = provider
+        if body.enabled is not None:
+            media_cfg["enabled"] = bool(body.enabled)
+            if body.enabled:
+                cfg[other]["enabled"] = False
+        if validated_url is not None:
+            media_cfg["url"] = validated_url
+        if body.token is not None and body.token.strip():
+            media_cfg["token"] = body.token.strip()
+        if body.favorite_keys is not None:
+            media_cfg["favorite_keys"] = _normalize_plex_favorite_keys(body.favorite_keys)
+        if body.auto_refresh_enabled is not None:
+            previous = bool(media_cfg.get("auto_refresh_enabled", False))
+            media_cfg["auto_refresh_enabled"] = bool(body.auto_refresh_enabled)
+            if body.auto_refresh_enabled and not previous:
+                media_cfg["auto_refresh_enabled_at"] = datetime.now(timezone.utc).isoformat()
+        media_cfg.setdefault("last_refreshes", {})
+        media_cfg.setdefault("favorite_keys", [])
+        media_cfg.setdefault("auto_refreshes", {})
+        media_cfg.setdefault("auto_refresh_enabled", False)
+        media_cfg.setdefault("auto_refresh_enabled_at", None)
+
+    cfg, _ = update_config(mutate)
     return {"status": "saved", **_media_public_config(cfg, include_status=True)}
 
 
@@ -533,113 +433,6 @@ async def refresh_media_library(library_key: str, _=Depends(get_current_user)):
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=502, detail=str(e)[:200])
-
-
-@router.get("/plex")
-async def get_plex_settings(_=Depends(get_current_user)):
-    cfg = get_config()
-    data = _plex_public_config(cfg, include_status=True)
-    if data["enabled"] and data["token_configured"]:
-        try:
-            info = await plex.server_info(data["url"], cfg["plex"]["token"])
-            libraries = await plex.libraries(data["url"], cfg["plex"]["token"])
-            data.update({
-                "connected": True,
-                "server": info,
-                "library_count": len(libraries),
-                "libraries": libraries,
-            })
-        except Exception as e:
-            data.update({
-                "connected": False,
-                "error": str(e)[:200],
-                "library_count": 0,
-                "libraries": [],
-            })
-    else:
-        data.update({"connected": False, "library_count": 0, "libraries": []})
-    return data
-
-
-@router.put("/plex")
-async def update_plex_settings(body: PlexSettingsRequest, _=Depends(get_current_user)):
-    cfg = get_config()
-    plex_cfg = cfg.setdefault("plex", {
-        "enabled": False,
-        "url": "http://127.0.0.1:32400",
-        "token": "",
-        "last_refreshes": {},
-        "favorite_keys": [],
-    })
-    if body.enabled is not None:
-        plex_cfg["enabled"] = body.enabled
-        if body.enabled:
-            cfg.setdefault("jellyfin", _media_defaults("jellyfin"))["enabled"] = False
-            cfg.setdefault("media", {})["active"] = "plex"
-    if body.url is not None:
-        plex_cfg["url"] = _validate_plex_url(body.url)
-    if body.token is not None and body.token.strip():
-        plex_cfg["token"] = body.token.strip()
-    if body.favorite_keys is not None:
-        plex_cfg["favorite_keys"] = _normalize_plex_favorite_keys(body.favorite_keys)
-    plex_cfg.setdefault("last_refreshes", {})
-    plex_cfg.setdefault("favorite_keys", [])
-    save_config(cfg)
-    return {"status": "saved", **_plex_public_config(cfg, include_status=True)}
-
-
-@router.post("/plex/test")
-async def test_plex(_=Depends(get_current_user)):
-    cfg = get_config()
-    url, token = _require_plex_config(cfg)
-    try:
-        info = await plex.server_info(url, token)
-        libraries = await plex.libraries(url, token)
-        return {"ok": True, "server": info, "library_count": len(libraries)}
-    except Exception as e:
-        raise HTTPException(status_code=502, detail=str(e)[:200])
-
-
-@router.get("/plex/libraries")
-async def plex_libraries(_=Depends(get_current_user)):
-    cfg = get_config()
-    url, token = _require_plex_config(cfg)
-    try:
-        libraries = await plex.libraries(url, token)
-        return {"libraries": libraries, "total": len(libraries)}
-    except Exception as e:
-        raise HTTPException(status_code=502, detail=str(e)[:200])
-
-
-@router.get("/plex/suggestions")
-async def plex_suggestions(_=Depends(get_current_user)):
-    cfg = get_config()
-    try:
-        suggestions = await _plex_refresh_suggestions(cfg)
-        return {"suggestions": suggestions, "total": len(suggestions), "window_hours": 24}
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(status_code=502, detail=str(e)[:200])
-
-
-@router.post("/plex/libraries/{library_key}/refresh")
-async def refresh_plex_library(library_key: str, _=Depends(get_current_user)):
-    cfg = get_config()
-    url, token = _require_plex_config(cfg)
-    try:
-        logger.info("Plex refresh requested for library key=%s", library_key)
-        await plex.refresh_library(url, token, library_key)
-    except Exception as e:
-        raise HTTPException(status_code=502, detail=str(e)[:200])
-
-    refreshed_at = datetime.now(timezone.utc).isoformat()
-    plex_cfg = cfg.setdefault("plex", {})
-    last_refreshes = plex_cfg.setdefault("last_refreshes", {})
-    last_refreshes[str(library_key)] = refreshed_at
-    save_config(cfg)
-    logger.info("Plex refresh completed for library key=%s", library_key)
-    return {"status": "refreshed", "library_key": library_key, "refreshed_at": refreshed_at}
 
 
 @router.post("/test-webhook")
@@ -856,9 +649,7 @@ async def signal_verify(body: SignalVerifyRequest, _=Depends(get_current_user)):
             )
             if resp.status_code in (200, 201, 204):
                 # Store registration status in config
-                cfg = get_config()
-                cfg["signal_registered"] = True
-                save_config(cfg)
+                update_config(lambda cfg: cfg.update({"signal_registered": True}))
                 return {"success": True, "message": "Number verified and registered"}
             else:
                 try:
@@ -897,14 +688,14 @@ async def signal_reset(body: SignalResetRequest, _=Depends(get_current_user)):
             steps.append(f"unregister skipped ({str(e)[:80]})")
 
     # ── 2. Clear local config ─────────────────────────────────────────────
-    cfg = get_config()
-    cfg.pop("signal_registered", None)
-    wh = cfg.get("webhooks", {})
-    if wh.get("format") == "signal":
-        wh["url"] = ""
-        wh["format"] = "generic"
-        wh["enabled"] = False
-    save_config(cfg)
+    def clear_signal(cfg):
+        cfg.pop("signal_registered", None)
+        wh = cfg.get("webhooks", {})
+        if wh.get("format") == "signal":
+            wh["url"] = ""
+            wh["format"] = "generic"
+            wh["enabled"] = False
+    update_config(clear_signal)
     steps.append("local config cleared")
 
     # ── 3. Stop and remove Docker container (best effort) ────────────────
@@ -1056,22 +847,20 @@ async def add_storage_path(body: StoragePathRequest, _=Depends(get_current_user)
     path = body.path.strip()
     if not path:
         raise HTTPException(status_code=400, detail="Path required")
-    cfg = get_config()
-    extra = cfg.get("storage_extra_paths", [])
-    if path not in extra:
-        extra.append(path)
-        cfg["storage_extra_paths"] = extra
-        save_config(cfg)
+    def add(cfg):
+        extra = cfg.setdefault("storage_extra_paths", [])
+        if path not in extra:
+            extra.append(path)
+    update_config(add)
     return {"status": "added"}
 
 
 @router.delete("/storage/paths")
 async def remove_storage_path(body: StoragePathRequest, _=Depends(get_current_user)):
     path = body.path.strip()
-    cfg = get_config()
-    extra = cfg.get("storage_extra_paths", [])
-    cfg["storage_extra_paths"] = [p for p in extra if p != path]
-    save_config(cfg)
+    update_config(lambda cfg: cfg.update({
+        "storage_extra_paths": [p for p in cfg.get("storage_extra_paths", []) if p != path]
+    }))
     return {"status": "removed"}
 
 
@@ -1102,6 +891,7 @@ async def _get_latest_github_version(client) -> dict:
 
     latest_tag = ""
     latest_version = None
+    latest_commit = ""
     for item in resp.json():
         name = str(item.get("name", "")).strip()
         version = _parse_version_tag(name)
@@ -1110,6 +900,7 @@ async def _get_latest_github_version(client) -> dict:
         if latest_version is None or version > latest_version:
             latest_version = version
             latest_tag = name
+            latest_commit = str(item.get("commit", {}).get("sha", "")).strip()
 
     if latest_version is None:
         raise HTTPException(status_code=502, detail="No valid version tag found")
@@ -1126,13 +917,14 @@ async def _get_latest_github_version(client) -> dict:
         "tag": latest_tag,
         "version": ".".join(str(part) for part in latest_version),
         "version_tuple": latest_version,
+        "commit_sha": latest_commit,
         "changelog": body,
     }
 
 
 def _find_git_dir() -> Path:
     """Find the git repo directory (may differ from install dir)."""
-    for d in [INSTALL_DIR, GIT_DIR, Path("/root/download-manager")]:
+    for d in [INSTALL_DIR, GIT_DIR]:
         if (d / ".git").exists():
             return d
     return INSTALL_DIR
@@ -1192,12 +984,10 @@ async def get_runtime_status(request: Request, _=Depends(get_current_user)):
 @router.get("/diagnostics")
 async def diagnostics(request: Request, _=Depends(get_current_user)):
     import asyncio
-    import aiosqlite
-    from database import DB_PATH
     from services.aria2_service import aria2
 
     db_info = {"tables": {}, "download_statuses": []}
-    async with aiosqlite.connect(str(DB_PATH)) as db:
+    async with db_session() as db:
         for table in ("downloads", "packages", "torrents", "history", "users", "blocked_ips"):
             cursor = await db.execute(f"SELECT COUNT(*) FROM {table}")
             (count,) = await cursor.fetchone()
@@ -1322,6 +1112,8 @@ async def perform_update(_=Depends(get_current_user)):
             "--property=Type=exec", str(INSTALL_DIR / "venv" / "bin" / "python"),
             str(runner), "--job-id", job_id, "--git-dir", str(git_dir),
             "--expected-version", latest,
+            "--expected-tag", latest_info["tag"],
+            "--expected-commit", latest_info["commit_sha"],
         ]
         result = subprocess.run(command, capture_output=True, text=True, timeout=15)
         if result.returncode != 0:

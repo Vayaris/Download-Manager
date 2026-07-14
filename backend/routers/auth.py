@@ -3,7 +3,6 @@ import io
 import base64
 from datetime import datetime, timedelta, timezone
 
-import aiosqlite
 from fastapi import APIRouter, HTTPException, Depends, Request, Response
 
 from models import (
@@ -11,7 +10,7 @@ from models import (
     SetupOTPResponse, UserPreferencesRequest, VerifyOTPRequest,
 )
 from auth import verify_password, get_password_hash, create_access_token, get_current_user
-from database import DB_PATH
+from database import db_session
 
 router = APIRouter()
 
@@ -58,7 +57,7 @@ def _get_client_ip(request: Request) -> str:
 async def _check_ip_blocked(ip: str):
     """Raise 403 if IP is currently blocked."""
     now = datetime.now(timezone.utc).isoformat()
-    async with aiosqlite.connect(str(DB_PATH)) as db:
+    async with db_session() as db:
         cursor = await db.execute(
             "SELECT expires_at FROM blocked_ips WHERE ip = ? AND expires_at > ?",
             (ip, now),
@@ -75,7 +74,7 @@ async def _record_failed_attempt(ip: str):
     """Record a failed login attempt and block IP if threshold reached."""
     now = datetime.now(timezone.utc)
     window_start = (now - timedelta(minutes=ATTEMPT_WINDOW_MINUTES)).isoformat()
-    async with aiosqlite.connect(str(DB_PATH)) as db:
+    async with db_session() as db:
         await db.execute(
             "INSERT INTO login_attempts (ip, attempted_at) VALUES (?, ?)",
             (ip, now.isoformat()),
@@ -111,7 +110,7 @@ async def _record_failed_attempt(ip: str):
 
 async def _clear_attempts(ip: str):
     """Clear failed attempts on successful login."""
-    async with aiosqlite.connect(str(DB_PATH)) as db:
+    async with db_session() as db:
         await db.execute("DELETE FROM login_attempts WHERE ip = ?", (ip,))
         await db.commit()
 
@@ -121,8 +120,7 @@ async def login(body: LoginRequest, request: Request, response: Response):
     client_ip = _get_client_ip(request)
     await _check_ip_blocked(client_ip)
 
-    async with aiosqlite.connect(str(DB_PATH)) as db:
-        db.row_factory = aiosqlite.Row
+    async with db_session(row_factory=True) as db:
         cursor = await db.execute(
             "SELECT * FROM users WHERE username = ?", (body.username,)
         )
@@ -175,7 +173,7 @@ async def login(body: LoginRequest, request: Request, response: Response):
 
 @router.get("/status")
 async def auth_status():
-    async with aiosqlite.connect(str(DB_PATH)) as db:
+    async with db_session() as db:
         cursor = await db.execute("SELECT COUNT(*) FROM users")
         (count,) = await cursor.fetchone()
         admin_exists = count > 0
@@ -188,7 +186,7 @@ async def auth_status():
 @router.post("/setup-admin")
 async def setup_admin(body: SetupAdminRequest, request: Request, response: Response):
     """Create the initial admin account. Only works if no users exist."""
-    async with aiosqlite.connect(str(DB_PATH)) as db:
+    async with db_session() as db:
         await db.execute("BEGIN IMMEDIATE")
         cursor = await db.execute("SELECT COUNT(*) FROM users")
         (count,) = await cursor.fetchone()
@@ -232,7 +230,7 @@ async def change_password(
         raise HTTPException(status_code=400, detail="Password must be at least 12 characters")
 
     pw_hash = get_password_hash(body.password)
-    async with aiosqlite.connect(str(DB_PATH)) as db:
+    async with db_session() as db:
         await db.execute(
             "UPDATE users SET password_hash = ?, token_version = token_version + 1 WHERE username = ?",
             (pw_hash, user["username"]),
@@ -271,7 +269,7 @@ async def setup_otp(user=Depends(get_current_user)):
     secret = pyotp.random_base32()
 
     # Save secret (not yet enabled)
-    async with aiosqlite.connect(str(DB_PATH)) as db:
+    async with db_session() as db:
         await db.execute(
             "UPDATE users SET otp_secret = ? WHERE username = ?",
             (secret, user["username"]),
@@ -301,8 +299,7 @@ async def verify_otp(body: VerifyOTPRequest, user=Depends(get_current_user)):
     except ImportError:
         raise HTTPException(status_code=500, detail="pyotp module not installed")
 
-    async with aiosqlite.connect(str(DB_PATH)) as db:
-        db.row_factory = aiosqlite.Row
+    async with db_session(row_factory=True) as db:
         cursor = await db.execute(
             "SELECT otp_secret FROM users WHERE username = ?", (user["username"],)
         )
@@ -318,7 +315,7 @@ async def verify_otp(body: VerifyOTPRequest, user=Depends(get_current_user)):
         raise HTTPException(status_code=400, detail="Invalid OTP code")
 
     # Enable 2FA
-    async with aiosqlite.connect(str(DB_PATH)) as db:
+    async with db_session() as db:
         await db.execute(
             "UPDATE users SET otp_enabled = 1 WHERE username = ?",
             (user["username"],),
@@ -339,8 +336,7 @@ async def disable_otp(body: VerifyOTPRequest, user=Depends(get_current_user)):
     except ImportError:
         raise HTTPException(status_code=500, detail="pyotp module not installed")
 
-    async with aiosqlite.connect(str(DB_PATH)) as db:
-        db.row_factory = aiosqlite.Row
+    async with db_session(row_factory=True) as db:
         cursor = await db.execute(
             "SELECT otp_secret, otp_enabled FROM users WHERE username = ?", (user["username"],)
         )
@@ -355,7 +351,7 @@ async def disable_otp(body: VerifyOTPRequest, user=Depends(get_current_user)):
     if not totp.verify(body.code, valid_window=1):
         raise HTTPException(status_code=400, detail="Invalid OTP code")
 
-    async with aiosqlite.connect(str(DB_PATH)) as db:
+    async with db_session() as db:
         await db.execute(
             "UPDATE users SET otp_enabled = 0, otp_secret = NULL WHERE username = ?",
             (user["username"],),
@@ -371,8 +367,7 @@ async def user_info(user=Depends(get_current_user)):
     if user["username"] == "anonymous":
         return {"username": "anonymous", "otp_enabled": False, "ui_style": "modern"}
 
-    async with aiosqlite.connect(str(DB_PATH)) as db:
-        db.row_factory = aiosqlite.Row
+    async with db_session(row_factory=True) as db:
         cursor = await db.execute(
             "SELECT username, otp_enabled, ui_style FROM users WHERE username = ?", (user["username"],)
         )
@@ -392,7 +387,7 @@ async def user_info(user=Depends(get_current_user)):
 async def update_preferences(body: UserPreferencesRequest, user=Depends(get_current_user)):
     if user["username"] == "anonymous":
         raise HTTPException(status_code=403, detail="Auth not enabled")
-    async with aiosqlite.connect(str(DB_PATH)) as db:
+    async with db_session() as db:
         await db.execute(
             "UPDATE users SET ui_style = ? WHERE username = ?",
             (body.ui_style, user["username"]),

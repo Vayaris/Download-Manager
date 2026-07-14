@@ -1,6 +1,8 @@
 import yaml
+import copy
 import os
 import secrets
+import threading
 from pathlib import Path
 
 CONFIG_PATH = Path(os.environ.get("DM_CONFIG", "/etc/download-manager/config.yml"))
@@ -29,7 +31,6 @@ DEFAULT_CONFIG = {
         "stalled_timeout_hours": 3
     },
     "auth": {
-        "enabled": False,
         "jwt_secret": "",
     },
     "aria2": {
@@ -67,6 +68,10 @@ DEFAULT_CONFIG = {
     }
 }
 
+_CONFIG_LOCK = threading.RLock()
+_CONFIG_CACHE = None
+_CONFIG_MTIME_NS = None
+
 
 def _deep_merge(base: dict, override: dict) -> dict:
     result = base.copy()
@@ -78,23 +83,54 @@ def _deep_merge(base: dict, override: dict) -> dict:
     return result
 
 
-def get_config() -> dict:
-    if not CONFIG_PATH.exists():
-        return DEFAULT_CONFIG.copy()
-    with open(CONFIG_PATH, "r") as f:
-        loaded = yaml.safe_load(f) or {}
-    cfg = _deep_merge(DEFAULT_CONFIG.copy(), loaded)
-    # Auto-generate JWT secret if missing
+def _write_unlocked(config: dict):
+    global _CONFIG_CACHE, _CONFIG_MTIME_NS
+    CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
+    tmp_path = CONFIG_PATH.with_name(f".{CONFIG_PATH.name}.{os.getpid()}.tmp")
+    with open(tmp_path, "w") as f:
+        yaml.safe_dump(config, f, default_flow_style=False, allow_unicode=True, sort_keys=False)
+        f.flush()
+        os.fsync(f.fileno())
+    os.chmod(tmp_path, 0o600)
+    os.replace(tmp_path, CONFIG_PATH)
+    _CONFIG_CACHE = copy.deepcopy(config)
+    _CONFIG_MTIME_NS = CONFIG_PATH.stat().st_mtime_ns
+
+
+def _load_unlocked() -> dict:
+    global _CONFIG_CACHE, _CONFIG_MTIME_NS
+    mtime_ns = CONFIG_PATH.stat().st_mtime_ns if CONFIG_PATH.exists() else None
+    if _CONFIG_CACHE is not None and mtime_ns == _CONFIG_MTIME_NS:
+        return copy.deepcopy(_CONFIG_CACHE)
+
+    loaded = {}
+    if CONFIG_PATH.exists():
+        with open(CONFIG_PATH, "r") as f:
+            loaded = yaml.safe_load(f) or {}
+    cfg = _deep_merge(copy.deepcopy(DEFAULT_CONFIG), loaded)
     if not cfg["auth"].get("jwt_secret"):
         cfg["auth"]["jwt_secret"] = secrets.token_hex(32)
-        save_config(cfg)
-    return cfg
+        _write_unlocked(cfg)
+    else:
+        _CONFIG_CACHE = copy.deepcopy(cfg)
+        _CONFIG_MTIME_NS = mtime_ns
+    return copy.deepcopy(cfg)
+
+
+def get_config() -> dict:
+    with _CONFIG_LOCK:
+        return _load_unlocked()
 
 
 def save_config(config: dict):
-    CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
-    tmp_path = CONFIG_PATH.with_name(f"{CONFIG_PATH.name}.tmp")
-    with open(tmp_path, "w") as f:
-        yaml.dump(config, f, default_flow_style=False, allow_unicode=True)
-    os.chmod(tmp_path, 0o600)
-    os.replace(tmp_path, CONFIG_PATH)
+    with _CONFIG_LOCK:
+        _write_unlocked(copy.deepcopy(config))
+
+
+def update_config(mutator):
+    """Atomically load, mutate and persist configuration in this process."""
+    with _CONFIG_LOCK:
+        config = _load_unlocked()
+        result = mutator(config)
+        _write_unlocked(config)
+        return copy.deepcopy(config), result

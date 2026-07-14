@@ -1,5 +1,6 @@
 import asyncio
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
@@ -11,8 +12,9 @@ from fastapi import HTTPException, Response
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "backend"))
 
 import database
+import config as config_module
 from auth import create_access_token, validate_access_token
-from models import LoginRequest, SetupAdminRequest, UserPreferencesRequest
+from models import AddDownloadsRequest, LoginRequest, SetupAdminRequest, UserPreferencesRequest
 from routers import auth as auth_router
 
 
@@ -119,6 +121,30 @@ class V2FoundationTests(unittest.IsolatedAsyncioTestCase):
         finally:
             await db.close()
         self.assertEqual(count, 1)
+
+    def test_submission_models_reject_unbounded_batches(self):
+        with self.assertRaises(ValueError):
+            AddDownloadsRequest(urls=[f"https://example.com/{index}" for index in range(101)], destination="/mnt")
+
+    async def test_config_updates_are_atomic_and_preserve_disjoint_changes(self):
+        with tempfile.TemporaryDirectory() as temp:
+            path = Path(temp) / "config.yml"
+            with patch.object(config_module, "CONFIG_PATH", path):
+                config_module._CONFIG_CACHE = None
+                config_module._CONFIG_MTIME_NS = None
+
+                async def write(index):
+                    def mutate(cfg):
+                        cfg.setdefault("concurrency_test", {})[str(index)] = index
+                    await asyncio.to_thread(config_module.update_config, mutate)
+
+                await asyncio.gather(*(write(index) for index in range(20)))
+                saved = config_module.get_config()
+                self.assertEqual(len(saved["concurrency_test"]), 20)
+                self.assertTrue(saved["auth"]["jwt_secret"])
+
+            config_module._CONFIG_CACHE = None
+            config_module._CONFIG_MTIME_NS = None
 
 
 if __name__ == "__main__":

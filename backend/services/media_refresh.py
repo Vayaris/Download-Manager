@@ -2,10 +2,8 @@ import logging
 import os
 from datetime import datetime, timedelta, timezone
 
-import aiosqlite
-
-from config import get_config, save_config
-from database import DB_PATH
+from config import get_config, update_config
+from database import db_session
 from services.diagnostics import record_event_nowait
 from services.jellyfin import jellyfin
 from services.plex import plex
@@ -110,8 +108,7 @@ async def media_refresh_suggestions(
     if since and since > cutoff:
         cutoff = since
 
-    async with aiosqlite.connect(str(DB_PATH)) as db:
-        db.row_factory = aiosqlite.Row
+    async with db_session(row_factory=True) as db:
         cursor = await db.execute(
             """SELECT id, name, destination, status, package_name, completed_at
                FROM history
@@ -185,22 +182,23 @@ async def refresh_library_from_config(
     await media_service(provider).refresh_library(url, token, library_key)
 
     refreshed_at = datetime.now(timezone.utc).isoformat()
-    media_cfg = cfg.setdefault(provider, media_defaults(provider))
-    media_cfg.setdefault("last_refreshes", {})[str(library_key)] = refreshed_at
+    suggestion = suggestion or {}
 
-    if automatic:
-        auto_refreshes = media_cfg.setdefault("auto_refreshes", {})
-        suggestion = suggestion or {}
-        auto_refreshes[str(library_key)] = {
-            "refreshed_at": refreshed_at,
-            "library_key": str(library_key),
-            "library_title": suggestion.get("library_title", ""),
-            "library_type": suggestion.get("library_type", ""),
-            "download_name": suggestion.get("download_name", ""),
-            "matched_location": suggestion.get("matched_location", ""),
-        }
+    def record_refresh(current):
+        media_cfg = current.setdefault(provider, media_defaults(provider))
+        media_cfg.setdefault("last_refreshes", {})[str(library_key)] = refreshed_at
+        if automatic:
+            auto_refreshes = media_cfg.setdefault("auto_refreshes", {})
+            auto_refreshes[str(library_key)] = {
+                "refreshed_at": refreshed_at,
+                "library_key": str(library_key),
+                "library_title": suggestion.get("library_title", ""),
+                "library_type": suggestion.get("library_type", ""),
+                "download_name": suggestion.get("download_name", ""),
+                "matched_location": suggestion.get("matched_location", ""),
+            }
 
-    save_config(cfg)
+    update_config(record_refresh)
     logger.info("%s refresh completed for library key=%s automatic=%s", provider.title(), library_key, automatic)
     return {
         "status": "refreshed",

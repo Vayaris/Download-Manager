@@ -1,5 +1,6 @@
 import aiosqlite
 import os
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 DB_PATH = Path(os.environ.get("DM_DB", "/opt/download-manager/config/downloads.db"))
@@ -17,6 +18,15 @@ async def open_db(*, row_factory: bool = False) -> aiosqlite.Connection:
     except OSError:
         pass
     return db
+
+
+@asynccontextmanager
+async def db_session(*, row_factory: bool = False):
+    db = await open_db(row_factory=row_factory)
+    try:
+        yield db
+    finally:
+        await db.close()
 
 
 async def init_db():

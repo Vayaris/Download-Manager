@@ -1,11 +1,11 @@
 """SMB/CIFS share management router."""
 import re
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from typing import Optional
 
 from auth import get_current_user
-from config import get_config, save_config
+from config import get_config, update_config
 from services.smb import mount_share, unmount_share, is_mounted
 
 router = APIRouter()
@@ -14,13 +14,13 @@ _NAME_RE = re.compile(r'^[a-zA-Z0-9_-]+$')
 
 
 class SmbShareIn(BaseModel):
-    name: str
-    host: str
-    share: str
-    username: Optional[str] = ""
-    password: Optional[str] = ""
-    domain: Optional[str] = ""
-    vers: Optional[str] = ""       # SMB version: "", "1.0", "2.0", "2.1", "3.0", "3.1.1"
+    name: str = Field(min_length=1, max_length=64)
+    host: str = Field(min_length=1, max_length=255)
+    share: str = Field(min_length=1, max_length=255)
+    username: Optional[str] = Field(default="", max_length=255)
+    password: Optional[str] = Field(default="", max_length=1024)
+    domain: Optional[str] = Field(default="", max_length=255)
+    vers: Optional[str] = Field(default="", max_length=16)
     auto_mount: bool = True
 
 
@@ -65,12 +65,6 @@ async def add_share(body: SmbShareIn, _=Depends(get_current_user)):
     if not _NAME_RE.match(name):
         raise HTTPException(status_code=400, detail="Name must contain only letters, numbers, underscores and dashes")
 
-    cfg = get_config()
-    shares = cfg.get("smb_shares", [])
-
-    if any(s["name"] == name for s in shares):
-        raise HTTPException(status_code=400, detail="A share with this name already exists")
-
     new_share = {
         "name": name,
         "host": body.host.strip(),
@@ -82,54 +76,66 @@ async def add_share(body: SmbShareIn, _=Depends(get_current_user)):
         "mount_point": _mount_point_for(name),
         "auto_mount": body.auto_mount,
     }
-    shares.append(new_share)
-    cfg["smb_shares"] = shares
-    save_config(cfg)
+    def add(config):
+        shares = config.setdefault("smb_shares", [])
+        if any(share["name"] == name for share in shares):
+            raise HTTPException(status_code=400, detail="A share with this name already exists")
+        shares.append(new_share)
+
+    update_config(add)
     return _share_view(new_share)
 
 
 @router.delete("/{name}")
 async def delete_share(name: str, _=Depends(get_current_user)):
-    cfg = get_config()
-    shares = cfg.get("smb_shares", [])
-    for i, s in enumerate(shares):
-        if s["name"] == name:
-            unmount_share(s.get("mount_point", ""))
-            shares.pop(i)
-            cfg["smb_shares"] = shares
-            save_config(cfg)
-            return {"status": "deleted"}
-    raise HTTPException(status_code=404, detail="Share not found")
+    current = _find_share(name)
+    if not current:
+        raise HTTPException(status_code=404, detail="Share not found")
+    unmount_share(current.get("mount_point", ""))
+
+    def remove(config):
+        config["smb_shares"] = [share for share in config.get("smb_shares", []) if share["name"] != name]
+
+    update_config(remove)
+    return {"status": "deleted"}
 
 
 @router.put("/{name}")
 async def update_share(name: str, body: SmbShareIn, _=Depends(get_current_user)):
-    cfg = get_config()
-    shares = cfg.get("smb_shares", [])
-    for i, s in enumerate(shares):
-        if s["name"] == name:
-            new_name = body.name.strip()
-            if not _NAME_RE.match(new_name):
-                raise HTTPException(status_code=400, detail="Name must contain only letters, numbers, underscores and dashes")
-            # Unmount old mount point if name changes
-            if new_name != name:
-                unmount_share(s.get("mount_point", ""))
-            new_share = {
-                "name": new_name,
-                "host": body.host.strip(),
-                "share": body.share.strip(),
-                "username": (body.username or "").strip(),
-                "password": (body.password or "").strip() or s.get("password", ""),
-                "domain": (body.domain or "").strip(),
-                "vers": (body.vers or "").strip(),
-                "mount_point": _mount_point_for(new_name),
-                "auto_mount": body.auto_mount,
-            }
-            shares[i] = new_share
-            cfg["smb_shares"] = shares
-            save_config(cfg)
-            return _share_view(new_share)
-    raise HTTPException(status_code=404, detail="Share not found")
+    current = _find_share(name)
+    if not current:
+        raise HTTPException(status_code=404, detail="Share not found")
+    new_name = body.name.strip()
+    if not _NAME_RE.match(new_name):
+        raise HTTPException(status_code=400, detail="Name must contain only letters, numbers, underscores and dashes")
+    if new_name != name and _find_share(new_name):
+        raise HTTPException(status_code=400, detail="A share with this name already exists")
+    if new_name != name:
+        unmount_share(current.get("mount_point", ""))
+    new_share = {
+        "name": new_name,
+        "host": body.host.strip(),
+        "share": body.share.strip(),
+        "username": (body.username or "").strip(),
+        "password": (body.password or "").strip() or current.get("password", ""),
+        "domain": (body.domain or "").strip(),
+        "vers": (body.vers or "").strip(),
+        "mount_point": _mount_point_for(new_name),
+        "auto_mount": body.auto_mount,
+    }
+
+    def replace(config):
+        shares = config.setdefault("smb_shares", [])
+        if new_name != name and any(share["name"] == new_name for share in shares):
+            raise HTTPException(status_code=400, detail="A share with this name already exists")
+        for index, share in enumerate(shares):
+            if share["name"] == name:
+                shares[index] = new_share
+                return
+        raise HTTPException(status_code=409, detail="Share list changed; reload and retry")
+
+    update_config(replace)
+    return _share_view(new_share)
 
 
 @router.post("/{name}/mount")

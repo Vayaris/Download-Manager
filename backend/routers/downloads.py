@@ -6,9 +6,7 @@ from pathlib import Path
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Request, UploadFile
 from typing import List, Optional
 
-import aiosqlite
-
-from database import DB_PATH
+from database import db_session
 from models import (
     AddDownloadsRequest, AddPackageRequest, BulkActionRequest, ReorderRequest,
     DuplicateCommitRequest, DuplicateResolutionRequest, HistoryRemoveRequest,
@@ -33,8 +31,7 @@ def _qm(request: Request):
 
 @router.get("/")
 async def list_downloads(request: Request, _=Depends(get_current_user)):
-    async with aiosqlite.connect(str(DB_PATH)) as db:
-        db.row_factory = aiosqlite.Row
+    async with db_session(row_factory=True) as db:
         cursor = await db.execute(
             "SELECT * FROM downloads ORDER BY position ASC, created_at ASC"
         )
@@ -91,6 +88,8 @@ async def add_automatic_batch(
     source_count = len(normalized_links) + len(files_data)
     if source_count == 0:
         raise HTTPException(status_code=400, detail="Add at least one link or .torrent file")
+    if source_count > 100:
+        raise HTTPException(status_code=400, detail="A submission is limited to 100 sources")
 
     use_package = source_count >= 2
     safe_package_name = package_name.strip()[:160] or f"Batch - {datetime.now().strftime('%Y-%m-%d %H:%M')}"
@@ -158,7 +157,7 @@ async def add_automatic_batch(
         _process_ready_without_package,
     )
 
-    async with aiosqlite.connect(str(DB_PATH)) as db:
+    async with db_session() as db:
         for magnet in uploaded:
             name = magnet.get("name", "Torrent")
             if magnet.get("ready", False):
@@ -285,25 +284,19 @@ async def commit_submission(
             _=user,
         )
         if result.get("download_ids"):
-            db = await aiosqlite.connect(str(DB_PATH))
-            try:
+            async with db_session() as db:
                 for download_id, (item, action, confirmed) in zip(result["download_ids"], link_items):
                     await db.execute(
                         "UPDATE downloads SET source_key = ?, overwrite_confirmed = ? WHERE id = ?",
                         (item["source_key"], 1 if confirmed or action == "replace" else 0, download_id),
                     )
                 await db.commit()
-            finally:
-                await db.close()
         torrent_sources = [entry for entry in selected if entry[0]["kind"] in ("magnet", "torrent")]
         if result.get("torrents") and torrent_sources:
-            db = await aiosqlite.connect(str(DB_PATH))
-            try:
+            async with db_session() as db:
                 for torrent, (item, _, _) in zip(result["torrents"], torrent_sources):
                     await db.execute("UPDATE torrents SET source_key = ? WHERE id = ?", (item["source_key"], torrent["id"]))
                 await db.commit()
-            finally:
-                await db.close()
         result["ignored"] = len(submission["items"]) - len(selected)
         await finish_submission(submission_id)
         return result
@@ -314,8 +307,7 @@ async def commit_submission(
 
 @router.get("/conflicts")
 async def pending_conflicts(_=Depends(get_current_user)):
-    async with aiosqlite.connect(str(DB_PATH)) as db:
-        db.row_factory = aiosqlite.Row
+    async with db_session(row_factory=True) as db:
         cursor = await db.execute(
             """SELECT id, name, url, destination, target_path, package_id
                FROM downloads WHERE status = 'duplicate_pending' ORDER BY created_at"""
@@ -332,8 +324,7 @@ async def resolve_pending_conflict(
 ):
     if body.action not in ("ignore", "download", "replace"):
         raise HTTPException(status_code=400, detail="Invalid duplicate action")
-    async with aiosqlite.connect(str(DB_PATH)) as db:
-        db.row_factory = aiosqlite.Row
+    async with db_session(row_factory=True) as db:
         cursor = await db.execute("SELECT * FROM downloads WHERE id = ? AND status = 'duplicate_pending'", (download_id,))
         row = await cursor.fetchone()
         if not row:
@@ -411,8 +402,7 @@ async def create_package(body: AddPackageRequest, request: Request, _=Depends(ge
 
 @router.get("/packages")
 async def list_packages(_=Depends(get_current_user)):
-    async with aiosqlite.connect(str(DB_PATH)) as db:
-        db.row_factory = aiosqlite.Row
+    async with db_session(row_factory=True) as db:
         cursor = await db.execute("SELECT * FROM packages ORDER BY created_at DESC")
         packages = [dict(r) for r in await cursor.fetchall()]
 
@@ -472,8 +462,7 @@ async def get_history(
     offset: int = Query(default=0, ge=0),
     _=Depends(get_current_user),
 ):
-    async with aiosqlite.connect(str(DB_PATH)) as db:
-        db.row_factory = aiosqlite.Row
+    async with db_session(row_factory=True) as db:
         cursor = await db.execute(
             "SELECT COUNT(*) FROM history"
         )
@@ -493,8 +482,7 @@ async def delete_history_item(
     delete_file: bool = Query(default=False),
     _=Depends(get_current_user),
 ):
-    async with aiosqlite.connect(str(DB_PATH)) as db:
-        db.row_factory = aiosqlite.Row
+    async with db_session(row_factory=True) as db:
         cursor = await db.execute("SELECT * FROM history WHERE id = ?", (history_id,))
         item = await cursor.fetchone()
 
@@ -529,7 +517,7 @@ async def delete_history_item(
             if resolved.is_file():
                 resolved.unlink()
 
-    async with aiosqlite.connect(str(DB_PATH)) as db:
+    async with db_session() as db:
         await db.execute("DELETE FROM history WHERE id = ?", (history_id,))
         await db.commit()
 
@@ -538,7 +526,7 @@ async def delete_history_item(
 
 @router.delete("/history")
 async def clear_history(_=Depends(get_current_user)):
-    async with aiosqlite.connect(str(DB_PATH)) as db:
+    async with db_session() as db:
         await db.execute("DELETE FROM history")
         await db.commit()
     return {"status": "cleared"}

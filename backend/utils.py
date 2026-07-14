@@ -21,7 +21,7 @@ def validate_destination(dest: str):
     except Exception:
         pass
     if not allowed:
-        return  # No restrictions configured
+        raise HTTPException(status_code=403, detail="No download destination is configured")
     for a in allowed:
         try:
             resolved.relative_to(a)

@@ -1,16 +1,16 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from typing import Optional, List, Literal
 
 
 class AddDownloadsRequest(BaseModel):
-    urls: List[str]
-    destination: str
+    urls: List[str] = Field(min_length=1, max_length=100)
+    destination: str = Field(min_length=1, max_length=4096)
 
 
 class AddPackageRequest(BaseModel):
-    name: str
-    urls: List[str]
-    destination: str
+    name: str = Field(min_length=1, max_length=160)
+    urls: List[str] = Field(min_length=1, max_length=100)
+    destination: str = Field(min_length=1, max_length=4096)
 
 
 class BulkActionRequest(BaseModel):
@@ -18,7 +18,7 @@ class BulkActionRequest(BaseModel):
 
 
 class ReorderRequest(BaseModel):
-    ids: List[str]
+    ids: List[str] = Field(max_length=500)
 
 
 class DuplicateDecision(BaseModel):
@@ -28,7 +28,7 @@ class DuplicateDecision(BaseModel):
 
 
 class DuplicateCommitRequest(BaseModel):
-    decisions: List[DuplicateDecision] = []
+    decisions: List[DuplicateDecision] = Field(default_factory=list, max_length=100)
 
 
 class DuplicateResolutionRequest(BaseModel):
@@ -37,7 +37,7 @@ class DuplicateResolutionRequest(BaseModel):
 
 
 class HistoryRemoveRequest(BaseModel):
-    ids: List[str]
+    ids: List[str] = Field(min_length=1, max_length=500)
 
 
 class SettingsUpdate(BaseModel):
@@ -58,8 +58,8 @@ class SettingsUpdate(BaseModel):
 
 
 class LoginRequest(BaseModel):
-    username: str
-    password: str
+    username: str = Field(min_length=1, max_length=64)
+    password: str = Field(min_length=1, max_length=1024)
     otp_code: Optional[str] = None
 
 
@@ -70,8 +70,8 @@ class LoginResponse(BaseModel):
 
 
 class SetupAdminRequest(BaseModel):
-    username: str
-    password: str
+    username: str = Field(max_length=64)
+    password: str = Field(max_length=1024)
 
 
 class SetupOTPResponse(BaseModel):
@@ -88,32 +88,25 @@ class UserPreferencesRequest(BaseModel):
 
 
 class MkdirRequest(BaseModel):
-    path: str
-    name: str
+    path: str = Field(min_length=1, max_length=4096)
+    name: str = Field(min_length=1, max_length=255)
 
 
 class FileBrowserPathRequest(BaseModel):
-    path: str
+    path: str = Field(min_length=1, max_length=4096)
 
 
 class FileBrowserReorderRequest(BaseModel):
-    paths: List[str]
+    paths: List[str] = Field(max_length=50)
 
 
 class MagnetUploadRequest(BaseModel):
-    magnets: List[str]
-    destination: str
+    magnets: List[str] = Field(min_length=1, max_length=100)
+    destination: str = Field(min_length=1, max_length=4096)
 
 
 class StoragePathRequest(BaseModel):
-    path: str
-
-
-class PlexSettingsRequest(BaseModel):
-    enabled: Optional[bool] = None
-    url: Optional[str] = None
-    token: Optional[str] = None
-    favorite_keys: Optional[List[str]] = None
+    path: str = Field(min_length=1, max_length=4096)
 
 
 class MediaSettingsRequest(BaseModel):

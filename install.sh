@@ -233,6 +233,11 @@ StartLimitBurst=5
 Type=simple
 User=root
 WorkingDirectory=${INSTALL_DIR}
+UMask=0077
+PrivateTmp=true
+ProtectClock=true
+ProtectKernelLogs=true
+LockPersonality=true
 
 Environment=DM_CONFIG=${CONFIG_DIR}/config.yml
 Environment=DM_DB=${INSTALL_DIR}/config/downloads.db
@@ -287,6 +292,11 @@ if ! "${INSTALL_DIR}/venv/bin/pip" install -r "${INSTALL_DIR}/requirements.txt";
         || die "Failed to install Python dependencies. Check the errors above."
 fi
 success "Python dependencies installed"
+
+# Existing installations may have been created before private data modes were
+# enforced. Tighten them without changing ownership or touching media paths.
+chmod 700 "${CONFIG_DIR}" "${INSTALL_DIR}/config" /var/lib/download-manager /var/backups/download-manager 2>/dev/null || true
+chmod 600 "${CONFIG_DIR}/config.yml" "${INSTALL_DIR}/config/downloads.db" 2>/dev/null || true
 
 # ---- Git repo for auto-updates ----
 if [ ! -d "${INSTALL_DIR}/.git" ]; then

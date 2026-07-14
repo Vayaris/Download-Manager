@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 set -eo pipefail
+umask 077
 
 # Read config values
 CONFIG_FILE="${DM_CONFIG:-/etc/download-manager/config.yml}"

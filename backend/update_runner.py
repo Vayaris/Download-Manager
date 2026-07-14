@@ -2,6 +2,7 @@
 import argparse
 import json
 import os
+import re
 import shutil
 import subprocess
 import time
@@ -89,6 +90,23 @@ def install_dependencies():
         os.chmod(start, 0o755)
 
 
+def install_target(git_dir: Path, tag: str, expected_commit: str) -> str:
+    if not re.fullmatch(r"v\d+\.\d+\.\d+(?:-rc\.\d+)?", tag or ""):
+        raise RuntimeError("invalid release tag")
+    if not re.fullmatch(r"[0-9a-fA-F]{40}", expected_commit or ""):
+        raise RuntimeError("invalid release commit")
+    run(
+        ["git", "fetch", "--force", "origin", f"refs/tags/{tag}:refs/tags/{tag}"],
+        cwd=git_dir,
+        timeout=120,
+    )
+    resolved = run(["git", "rev-list", "-n", "1", tag], cwd=git_dir).stdout.strip()
+    if resolved.lower() != expected_commit.lower():
+        raise RuntimeError("release tag does not match the commit announced by GitHub")
+    run(["git", "reset", "--hard", resolved], cwd=git_dir)
+    return resolved
+
+
 def healthy(expected_version: str, timeout: int = 90) -> bool:
     port = 40320
     try:
@@ -138,6 +156,8 @@ def main():
     parser.add_argument("--job-id", required=True)
     parser.add_argument("--git-dir", required=True)
     parser.add_argument("--expected-version", default="")
+    parser.add_argument("--expected-tag", required=True)
+    parser.add_argument("--expected-commit", required=True)
     args = parser.parse_args()
     git_dir = Path(args.git_dir).resolve()
     target = None
@@ -148,14 +168,20 @@ def main():
         run(["systemctl", "stop", "download-manager"], timeout=30)
         target, previous_commit = backup(args.job_id, git_dir)
         write_status(args.job_id, "installing", "Installing the new version", previous_commit=previous_commit)
-        run(["git", "pull", "--ff-only", "origin", "main"], cwd=git_dir, timeout=120)
+        installed_commit = install_target(git_dir, args.expected_tag, args.expected_commit)
         sync_runtime(git_dir)
         install_dependencies()
         run(["systemctl", "restart", "download-manager"], timeout=30)
         write_status(args.job_id, "checking", "Checking service health")
         if not healthy(args.expected_version):
             raise RuntimeError("new service did not pass its health check")
-        write_status(args.job_id, "success", "Update installed successfully", version=args.expected_version)
+        write_status(
+            args.job_id,
+            "success",
+            "Update installed successfully",
+            version=args.expected_version,
+            commit=installed_commit,
+        )
     except Exception as exc:
         if target and previous_commit:
             try:
