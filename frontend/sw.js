@@ -1,4 +1,4 @@
-const CACHE_NAME = "dm-v15";
+const CACHE_NAME = "dm-v16";
 const PRECACHE = [
   "/",
   "/plex-page",
@@ -6,6 +6,7 @@ const PRECACHE = [
   "/static/css/style.css",
   "/static/css/style-modern.css",
   "/static/js/app.js",
+  "/static/js/youtube.js",
   "/static/js/plex.js",
   "/static/js/settings.js",
   "/static/js/websocket.js",

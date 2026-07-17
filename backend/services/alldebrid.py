@@ -1,3 +1,5 @@
+import asyncio
+import time
 import httpx
 from typing import Optional
 from urllib.parse import unquote, urlparse
@@ -7,7 +9,18 @@ ALLDEBRID_API = "https://api.alldebrid.com"
 AGENT = "download-manager"
 
 
+class AllDebridError(Exception):
+    def __init__(self, code: str, message: str):
+        self.code = str(code or "ALLDEBRID_ERROR")
+        self.message = str(message or "Unknown error")
+        super().__init__(f"AllDebrid {self.code}: {self.message}")
+
+
 class AllDebridService:
+    def __init__(self):
+        self._stream_domains: set[str] = set()
+        self._stream_domains_expires = 0.0
+
     @staticmethod
     def error_message(error, default: str = "Unknown error") -> str:
         if isinstance(error, dict):
@@ -22,21 +35,103 @@ class AllDebridService:
             raise Exception("AllDebrid not configured")
         return config["alldebrid"]["api_key"]
 
+    @staticmethod
+    def _raise_api_error(payload: dict):
+        error = payload.get("error") or {}
+        raise AllDebridError(error.get("code", "ALLDEBRID_ERROR"), error.get("message", "Unknown error"))
+
+    async def _post(self, client: httpx.AsyncClient, endpoint: str, api_key: str, data: dict) -> dict:
+        response = await client.post(
+            f"{ALLDEBRID_API}{endpoint}",
+            headers={"Authorization": f"Bearer {api_key}"},
+            params={"agent": AGENT},
+            data=data,
+        )
+        response.raise_for_status()
+        payload = response.json()
+        if payload.get("status") != "success":
+            self._raise_api_error(payload)
+        return payload.get("data") or {}
+
+    @staticmethod
+    def _stream_score(stream: dict) -> tuple:
+        quality = stream.get("quality", 0)
+        try:
+            quality = int(str(quality).lower().replace("p", ""))
+        except (TypeError, ValueError):
+            quality = 0
+        extension = str(stream.get("ext") or "").lower()
+        stream_id = str(stream.get("id") or "")
+        try:
+            filesize = int(stream.get("filesize") or 0)
+        except (TypeError, ValueError):
+            filesize = 0
+        return extension == "mp4", "+" in stream_id, quality, filesize
+
+    async def _wait_delayed(self, client: httpx.AsyncClient, api_key: str, delayed_id, timeout: int = 600) -> str:
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            data = await self._post(client, "/v4/link/delayed", api_key, {"id": delayed_id})
+            if int(data.get("status") or 0) == 2 and data.get("link"):
+                return str(data["link"])
+            await asyncio.sleep(5)
+        raise AllDebridError("LINK_DELAYED_TIMEOUT", "The download link was not ready after 10 minutes")
+
     async def unrestrict(self, url: str, api_key: str) -> Optional[str]:
-        async with httpx.AsyncClient(timeout=15.0) as client:
-            resp = await client.get(
-                f"{ALLDEBRID_API}/v4/link/unlock",
-                params={"agent": AGENT, "apikey": api_key, "link": url},
-            )
-            data = resp.json()
-            if data.get("status") != "success":
-                msg = data.get("error", {}).get("message", "Unknown error")
-                raise Exception(f"AllDebrid: {msg}")
-            link = data["data"]["link"]
-            # API can return link as string or as dict with "link" key
+        """Resolve host and streaming URLs, including quality selection and delayed links."""
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            data = await self._post(client, "/v4/link/unlock", api_key, {"link": url})
+            link = data.get("link")
             if isinstance(link, dict):
-                return link["link"]
-            return link
+                link = link.get("link")
+            if link:
+                return str(link)
+
+            streams = [stream for stream in data.get("streams", []) if isinstance(stream, dict) and stream.get("id")]
+            if streams:
+                selected = max(streams, key=self._stream_score)
+                streamed = await self._post(
+                    client,
+                    "/v4/link/streaming",
+                    api_key,
+                    {"id": data.get("id"), "stream": selected["id"]},
+                )
+                if streamed.get("link"):
+                    return str(streamed["link"])
+                if streamed.get("delayed") is not None:
+                    return await self._wait_delayed(client, api_key, streamed["delayed"])
+
+            if data.get("delayed") is not None:
+                return await self._wait_delayed(client, api_key, data["delayed"])
+            raise AllDebridError("LINK_EMPTY", "AllDebrid returned no downloadable stream")
+
+    async def stream_domains(self) -> set[str]:
+        if self._stream_domains and time.monotonic() < self._stream_domains_expires:
+            return set(self._stream_domains)
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            response = await client.get(f"{ALLDEBRID_API}/v4/hosts/domains", params={"agent": AGENT})
+            response.raise_for_status()
+            payload = response.json()
+            if payload.get("status") != "success":
+                self._raise_api_error(payload)
+            domains = {
+                str(domain).lower().removeprefix("www.")
+                for domain in (payload.get("data") or {}).get("streams", [])
+                if domain
+            }
+            self._stream_domains = domains
+            self._stream_domains_expires = time.monotonic() + 6 * 3600
+            return set(domains)
+
+    async def is_stream_url(self, url: str) -> bool:
+        host = (urlparse(url).hostname or "").lower().removeprefix("www.")
+        if not host:
+            return False
+        try:
+            domains = await self.stream_domains()
+        except Exception:
+            domains = {"youtube.com", "youtu.be", "music.youtube.com", "youtubekids.com"}
+        return any(host == domain or host.endswith(f".{domain}") for domain in domains)
 
     async def test_key(self, api_key: str) -> bool:
         try:
@@ -207,12 +302,13 @@ class AllDebridService:
             ):
                 return url
 
+        stream_url = await self.is_stream_url(url)
         try:
             direct = await self.unrestrict(url, config["alldebrid"]["api_key"])
             return direct or url
-        except Exception:
-            # For alldebrid.com links, propagate the error (let retry handle it)
-            if "alldebrid.com/" in url:
+        except AllDebridError as exc:
+            # Unsupported ordinary URLs can still be genuine direct downloads.
+            if stream_url or "alldebrid.com/" in url or exc.code not in {"LINK_HOST_NOT_SUPPORTED", "LINK_NOT_SUPPORTED"}:
                 raise
             return url
 

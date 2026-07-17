@@ -2,7 +2,7 @@
 
 Self-hosted download manager powered by **FastAPI**, **aria2** and **AllDebrid**. It provides a responsive web/PWA interface for direct links, magnets and `.torrent` files, with real-time queue updates and optional Plex or Jellyfin library refreshes.
 
-Current release: **v2.0.0**
+Current release: **v2.1.0**
 
 ![Python](https://img.shields.io/badge/Python-3.10+-3776AB?logo=python&logoColor=white)
 ![FastAPI](https://img.shields.io/badge/FastAPI-009688?logo=fastapi&logoColor=white)
@@ -13,6 +13,8 @@ Current release: **v2.0.0**
 ## Highlights
 
 - One unified form for direct links, magnets and one or many `.torrent` files through AllDebrid
+- YouTube videos, Shorts, playlists and channels through AllDebrid, with searchable selection and batches up to 500 videos
+- Optional direct YouTube engine powered by yt-dlp, with compatible MP4 and enriched multi-audio/subtitle MKV profiles
 - Duplicate preflight for active URLs, successful history, destination files and repeated batch sources
 - Automatic mixed packages when at least two sources are submitted, with one final package notification
 - Queue priorities, drag and drop, pause/resume, configurable retries and up to 20 simultaneous downloads
@@ -37,6 +39,7 @@ Current release: **v2.0.0**
 - A reachable download destination, usually under `/mnt` or `/opt/download-manager/downloads`
 - An AllDebrid API key for debrid and torrent workflows
 - Docker only when using the optional Signal integration
+- A bundled ffmpeg and an application-local Deno only when using the optional direct YouTube engine; no system multimedia package is required
 
 ## Install
 
@@ -68,6 +71,29 @@ Links, magnets and `.torrent` files share the same submission area. Torrent file
 | Package members | One aggregate progress view and one final webhook |
 
 AllDebrid resolves magnets and torrents before aria2 downloads the returned files. Remote AllDebrid caching is separate from the local aria2 speed limit. When `.nfo` filtering is enabled, matching files are ignored silently and never appear as failed or blocked items.
+
+## YouTube downloads
+
+Paste one public YouTube video, Short, playlist or channel URL in the regular download composer. Download Manager first analyzes the source and opens a searchable selection dialog. Duplicate videos already active or completed are unchecked by default, the source order is preserved, and at most 500 videos can be submitted at once. Two or more selected videos become one package and therefore emit one final package notification.
+
+A `watch` URL containing a playlist lets you choose between the current video and the full playlist. Channel URLs can be filtered to videos, Shorts, or both. Live, upcoming, private and otherwise unavailable entries are ignored.
+
+Two engines are available:
+
+- **AllDebrid:** attempted first when selected. Download Manager handles streaming choices and delayed links, then automatically falls back to its local direct engine when AllDebrid explicitly reports that YouTube is unsupported.
+- **Direct (yt-dlp):** disabled by default. Enable it under **Settings > YouTube** after installing the checked dependencies. The compatible profile favors MP4/H.264 with audio; the enriched MKV profile keeps the best video, one best non-descriptive audio track per available language, all manual subtitles, and French/English automatic subtitles.
+
+The direct engine defaults to two concurrent jobs and has a separate per-download speed limit in MB/s. Most public videos work anonymously, but YouTube can require authentication for selected videos or server IP addresses. In that case, import a Netscape-format `cookies.txt` under **Settings > YouTube**. Download Manager stores it as `/opt/download-manager/config/youtube-cookies.txt` with mode `0600`, never returns its contents through the API, and gives each yt-dlp worker a private temporary copy.
+
+Cookie setup takes five steps:
+
+1. Install [Get cookies.txt LOCALLY for Chrome/Chromium](https://chromewebstore.google.com/detail/get-cookiestxt-locally/cclelndahbckbenkjhflpdbgdldlbecc) or [cookies.txt for Firefox](https://addons.mozilla.org/firefox/addon/cookies-txt/).
+2. Open a private/incognito window and sign in to YouTube, preferably with a dedicated account.
+3. In the same tab, open [youtube.com/robots.txt](https://www.youtube.com/robots.txt).
+4. Export `cookies.txt` with the extension, then close the private window without reopening that session.
+5. Import the file under **Settings > YouTube**.
+
+Download Manager validates the Netscape format and discards every non-YouTube cookie before storing the file. Follow the [official yt-dlp YouTube guide](https://github.com/yt-dlp/yt-dlp/wiki/Extractors#exporting-youtube-cookies) when renewing it. Do not install the obsolete Chrome extension named **Get cookies.txt** without **LOCALLY**; the yt-dlp project reports that old extension as malware.
 
 ## Duplicate protection
 
@@ -133,6 +159,11 @@ downloads:
   allowed_paths:
     - "/mnt"
     - "/opt/download-manager/downloads"
+
+youtube:
+  direct_enabled: false
+  max_concurrent: 2
+  speed_limit: 0
 ```
 
 Important ranges and behavior:
@@ -145,6 +176,8 @@ Important ranges and behavior:
 | `max_retries` | `0` to `20` | Captured when a new download is created |
 | `retry_delay_seconds` | `0` to `3600` | Delay between attempts |
 | `stalled_timeout_hours` | `0` to `168` | No-progress timeout; `0` disables the watchdog |
+| `youtube.max_concurrent` | `1` to `4` | Concurrent direct yt-dlp workers; default `2` |
+| `youtube.speed_limit` | `0` or MB/s | Per direct YouTube download; `0` is unlimited |
 
 Existing installations keep their configuration during installer updates. Missing keys are supplied by application defaults and saved when changed through the interface.
 
@@ -154,8 +187,10 @@ Existing installations keep their configuration during installer updates. Missin
 |---|---|
 | `/opt/download-manager` | Application and Python virtual environment |
 | `/opt/download-manager/config/downloads.db` | SQLite database |
+| `/opt/download-manager/config/youtube-cookies.txt` | Optional YouTube authentication cookies; mode `0600` |
 | `/etc/download-manager/config.yml` | Runtime configuration and integration secrets |
 | `/var/log/download-manager` | aria2/application logs |
+| `/opt/download-manager/tools/deno/deno` | Verified Deno runtime for optional direct YouTube downloads |
 
 Useful commands:
 
@@ -202,6 +237,7 @@ Back up `/etc/download-manager/config.yml` and `/opt/download-manager/config/dow
 - Webhook targets are checked to reduce SSRF risk.
 - Dependencies are locked and audited in CI; browser assets, including fonts, are served locally.
 - CORS is disabled by default. Configure explicit origins and trusted proxies when using a reverse proxy.
+- Imported YouTube cookies are account credentials. They stay server-side with mode `0600`; use a dedicated account and delete them when no longer required.
 - The service runs as `root` to support mounts and arbitrary configured destinations. Do not expose port `40320` directly to the public Internet; use a firewall and a properly configured HTTPS reverse proxy.
 
 ## Troubleshooting
@@ -216,13 +252,13 @@ If a destination is unavailable, verify the mount first and confirm that its pat
 
 ## Architecture
 
-Browser/PWA communicates with FastAPI over HTTP and authenticated WebSocket. FastAPI stores queue and account state in SQLite, delegates local transfers to aria2 RPC, and uses AllDebrid for debrid/torrent resolution. The frontend is framework-free Vanilla JS.
+Browser/PWA communicates with FastAPI over HTTP and authenticated WebSocket. FastAPI stores queue and account state in SQLite, delegates local transfers to aria2 RPC, and uses AllDebrid for debrid/torrent/streaming resolution. Optional direct YouTube transfers run in isolated yt-dlp subprocesses so analysis and post-processing do not block the queue loop. The frontend is framework-free Vanilla JS.
 
 This project is designed for a single self-hosted user. SQLite and the current service model are intentional for that scope.
 
 ## Résumé français
 
-Download Manager centralise les liens directs, magnets et fichiers `.torrent` dans un composeur unique responsive. Les sources collées ou déposées sont identifiées avant l’envoi et, à partir de deux éléments, un lot unique est créé automatiquement avec une progression globale et une seule notification finale. Un magnet ou fichier `.torrent` unique est également regroupé automatiquement lorsqu’il contient plusieurs fichiers. Quand la file est vide, la page propose les destinations favorites et récentes avec l’espace disque disponible ainsi que les dernières activités ; pendant un téléchargement, elle affiche un résumé global des transferts et de leur vitesse. La vue Historique regroupe les lots, propose des filtres rapides et permet de retirer plusieurs entrées sans supprimer les fichiers téléchargés. Les intégrations Plex/Jellyfin permettent enfin un rafraîchissement manuel ou automatique des bibliothèques lorsque toute la file est terminée.
+Download Manager centralise les liens directs, magnets, fichiers `.torrent` et URL YouTube dans un composeur unique responsive. Une vidéo, un Short, une playlist ou une chaîne YouTube peut être analysé puis filtré avant ajout ; plusieurs vidéos forment un lot unique avec une seule notification finale. Le mode AllDebrid prend en charge les flux et liens différés, tandis qu’un moteur direct yt-dlp facultatif propose une sortie MP4 compatible ou MKV enrichie. Les sources collées ou déposées sont identifiées avant l’envoi et, à partir de deux éléments, un lot unique est créé automatiquement. Un magnet ou fichier `.torrent` unique est également regroupé automatiquement lorsqu’il contient plusieurs fichiers. Quand la file est vide, la page propose les destinations favorites et récentes avec l’espace disque disponible ainsi que les dernières activités ; pendant un téléchargement, elle affiche un résumé global des transferts et de leur vitesse. La vue Historique regroupe les lots, propose des filtres rapides et permet de retirer plusieurs entrées sans supprimer les fichiers téléchargés. Les intégrations Plex/Jellyfin permettent enfin un rafraîchissement manuel ou automatique des bibliothèques lorsque toute la file est terminée.
 
 L’interface v2 devient le style par défaut avec une navigation latérale sur ordinateur, un affichage pleine largeur et une adaptation aux écrans ultralarges. L’ancien look v1 reste temporairement disponible dans les paramètres du compte comme solution de secours.
 

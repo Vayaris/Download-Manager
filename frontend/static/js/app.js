@@ -85,6 +85,7 @@ const STATUS_LABELS = {
   pending:     function() { return t("status_pending"); },
   submitting:  function() { return t("status_submitting"); },
   downloading: function() { return t("status_downloading"); },
+  postprocessing: function() { return t("status_postprocessing"); },
   paused:      function() { return t("status_paused"); },
   complete:    function() { return t("status_complete"); },
   error:       function() { return t("status_error"); },
@@ -174,6 +175,16 @@ function updateUnifiedSourceState() {
   label.textContent = count ? t("unified_add_count", { n: count }) : t("btn_add");
 }
 
+function resetUnifiedComposer() {
+  document.getElementById("links-input").value = "";
+  unifiedLinkSources = [];
+  unifiedTorrentFiles = [];
+  unifiedSourcesExpanded = false;
+  document.getElementById("unified-package-name").value = "";
+  renderUnifiedSources();
+}
+window.resetUnifiedComposer = resetUnifiedComposer;
+
 function renderUnifiedSources() {
   const links = unifiedLinkSources.map((value, index) => ({ kind: unifiedSourceType(value), value, index }));
   const files = unifiedTorrentFiles.map((file, index) => ({ kind: "torrent", file, index }));
@@ -253,13 +264,9 @@ async function addUnifiedSources() {
   button.disabled = true;
   button.classList.add("loading");
   try {
+    if (window.YouTubeUI && await window.YouTubeUI.maybeHandle(unifiedLinks(), unifiedTorrentFiles, destination)) return;
     const result = await preflightAndCommit(form);
-    textarea.value = "";
-    unifiedLinkSources = [];
-    unifiedTorrentFiles = [];
-    unifiedSourcesExpanded = false;
-    document.getElementById("unified-package-name").value = "";
-    renderUnifiedSources();
+    resetUnifiedComposer();
     const message = result.package_name
       ? t("batch_added", { n: result.added, name: result.package_name })
       : t("unified_added", { n: result.added });

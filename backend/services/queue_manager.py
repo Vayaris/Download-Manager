@@ -1,4 +1,5 @@
 import asyncio
+import json
 import sys
 import time
 import uuid
@@ -14,11 +15,14 @@ def log(msg):
 from config import get_config
 from database import db_session
 from services.aria2_service import aria2
-from services.alldebrid import alldebrid
+from services.alldebrid import AllDebridError, alldebrid
 from services.media_refresh import auto_refresh_recommended_libraries
 from services.diagnostics import record_event_nowait
 from services.duplicates import inferred_name, source_key
 from services.webhook import send_webhook
+from services.youtube_download import YouTubeDownloadService
+from services.youtube_setup import status as youtube_direct_status
+from services.youtube import canonical_video_url, youtube_video_id
 from services.queue_utils import (
     aria2_file_path as _aria2_file_path,
     file_matches_size as _file_matches_size,
@@ -33,6 +37,8 @@ from services.queue_utils import (
 class QueueManager:
     def __init__(self):
         self._task: Optional[asyncio.Task] = None
+        self._submission_tasks: dict[str, asyncio.Task] = {}
+        self.youtube_downloads = YouTubeDownloadService(self)
         self._ws_manager = None
         self._running = False
         self._last_torrent_check = 0
@@ -154,6 +160,17 @@ class QueueManager:
             await self._check_package_complete(db, row["package_id"], now)
 
     async def start(self):
+        # A service restart kills in-flight resolver tasks. Requeue them immediately.
+        async with db_session() as db:
+            await db.execute(
+                "UPDATE downloads SET status = 'pending', error_msg = 'Recovered after restart' "
+                "WHERE status IN ('submitting', 'postprocessing') AND aria2_gid IS NULL"
+            )
+            await db.execute(
+                "UPDATE downloads SET status = 'pending', speed = 0, error_msg = 'Recovered after restart' "
+                "WHERE engine = 'youtube' AND status = 'downloading'"
+            )
+            await db.commit()
         self._running = True
         self._health["running"] = True
         self._task = asyncio.create_task(self._loop())
@@ -167,6 +184,116 @@ class QueueManager:
                 await self._task
             except asyncio.CancelledError:
                 pass
+        tasks = list(self._submission_tasks.values())
+        for task in tasks:
+            task.cancel()
+        if tasks:
+            await asyncio.gather(*tasks, return_exceptions=True)
+        self._submission_tasks.clear()
+        await self.youtube_downloads.stop()
+
+    def _start_submission(self, item: dict, segments: int):
+        download_id = item["id"]
+        if download_id in self._submission_tasks:
+            return
+        task = asyncio.create_task(self._submit_to_aria2(item, segments))
+        self._submission_tasks[download_id] = task
+
+        def finished(done):
+            self._submission_tasks.pop(download_id, None)
+            if not done.cancelled() and done.exception():
+                self._record_error("submission_task", done.exception())
+
+        task.add_done_callback(finished)
+
+    async def _submit_to_aria2(self, item: dict, segments: int):
+        """Resolve one source without holding a SQLite connection or blocking the tick."""
+        try:
+            direct_url = await alldebrid.process_url(item["url"])
+            resolved_name = inferred_name(direct_url) or inferred_name(item["url"])
+            target_path = Path(item["destination"]) / resolved_name if resolved_name else None
+            now = datetime.now(timezone.utc).isoformat()
+            if target_path and target_path.is_file() and not item["overwrite_confirmed"]:
+                async with db_session() as db:
+                    await db.execute(
+                        """UPDATE downloads SET status = 'duplicate_pending', name = ?,
+                               target_path = ?, error_msg = 'A file with this name already exists', updated_at = ?
+                           WHERE id = ? AND status = 'submitting'""",
+                        (resolved_name, str(target_path), now, item["id"]),
+                    )
+                    await db.commit()
+                return
+
+            gid = await aria2.add_uri(direct_url, item["destination"], split=segments)
+            async with db_session() as db:
+                cursor = await db.execute(
+                    """UPDATE downloads SET aria2_gid = ?, status = 'downloading', name = ?,
+                           error_msg = NULL, updated_at = ? WHERE id = ? AND status = 'submitting'""",
+                    (gid, resolved_name or item["name"], now, item["id"]),
+                )
+                await db.commit()
+            if cursor.rowcount == 0:
+                try:
+                    await aria2.remove(gid)
+                except Exception:
+                    pass
+        except asyncio.CancelledError:
+            async with db_session() as db:
+                await db.execute(
+                    "UPDATE downloads SET status = 'pending', updated_at = ? WHERE id = ? AND status = 'submitting'",
+                    (datetime.now(timezone.utc).isoformat(), item["id"]),
+                )
+                await db.commit()
+            raise
+        except Exception as exc:
+            now = datetime.now(timezone.utc).isoformat()
+            async with db_session(row_factory=True) as db:
+                current = await (await db.execute(
+                    "SELECT status FROM downloads WHERE id = ?", (item["id"],)
+                )).fetchone()
+                if not current or current["status"] != "submitting":
+                    return
+                is_youtube = str(item.get("source_key") or "").startswith("youtube:")
+                permanent_alldebrid_error = (
+                    isinstance(exc, AllDebridError)
+                    and exc.code in {"LINK_HOST_NOT_SUPPORTED", "LINK_NOT_SUPPORTED"}
+                )
+                if is_youtube and permanent_alldebrid_error and youtube_direct_status()["ready"]:
+                    await db.execute(
+                        """UPDATE downloads SET engine = 'youtube', output_profile = 'mp4',
+                               status = 'pending', retry_count = 0,
+                               error_msg = 'AllDebrid unavailable; automatic direct fallback', updated_at = ?
+                           WHERE id = ? AND status = 'submitting' AND engine = 'aria2'""",
+                        (now, item["id"]),
+                    )
+                    await db.commit()
+                    return
+                retry_count = (item["retry_count"] or 0) + 1
+                max_retries = 1 if is_youtube and permanent_alldebrid_error else (item["max_retries"] or 5)
+                error_detail = str(exc)
+                if is_youtube and permanent_alldebrid_error:
+                    error_detail += ". Install the local direct YouTube tools in Settings to enable automatic fallback"
+                if retry_count >= max_retries:
+                    await db.execute(
+                        """UPDATE downloads SET status = 'failed', error_msg = ?, retry_count = ?, updated_at = ?
+                           WHERE id = ? AND status = 'submitting'""",
+                        (f"Max retries ({max_retries}) reached. Last error: {error_detail[:400]}", retry_count, now, item["id"]),
+                    )
+                    await self._move_to_history(db, item["id"], now)
+                    if not item["package_id"]:
+                        await db.execute("DELETE FROM downloads WHERE id = ? AND status = 'failed'", (item["id"],))
+                        asyncio.create_task(send_webhook("download_failed", {
+                            "name": item["name"] or item["url"],
+                            "destination": item["destination"],
+                            "error_msg": error_detail[:400], "status": "failed",
+                        }))
+                else:
+                    await db.execute(
+                        """UPDATE downloads SET status = 'error', error_msg = ?, retry_count = ?, updated_at = ?
+                           WHERE id = ? AND status = 'submitting'""",
+                        (f"Retry {retry_count}/{max_retries} - {error_detail[:400]}", retry_count, now, item["id"]),
+                    )
+                await db.commit()
 
     # ------------------------------------------------------------------ #
     #  Main worker loop                                                    #
@@ -353,22 +480,28 @@ class QueueManager:
 
             await db.commit()
 
-            # Recover items left in submitting state after a crash/restart.
-            await db.execute(
-                """UPDATE downloads SET
-                       status = 'pending',
-                       error_msg = 'Recovered stale submission',
-                       updated_at = ?
+            # Recover abandoned submissions, but never reset a live resolver task.
+            stale_rows = await (await db.execute(
+                """SELECT id FROM downloads
                    WHERE status = 'submitting'
-                   AND datetime(updated_at) <= datetime('now', '-5 minutes')""",
-                (now,),
-            )
+                   AND datetime(updated_at) <= datetime('now', '-5 minutes')"""
+            )).fetchall()
+            live_submissions = set(self._submission_tasks) | set(self.youtube_downloads.tasks)
+            for stale in stale_rows:
+                if stale["id"] in live_submissions:
+                    continue
+                await db.execute(
+                    """UPDATE downloads SET status = 'pending',
+                           error_msg = 'Recovered stale submission', updated_at = ?
+                       WHERE id = ? AND status = 'submitting'""",
+                    (now, stale["id"]),
+                )
             await db.commit()
 
             # ---- Submit new downloads if slots are available ---- #
             cursor = await db.execute(
                 """SELECT COUNT(*) FROM downloads
-                   WHERE status = 'submitting'
+                   WHERE status IN ('submitting', 'downloading', 'postprocessing')
                    OR (aria2_gid IS NOT NULL AND status NOT IN ('complete', 'failed'))"""
             )
             (active_count,) = await cursor.fetchone()
@@ -385,12 +518,17 @@ class QueueManager:
                        WHERE status = 'pending' AND aria2_gid IS NULL
                        ORDER BY position ASC, created_at ASC
                        LIMIT ?""",
-                    (slots,),
+                    (min(100, max(slots * 4, slots)),),
                 )
                 pending = await cursor.fetchall()
 
                 segments = config["downloads"].get("download_segments", 1)
+                started = 0
                 for item in pending:
+                    if started >= slots:
+                        break
+                    if item["engine"] == "youtube" and not self.youtube_downloads.can_start():
+                        continue
                     cursor = await db.execute(
                         """UPDATE downloads SET status = 'submitting', updated_at = ?
                            WHERE id = ? AND status = 'pending' AND aria2_gid IS NULL""",
@@ -399,71 +537,17 @@ class QueueManager:
                     if cursor.rowcount == 0:
                         continue
                     await db.commit()
-
-                    try:
-                        direct_url = await alldebrid.process_url(item["url"])
-                        resolved_name = inferred_name(direct_url) or inferred_name(item["url"])
-                        target_path = Path(item["destination"]) / resolved_name if resolved_name else None
-                        if target_path and target_path.is_file() and not item["overwrite_confirmed"]:
+                    started += 1
+                    if item["engine"] == "youtube":
+                        if not self.youtube_downloads.start(dict(item)):
                             await db.execute(
-                                """UPDATE downloads SET status = 'duplicate_pending', name = ?,
-                                   target_path = ?, error_msg = 'A file with this name already exists', updated_at = ?
-                                   WHERE id = ? AND status = 'submitting'""",
-                                (resolved_name, str(target_path), now, item["id"]),
+                                "UPDATE downloads SET status = 'pending' WHERE id = ? AND status = 'submitting'",
+                                (item["id"],),
                             )
                             await db.commit()
-                            continue
-                        gid = await aria2.add_uri(direct_url, item["destination"], split=segments)
-                        cursor = await db.execute(
-                            "UPDATE downloads SET aria2_gid = ?, status = 'downloading', error_msg = NULL, updated_at = ? WHERE id = ? AND status = 'submitting'",
-                            (gid, now, item["id"]),
-                        )
-                        if cursor.rowcount == 0:
-                            # User action changed the row while submitting; cancel the aria2 download.
-                            try:
-                                await aria2.remove(gid)
-                            except Exception:
-                                pass
-                            continue
-                        await db.commit()
-                    except Exception as e:
-                        # Only handle error if still submitting (avoid overwriting a user action)
-                        cursor_check = await db.execute(
-                            "SELECT status FROM downloads WHERE id = ?", (item["id"],)
-                        )
-                        row_check = await cursor_check.fetchone()
-                        if row_check and row_check["status"] != "submitting":
-                            continue
-
-                        retry_count = (item["retry_count"] or 0) + 1
-                        max_retries = item["max_retries"] or 5
-
-                        if retry_count >= max_retries:
-                            await db.execute(
-                                """UPDATE downloads SET status = 'failed',
-                                       error_msg = ?, retry_count = ?, updated_at = ?
-                                   WHERE id = ? AND status = 'submitting'""",
-                                (f"Max retries ({max_retries}) reached. Last error: {str(e)[:400]}",
-                                 retry_count, now, item["id"]),
-                            )
-                            await self._move_to_history(db, item["id"], now)
-                            if not item["package_id"]:
-                                await db.execute("DELETE FROM downloads WHERE id = ? AND status = 'failed'", (item["id"],))
-                            if not item["package_id"]:
-                                asyncio.create_task(send_webhook("download_failed", {
-                                    "name": item["name"] or item["url"],
-                                    "destination": item["destination"],
-                                    "error_msg": str(e)[:400], "status": "failed",
-                                }))
-                        else:
-                            await db.execute(
-                                """UPDATE downloads SET status = 'error',
-                                       error_msg = ?, retry_count = ?, updated_at = ?
-                                   WHERE id = ? AND status = 'submitting'""",
-                                (f"Retry {retry_count}/{max_retries} - {str(e)[:400]}",
-                                 retry_count, now, item["id"]),
-                            )
-                        await db.commit()
+                            started -= 1
+                    else:
+                        self._start_submission(dict(item), segments)
 
             # ---- Auto-retry errored downloads after a delay ---- #
             retry_delay = max(0, min(3600, int(config["downloads"].get("retry_delay_seconds", 5) or 0)))
@@ -840,6 +924,70 @@ class QueueManager:
         for pkg in pkgs:
             await self._check_package_complete(db, pkg["id"], now)
 
+    async def finalize_youtube(self, item: dict, event: dict):
+        path = Path(str(event.get("path") or ""))
+        try:
+            path.resolve().relative_to(Path(item["destination"]).resolve())
+        except (ValueError, OSError):
+            await self.fail_youtube(item, "YouTube worker returned a file outside the destination")
+            return
+        if not path.is_file():
+            await self.fail_youtube(item, "YouTube final file is missing")
+            return
+        now = datetime.now(timezone.utc).isoformat()
+        async with db_session(row_factory=True) as db:
+            cursor = await db.execute(
+                """UPDATE downloads SET name = ?, status = 'complete', progress = 100, speed = 0,
+                       size = ?, downloaded = ?, error_msg = NULL, updated_at = ?, last_progress_at = ?
+                   WHERE id = ? AND engine = 'youtube' AND status IN ('submitting', 'downloading', 'postprocessing')""",
+                (path.name, path.stat().st_size, path.stat().st_size, now, now, item["id"]),
+            )
+            if cursor.rowcount == 0:
+                return
+            await self._move_to_history(db, item["id"], now)
+            if not item["package_id"]:
+                await db.execute("DELETE FROM downloads WHERE id = ?", (item["id"],))
+                asyncio.create_task(send_webhook("download_complete", {
+                    "name": path.name, "destination": item["destination"],
+                    "size": path.stat().st_size, "status": "complete",
+                }))
+            else:
+                await self._check_package_complete(db, item["package_id"], now)
+            await db.commit()
+
+    async def fail_youtube(self, item: dict, message: str):
+        now = datetime.now(timezone.utc).isoformat()
+        async with db_session(row_factory=True) as db:
+            current = await (await db.execute(
+                "SELECT status FROM downloads WHERE id = ?", (item["id"],)
+            )).fetchone()
+            if not current or current["status"] in ("paused", "complete", "failed"):
+                return
+            retry_count = (item["retry_count"] or 0) + 1
+            max_retries = item["max_retries"] or 3
+            if retry_count >= max_retries:
+                await db.execute(
+                    """UPDATE downloads SET status = 'failed', speed = 0, error_msg = ?, retry_count = ?, updated_at = ?
+                       WHERE id = ? AND engine = 'youtube'""",
+                    (f"Max retries ({max_retries}) reached. Last error: {message[:400]}", retry_count, now, item["id"]),
+                )
+                await self._move_to_history(db, item["id"], now)
+                if not item["package_id"]:
+                    await db.execute("DELETE FROM downloads WHERE id = ?", (item["id"],))
+                    asyncio.create_task(send_webhook("download_failed", {
+                        "name": item["name"] or item["url"], "destination": item["destination"],
+                        "error_msg": message[:400], "status": "failed",
+                    }))
+                else:
+                    await self._check_package_complete(db, item["package_id"], now)
+            else:
+                await db.execute(
+                    """UPDATE downloads SET status = 'error', speed = 0, error_msg = ?, retry_count = ?, updated_at = ?
+                       WHERE id = ? AND engine = 'youtube'""",
+                    (f"Retry {retry_count}/{max_retries} - {message[:400]}", retry_count, now, item["id"]),
+                )
+            await db.commit()
+
     # ------------------------------------------------------------------ #
     #  Public API                                                          #
     # ------------------------------------------------------------------ #
@@ -863,12 +1011,17 @@ class QueueManager:
                 if not url or (url in seen and not allow_duplicates) or (skip_nfo and _looks_like_nfo(url)):
                     continue
                 seen.add(url)
+                video_id = youtube_video_id(url)
+                item_source_key = f"youtube:{video_id}" if video_id else source_key("url", url)
+                stored_url = canonical_video_url(video_id) if video_id else url
 
                 # Skip if this URL is already in the active queue
                 if not allow_duplicates:
                     cursor = await db.execute(
-                        "SELECT id FROM downloads WHERE url = ? AND status IN ('pending', 'submitting', 'downloading', 'debrid', 'paused', 'error', 'duplicate_pending')",
-                        (url,),
+                        """SELECT id FROM downloads
+                           WHERE (url = ? OR source_key = ?)
+                           AND status IN ('pending', 'submitting', 'downloading', 'postprocessing', 'debrid', 'paused', 'error', 'duplicate_pending')""",
+                        (stored_url, item_source_key),
                     )
                     if await cursor.fetchone():
                         continue
@@ -877,14 +1030,58 @@ class QueueManager:
                 await db.execute(
                     """INSERT INTO downloads
                        (id, url, status, destination, created_at, updated_at, position,
-                        package_id, max_retries, last_progress_at, source_key)
-                       VALUES (?, ?, 'pending', ?, ?, ?, ?, ?, ?, ?, ?)""",
-                    (dl_id, url, destination, now, now, pos, package_id, max_retries, now, source_key("url", url)),
+                        package_id, max_retries, last_progress_at, source_key,
+                        engine, source_id, output_profile)
+                       VALUES (?, ?, 'pending', ?, ?, ?, ?, ?, ?, ?, ?, 'aria2', ?, ?)""",
+                    (
+                        dl_id, stored_url, destination, now, now, pos, package_id,
+                        max_retries, now, item_source_key, video_id or None,
+                        "alldebrid_mp4" if video_id else None,
+                    ),
                 )
                 ids.append(dl_id)
                 pos += 1
             await db.commit()
 
+        return ids
+
+    async def add_youtube_downloads(
+        self, items: list[dict], destination: str, *, engine: str,
+        output_profile: str = "mp4", package_id: str | None = None,
+    ) -> list[str]:
+        now = datetime.now(timezone.utc).isoformat()
+        ids = []
+        async with db_session(row_factory=True) as db:
+            (position,) = await (await db.execute(
+                "SELECT COALESCE(MAX(position), 0) + 1 FROM downloads"
+            )).fetchone()
+            max_retries = max(0, min(20, int(get_config()["downloads"].get("max_retries", 3) or 0)))
+            for item in items:
+                video_id = str(item.get("id") or "")
+                key = f"youtube:{video_id}"
+                exists = await (await db.execute(
+                    "SELECT 1 FROM downloads WHERE source_key = ? LIMIT 1", (key,)
+                )).fetchone()
+                if exists:
+                    continue
+                dl_id = str(uuid.uuid4())
+                await db.execute(
+                    """INSERT INTO downloads
+                       (id, url, name, status, destination, created_at, updated_at, position,
+                        package_id, max_retries, last_progress_at, source_key, engine,
+                        source_id, output_profile, source_metadata)
+                       VALUES (?, ?, ?, 'pending', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                    (
+                        dl_id, item["url"], item.get("title") or video_id, destination,
+                        now, now, position, package_id, max_retries, now, key,
+                        "youtube" if engine == "youtube" else "aria2", video_id,
+                        output_profile if engine == "youtube" else "alldebrid_mp4",
+                        json.dumps(item, ensure_ascii=True),
+                    ),
+                )
+                ids.append(dl_id)
+                position += 1
+            await db.commit()
         return ids
 
     async def create_package(
@@ -942,19 +1139,21 @@ class QueueManager:
 
     async def pause_download(self, download_id: str):
         async with db_session(row_factory=True) as db:
-            cursor = await db.execute(
-                "SELECT aria2_gid, status FROM downloads WHERE id = ?", (download_id,)
-            )
-            row = await cursor.fetchone()
-            if row and row["status"] == "downloading" and row["aria2_gid"]:
-                try:
-                    await aria2.pause(row["aria2_gid"])
-                except Exception:
-                    pass
+            row = await (await db.execute(
+                "SELECT aria2_gid, status, engine FROM downloads WHERE id = ?", (download_id,)
+            )).fetchone()
+        if row and row["engine"] == "youtube":
+            await self.youtube_downloads.cancel(download_id)
+        elif row and row["status"] == "downloading" and row["aria2_gid"]:
+            try:
+                await aria2.pause(row["aria2_gid"])
+            except Exception:
+                pass
+        async with db_session() as db:
             now = datetime.now(timezone.utc).isoformat()
             await db.execute(
                 """UPDATE downloads SET status = 'paused', speed = 0, updated_at = ?
-                   WHERE id = ? AND status IN ('pending', 'submitting', 'downloading', 'error')""",
+                   WHERE id = ? AND status IN ('pending', 'submitting', 'downloading', 'postprocessing', 'error')""",
                 (now, download_id),
             )
             await db.commit()
@@ -994,12 +1193,23 @@ class QueueManager:
 
     async def remove_download(self, download_id: str):
         async with db_session(row_factory=True) as db:
-            cursor = await db.execute(
-                "SELECT aria2_gid FROM downloads WHERE id = ?", (download_id,)
-            )
-            row = await cursor.fetchone()
-            if row and row["aria2_gid"]:
-                await aria2.remove(row["aria2_gid"])
+            row = await (await db.execute(
+                "SELECT aria2_gid, engine, source_id, destination FROM downloads WHERE id = ?", (download_id,)
+            )).fetchone()
+        if row and row["engine"] == "youtube":
+            await self.youtube_downloads.cancel(download_id)
+            source_id = str(row["source_id"] or "")
+            destination = Path(row["destination"])
+            if source_id and destination.is_dir():
+                for partial in destination.glob("*.part*"):
+                    if f"[{source_id}]" in partial.name:
+                        try:
+                            partial.unlink()
+                        except OSError:
+                            pass
+        elif row and row["aria2_gid"]:
+            await aria2.remove(row["aria2_gid"])
+        async with db_session() as db:
             await db.execute("DELETE FROM downloads WHERE id = ?", (download_id,))
             await db.commit()
 
@@ -1022,6 +1232,7 @@ class QueueManager:
             await self.resume_download(row["id"])
 
     async def remove_all(self):
+        await self.youtube_downloads.stop()
         async with db_session(row_factory=True) as db:
             cursor = await db.execute("SELECT aria2_gid FROM downloads WHERE aria2_gid IS NOT NULL")
             rows = await cursor.fetchall()
@@ -1061,12 +1272,15 @@ class QueueManager:
     async def remove_package(self, package_id: str):
         async with db_session(row_factory=True) as db:
             cursor = await db.execute(
-                "SELECT id, aria2_gid FROM downloads WHERE package_id = ?", (package_id,)
+                "SELECT id, aria2_gid, engine FROM downloads WHERE package_id = ?", (package_id,)
             )
             rows = await cursor.fetchall()
-            for row in rows:
-                if row["aria2_gid"]:
-                    await aria2.remove(row["aria2_gid"])
+        for row in rows:
+            if row["engine"] == "youtube":
+                await self.youtube_downloads.cancel(row["id"])
+            elif row["aria2_gid"]:
+                await aria2.remove(row["aria2_gid"])
+        async with db_session() as db:
             await db.execute("DELETE FROM downloads WHERE package_id = ?", (package_id,))
             await db.execute("DELETE FROM packages WHERE id = ?", (package_id,))
             await db.commit()

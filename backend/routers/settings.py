@@ -8,7 +8,7 @@ import subprocess
 from datetime import datetime, timezone
 from pathlib import Path
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Request
+from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, Query, Request, UploadFile
 from urllib.parse import urlparse
 
 from models import SettingsUpdate, StoragePathRequest, MediaSettingsRequest, SignalCheckRequest, SignalDeployRequest, SignalRegisterRequest, SignalVerifyRequest, SignalResetRequest
@@ -32,6 +32,8 @@ from services.update_service import (
     UpdateError, check_latest, get_current_version, read_update_status,
     start_latest_update,
 )
+from services.youtube_setup import start_install as start_youtube_install, status as youtube_status
+from services.youtube_cookies import cookie_status, remove_cookies, save_cookies
 from utils import validate_destination
 
 router = APIRouter()
@@ -160,6 +162,9 @@ async def get_settings(_=Depends(get_current_user)):
         "webhook_format": wh.get("format", "generic"),
         "webhook_events": wh.get("events", []),
         "signal_registered": cfg.get("signal_registered", False),
+        "youtube_direct_enabled": cfg.get("youtube", {}).get("direct_enabled", False),
+        "youtube_max_concurrent": cfg.get("youtube", {}).get("max_concurrent", 2),
+        "youtube_speed_limit": cfg.get("youtube", {}).get("speed_limit", 0),
     }
 
 
@@ -173,6 +178,8 @@ async def update_settings(body: SettingsUpdate, _=Depends(get_current_user)):
         ("max_retries", body.max_retries, 0, 20),
         ("retry_delay_seconds", body.retry_delay_seconds, 0, 3600),
         ("stalled_timeout_hours", body.stalled_timeout_hours, 0, 168),
+        ("youtube_max_concurrent", body.youtube_max_concurrent, 1, 4),
+        ("youtube_speed_limit", body.youtube_speed_limit, 0, 1_000_000),
     )
     for name, value, minimum, maximum in ranges:
         if value is not None and not minimum <= value <= maximum:
@@ -181,6 +188,8 @@ async def update_settings(body: SettingsUpdate, _=Depends(get_current_user)):
         raise HTTPException(status_code=400, detail="AllDebrid API key is too long")
     if body.default_destination is not None:
         validate_destination(body.default_destination)
+    if body.youtube_direct_enabled and not youtube_status()["ready"]:
+        raise HTTPException(status_code=400, detail="Install the YouTube direct dependencies first")
 
     allowed_formats = {"generic", "discord", "slack", "telegram", "gotify", "ntfy", "signal"}
     allowed_events = {"download_complete", "download_failed", "package_complete"}
@@ -210,6 +219,7 @@ async def update_settings(body: SettingsUpdate, _=Depends(get_current_user)):
         downloads_cfg = cfg.setdefault("downloads", {})
         alldebrid_cfg = cfg.setdefault("alldebrid", {})
         webhooks_cfg = cfg.setdefault("webhooks", {"enabled": False, "url": "", "format": "generic", "events": []})
+        youtube_cfg = cfg.setdefault("youtube", {"direct_enabled": False, "max_concurrent": 2, "speed_limit": 0})
         updates = {
             "simultaneous": body.simultaneous_downloads,
             "default_destination": body.default_destination,
@@ -235,6 +245,12 @@ async def update_settings(body: SettingsUpdate, _=Depends(get_current_user)):
             webhooks_cfg["format"] = body.webhook_format
         if body.webhook_events is not None:
             webhooks_cfg["events"] = list(dict.fromkeys(body.webhook_events))
+        if body.youtube_direct_enabled is not None:
+            youtube_cfg["direct_enabled"] = body.youtube_direct_enabled
+        if body.youtube_max_concurrent is not None:
+            youtube_cfg["max_concurrent"] = body.youtube_max_concurrent
+        if body.youtube_speed_limit is not None:
+            youtube_cfg["speed_limit"] = body.youtube_speed_limit
 
     cfg, _ = update_config(mutate)
     response = {"status": "saved"}
@@ -263,6 +279,44 @@ async def update_settings(body: SettingsUpdate, _=Depends(get_current_user)):
                 "error": type(exc).__name__,
             }
     return response
+
+
+@router.get("/youtube/status")
+async def get_youtube_status(_=Depends(get_current_user)):
+    cfg = get_config()
+    return {
+        **youtube_status(),
+        "direct_enabled": bool(cfg.get("youtube", {}).get("direct_enabled", False)),
+        "cookies": cookie_status(),
+        "alldebrid_enabled": bool(
+            cfg.get("alldebrid", {}).get("enabled")
+            and cfg.get("alldebrid", {}).get("api_key")
+        ),
+    }
+
+
+@router.post("/youtube/install")
+async def install_youtube_dependencies(_=Depends(get_current_user)):
+    return start_youtube_install()
+
+
+@router.post("/youtube/cookies")
+async def upload_youtube_cookies(
+    file: UploadFile = File(...),
+    _=Depends(get_current_user),
+):
+    try:
+        content = await file.read(1024 * 1024 + 1)
+        return {"status": "saved", "cookies": save_cookies(content)}
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    finally:
+        await file.close()
+
+
+@router.delete("/youtube/cookies")
+async def delete_youtube_cookies(_=Depends(get_current_user)):
+    return {"status": "removed", "cookies": remove_cookies()}
 
 
 @router.post("/test-alldebrid")

@@ -215,6 +215,11 @@ jellyfin:
 
 media:
   active: "plex"
+
+youtube:
+  direct_enabled: false
+  max_concurrent: 2
+  speed_limit: 0
 EOF
     success "Configuration created: ${CONFIG_DIR}/config.yml"
 fi

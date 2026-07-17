@@ -76,6 +76,144 @@ async function saveAllDebrid() {
   }
 }
 
+// ---- YouTube direct mode ----
+
+function setYouTubeStatus(state, text) {
+  const badge = document.getElementById("youtube-status-badge");
+  const label = document.getElementById("youtube-status-text");
+  if (!badge || !label) return;
+  badge.className = `conn-badge ${state}`;
+  label.textContent = text;
+}
+
+function renderYouTubeStatus(status) {
+  const panel = document.getElementById("youtube-dependencies");
+  const install = document.getElementById("youtube-install-btn");
+  if (!panel || !install) return;
+  const dependencies = [
+    `yt-dlp: ${status.yt_dlp?.available ? status.yt_dlp.version : t("settings_youtube_missing")}`,
+    `ffmpeg: ${status.ffmpeg?.available ? t("settings_youtube_available") : t("settings_youtube_missing")}`,
+    `Deno: ${status.deno?.available ? t("settings_youtube_available") : t("settings_youtube_missing")}`,
+  ];
+  panel.textContent = status.installing
+    ? t("settings_youtube_installing")
+    : (status.error ? `${t("settings_error")}: ${status.error}` : dependencies.join(" · "));
+  panel.dataset.state = status.ready ? "ok" : (status.error ? "error" : "warning");
+  install.disabled = !!status.installing;
+  install.classList.toggle("hidden", !!status.ready);
+  setYouTubeStatus(
+    status.ready ? "ok" : (status.installing ? "checking" : "unknown"),
+    status.ready ? t("settings_youtube_ready") : (status.installing ? t("settings_youtube_installing_short") : t("settings_youtube_optional")),
+  );
+
+  const cookiePanel = document.getElementById("youtube-cookies-status");
+  const deleteButton = document.getElementById("youtube-cookies-delete");
+  const configured = status.cookies?.configured === true;
+  if (cookiePanel) {
+    let updated = "";
+    if (configured && status.cookies.updated_at) {
+      const date = new Date(status.cookies.updated_at);
+      if (!Number.isNaN(date.getTime())) updated = date.toLocaleString(getLang());
+    }
+    cookiePanel.dataset.state = configured ? "ok" : "warning";
+    cookiePanel.textContent = configured
+      ? t("settings_youtube_cookies_configured", {
+          count: status.cookies.count || 0,
+          date: updated || t("settings_youtube_cookies_date_unknown"),
+        })
+      : t("settings_youtube_cookies_missing");
+  }
+  if (deleteButton) deleteButton.classList.toggle("hidden", !configured);
+}
+
+async function loadYouTubeStatus() {
+  try {
+    const status = await API.get("/api/settings/youtube/status");
+    renderYouTubeStatus(status);
+    return status;
+  } catch (error) {
+    setYouTubeStatus("error", t("settings_error"));
+    const panel = document.getElementById("youtube-dependencies");
+    if (panel) {
+      panel.dataset.state = "error";
+      panel.textContent = `${t("settings_error")}: ${error.message}`;
+    }
+    return null;
+  }
+}
+
+async function installYouTubeDependencies() {
+  if (!confirm(t("settings_youtube_install_confirm"))) return;
+  try {
+    let status = await API.post("/api/settings/youtube/install", {});
+    renderYouTubeStatus(status);
+    while (status.installing) {
+      await new Promise((resolve) => setTimeout(resolve, 2000));
+      status = await API.get("/api/settings/youtube/status");
+      renderYouTubeStatus(status);
+    }
+    showToast(status.ready ? t("settings_youtube_install_ok") : `${t("settings_error")}: ${status.error || t("settings_youtube_install_failed")}`, status.ready ? "ok" : "error");
+  } catch (error) {
+    showToast(t("error_prefix") + error.message, "error");
+    await loadYouTubeStatus();
+  }
+}
+
+async function uploadYouTubeCookies() {
+  const input = document.getElementById("youtube-cookies-file");
+  const file = input?.files?.[0];
+  if (!file) {
+    showToast(t("settings_youtube_cookies_choose"), "error");
+    return;
+  }
+  const form = new FormData();
+  form.append("file", file, file.name);
+  try {
+    const response = await fetch("/api/settings/youtube/cookies", {
+      method: "POST",
+      credentials: "same-origin",
+      body: form,
+    });
+    const result = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(result.detail || t("settings_youtube_cookies_import_failed"));
+    input.value = "";
+    await loadYouTubeStatus();
+    showToast(t("settings_youtube_cookies_imported"), "ok");
+  } catch (error) {
+    showToast(t("error_prefix") + error.message, "error");
+  }
+}
+
+async function deleteYouTubeCookies() {
+  if (!confirm(t("settings_youtube_cookies_delete_confirm"))) return;
+  try {
+    await API.del("/api/settings/youtube/cookies");
+    const input = document.getElementById("youtube-cookies-file");
+    if (input) input.value = "";
+    await loadYouTubeStatus();
+    showToast(t("settings_youtube_cookies_deleted"), "ok");
+  } catch (error) {
+    showToast(t("error_prefix") + error.message, "error");
+  }
+}
+
+async function saveYouTubeSettings() {
+  const concurrent = Math.min(4, Math.max(1, parseInt(document.getElementById("youtube-concurrency").value) || 2));
+  const speed = Math.max(0, parseInt(document.getElementById("youtube-speed-limit").value) || 0);
+  document.getElementById("youtube-concurrency").value = concurrent;
+  document.getElementById("youtube-speed-limit").value = speed;
+  try {
+    await API.put("/api/settings/", {
+      youtube_direct_enabled: document.getElementById("youtube-direct-enabled").checked,
+      youtube_max_concurrent: concurrent,
+      youtube_speed_limit: speed,
+    });
+    showToast(t("settings_youtube_saved"), "ok");
+  } catch (error) {
+    showToast(t("error_prefix") + error.message, "error");
+  }
+}
+
 // ---- Other settings ----
 
 async function saveDownloadSettings() {
@@ -914,6 +1052,9 @@ async function saveSettings() {
     webhook_url: document.getElementById("webhook-url").value.trim() || undefined,
     webhook_format: document.getElementById("webhook-format").value,
     webhook_events: events,
+    youtube_direct_enabled: document.getElementById("youtube-direct-enabled").checked,
+    youtube_max_concurrent: Math.min(4, Math.max(1, parseInt(document.getElementById("youtube-concurrency").value) || 2)),
+    youtube_speed_limit: Math.max(0, parseInt(document.getElementById("youtube-speed-limit").value) || 0),
   };
 
   Object.keys(payload).forEach((k) => payload[k] === undefined && delete payload[k]);
@@ -1314,9 +1455,13 @@ async function bootSettings() {
     document.getElementById("retry-delay-input").value = cfg.retry_delay_seconds ?? 5;
     document.getElementById("stalled-timeout-input").value = cfg.stalled_timeout_hours ?? 3;
     document.getElementById("skip-nfo-files").checked = cfg.skip_nfo_files !== false;
+    document.getElementById("youtube-direct-enabled").checked = cfg.youtube_direct_enabled === true;
+    document.getElementById("youtube-concurrency").value = cfg.youtube_max_concurrent || 2;
+    document.getElementById("youtube-speed-limit").value = cfg.youtube_speed_limit || 0;
 
     await checkAllDebridStatus();
     await refreshAllDebridHosts();
+    await loadYouTubeStatus();
 
     // Load current version
     try {
@@ -1397,6 +1542,7 @@ function diagnosticsStatusLabel(status) {
     pending: "diagnostics_status_pending",
     submitting: "diagnostics_status_submitting",
     downloading: "diagnostics_status_downloading",
+    postprocessing: "status_postprocessing",
     paused: "diagnostics_status_paused",
     error: "diagnostics_status_error",
     failed: "diagnostics_status_failed",

@@ -66,6 +66,11 @@ DEFAULT_CONFIG = {
     },
     "media": {
         "active": "plex"
+    },
+    "youtube": {
+        "direct_enabled": False,
+        "max_concurrent": 2,
+        "speed_limit": 0
     }
 }
 

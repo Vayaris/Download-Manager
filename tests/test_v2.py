@@ -1,4 +1,5 @@
 import asyncio
+import os
 import sys
 import tempfile
 import unittest
@@ -9,6 +10,10 @@ from unittest.mock import patch
 from fastapi import HTTPException, Response
 
 
+if "database" not in sys.modules:
+    TEST_ROOT = tempfile.TemporaryDirectory()
+    os.environ["DM_DB"] = str(Path(TEST_ROOT.name) / "downloads.db")
+    os.environ["DM_CONFIG"] = str(Path(TEST_ROOT.name) / "config.yml")
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "backend"))
 
 import database
@@ -21,6 +26,8 @@ from main import _cross_origin_cookie_request, _normalized_origin
 
 class V2FoundationTests(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
+        if database.DB_PATH == Path("/opt/download-manager/config/downloads.db"):
+            self.fail("Refusing to run persistence tests against the production database")
         if database.DB_PATH.exists():
             database.DB_PATH.unlink()
         await database.init_db()

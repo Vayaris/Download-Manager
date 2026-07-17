@@ -55,6 +55,23 @@ class SettingsUpdate(BaseModel):
     webhook_url: Optional[str] = None
     webhook_format: Optional[str] = None
     webhook_events: Optional[List[str]] = None
+    youtube_direct_enabled: Optional[bool] = None
+    youtube_max_concurrent: Optional[int] = None
+    youtube_speed_limit: Optional[int] = None
+
+
+class YouTubeAnalyzeRequest(BaseModel):
+    url: str = Field(min_length=1, max_length=2048)
+    content_filter: Literal["videos", "shorts", "both"] = "both"
+    expand_playlist: bool = True
+
+
+class YouTubeSubmitRequest(BaseModel):
+    selected_ids: List[str] = Field(min_length=1, max_length=500)
+    destination: str = Field(min_length=1, max_length=4096)
+    engine: Literal["alldebrid", "youtube"] = "alldebrid"
+    output_profile: Literal["mp4", "mkv_multi"] = "mp4"
+    package_name: str = Field(default="", max_length=160)
 
 
 class LoginRequest(BaseModel):

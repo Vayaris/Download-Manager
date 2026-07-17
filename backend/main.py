@@ -16,7 +16,7 @@ from config import get_config
 from database import init_db
 from services.queue_manager import QueueManager
 from services.diagnostics import record_event_nowait
-from routers import downloads, settings, filebrowser, torrents, smb as smb_router
+from routers import downloads, settings, filebrowser, torrents, youtube, smb as smb_router
 from routers import auth as auth_router
 
 BASE_DIR = Path(__file__).parent
@@ -170,6 +170,7 @@ app.include_router(settings.router,  prefix="/api/settings",  tags=["settings"])
 app.include_router(filebrowser.router, prefix="/api/files",   tags=["files"])
 app.include_router(auth_router.router, prefix="/api/auth",    tags=["auth"])
 app.include_router(torrents.router,    prefix="/api/torrents", tags=["torrents"])
+app.include_router(youtube.router,     prefix="/api/youtube",  tags=["youtube"])
 app.include_router(smb_router.router,  prefix="/api/smb",      tags=["smb"])
 
 app.mount("/static", StaticFiles(directory=str(FRONTEND_DIR / "static")), name="static")

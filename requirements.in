@@ -4,6 +4,7 @@ bcrypt<5
 defusedxml
 fastapi
 httpx
+imageio-ffmpeg==0.6.0
 passlib[bcrypt]
 pyotp
 PyJWT[crypto]
@@ -11,3 +12,4 @@ python-multipart
 pyyaml
 qrcode[pil]
 uvicorn[standard]
+yt-dlp[default]==2026.7.4

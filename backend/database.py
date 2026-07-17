@@ -61,7 +61,11 @@ async def init_db():
                 last_progress_at TEXT,
                 source_key TEXT,
                 target_path TEXT,
-                overwrite_confirmed INTEGER DEFAULT 0
+                overwrite_confirmed INTEGER DEFAULT 0,
+                engine TEXT NOT NULL DEFAULT 'aria2',
+                source_id TEXT,
+                output_profile TEXT,
+                source_metadata TEXT
             )
         """)
 
@@ -209,6 +213,14 @@ async def init_db():
             await db.execute("ALTER TABLE downloads ADD COLUMN target_path TEXT")
         if "overwrite_confirmed" not in columns:
             await db.execute("ALTER TABLE downloads ADD COLUMN overwrite_confirmed INTEGER DEFAULT 0")
+        if "engine" not in columns:
+            await db.execute("ALTER TABLE downloads ADD COLUMN engine TEXT NOT NULL DEFAULT 'aria2'")
+        if "source_id" not in columns:
+            await db.execute("ALTER TABLE downloads ADD COLUMN source_id TEXT")
+        if "output_profile" not in columns:
+            await db.execute("ALTER TABLE downloads ADD COLUMN output_profile TEXT")
+        if "source_metadata" not in columns:
+            await db.execute("ALTER TABLE downloads ADD COLUMN source_metadata TEXT")
 
         history_columns = [row[1] for row in await (await db.execute("PRAGMA table_info(history)")).fetchall()]
         if "source_key" not in history_columns:
@@ -243,6 +255,7 @@ async def init_db():
             await db.execute("ALTER TABLE users ADD COLUMN ui_style TEXT NOT NULL DEFAULT 'modern'")
 
         await db.execute("CREATE INDEX IF NOT EXISTS idx_downloads_source_key ON downloads (source_key)")
+        await db.execute("CREATE INDEX IF NOT EXISTS idx_downloads_source_id ON downloads (source_id)")
         await db.execute("CREATE INDEX IF NOT EXISTS idx_history_source_key ON history (source_key)")
         await db.execute("CREATE INDEX IF NOT EXISTS idx_history_completed ON history (completed_at DESC)")
         await db.execute("CREATE INDEX IF NOT EXISTS idx_history_status ON history (status)")

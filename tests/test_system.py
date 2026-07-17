@@ -48,6 +48,9 @@ class SystemTests(unittest.TestCase):
         self.assertEqual(config["downloads"]["stalled_timeout_hours"], 3)
         self.assertFalse(config["plex"]["auto_refresh_enabled"])
         self.assertFalse(config["jellyfin"]["auto_refresh_enabled"])
+        self.assertFalse(config["youtube"]["direct_enabled"])
+        self.assertEqual(config["youtube"]["max_concurrent"], 2)
+        self.assertEqual(config["youtube"]["speed_limit"], 0)
         self.assertNotIn("enabled", config["auth"])
 
     def test_update_health_uses_configured_port_and_expected_version(self):
