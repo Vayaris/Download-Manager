@@ -1,0 +1,30 @@
+[Unit]
+Description=Download Manager
+After=network-online.target download-manager-aria2.service
+Wants=network-online.target
+Requires=download-manager-aria2.service
+StartLimitIntervalSec=60
+StartLimitBurst=5
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/download-manager/current
+UMask=0077
+PrivateTmp=true
+ProtectClock=true
+ProtectKernelLogs=true
+LockPersonality=true
+Environment=DM_CONFIG=/etc/download-manager/config.yml
+Environment=DM_DB=/opt/download-manager/config/downloads.db
+Environment=DM_INSTALL_DIR=/opt/download-manager
+Environment=DM_ARIA2_EXTERNAL=1
+ExecStart=/opt/download-manager/current/start.sh
+Restart=on-failure
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=download-manager
+
+[Install]
+WantedBy=multi-user.target

@@ -17,7 +17,7 @@ def _fmt_size(size_bytes: int) -> str:
 
 
 async def send_webhook(event: str, data: dict):
-    """Send a webhook notification. Non-blocking, errors are silently ignored."""
+    """Send a webhook and persist delivery failures in diagnostics."""
     config = get_config()
     wh = config.get("webhooks", {})
 
@@ -36,7 +36,8 @@ async def send_webhook(event: str, data: dict):
         # For Signal: strip query params (from/to) — they're only for config, not the endpoint
         target_url = urlparse(url)._replace(query="", fragment="").geturl() if fmt == "signal" else url
         async with httpx.AsyncClient(timeout=10.0) as client:
-            await client.post(target_url, json=payload)
+            response = await client.post(target_url, json=payload)
+            response.raise_for_status()
     except Exception as exc:
         record_event_nowait("webhook", "delivery_failed", exc, context={"event": event, "format": fmt})
 

@@ -10,9 +10,8 @@ from services.diagnostics import record_event_nowait
 
 REPO = "Vayaris/Download-Manager"
 INSTALL_DIR = Path("/opt/download-manager")
+CURRENT_DIR = INSTALL_DIR / "current"
 UPDATE_STATUS_FILE = Path("/var/lib/download-manager/update-status.json")
-_RUNTIME_ROOT = Path(__file__).resolve().parents[2]
-GIT_DIR = _RUNTIME_ROOT if (_RUNTIME_ROOT / ".git").exists() else INSTALL_DIR
 
 
 class UpdateError(Exception):
@@ -22,7 +21,7 @@ class UpdateError(Exception):
 
 
 def get_current_version() -> str:
-    for directory in (INSTALL_DIR, GIT_DIR):
+    for directory in (CURRENT_DIR, INSTALL_DIR, Path(__file__).resolve().parents[2]):
         version_file = directory / "VERSION"
         if version_file.exists():
             return version_file.read_text().strip()
@@ -108,23 +107,6 @@ def read_update_status() -> dict:
         return {"state": "unknown", "message": "Update status is unreadable"}
 
 
-def _find_git_dir() -> Path:
-    for directory in (INSTALL_DIR, GIT_DIR):
-        if (directory / ".git").exists():
-            return directory
-    return INSTALL_DIR
-
-
-def _is_git_dirty(path: Path) -> bool:
-    result = subprocess.run(
-        ["git", "status", "--porcelain"], cwd=path,
-        capture_output=True, text=True, timeout=10,
-    )
-    if result.returncode != 0:
-        raise UpdateError("Unable to inspect the installation repository")
-    return bool(result.stdout.strip())
-
-
 async def start_latest_update() -> dict:
     current = get_current_version()
     current_tuple = parse_version_tag(current)
@@ -134,16 +116,14 @@ async def start_latest_update() -> dict:
         if current_tuple is None or latest["version_tuple"] <= current_tuple:
             return {"success": True, "message": "Already up to date", "version": current, "changelog": ""}
 
-        git_dir = _find_git_dir()
-        if _is_git_dirty(git_dir):
-            raise UpdateError("Update blocked: local files have uncommitted changes.", 409)
-
         job_id = f"dm-{secrets.token_hex(6)}"
-        runner = INSTALL_DIR / "backend" / "update_runner.py"
+        runner = CURRENT_DIR / "backend" / "update_runner.py"
+        if not runner.exists():
+            runner = INSTALL_DIR / "backend" / "update_runner.py"
         command = [
             "systemd-run", "--quiet", f"--unit=download-manager-update-{job_id}",
             "--property=Type=exec", str(INSTALL_DIR / "venv" / "bin" / "python"),
-            str(runner), "--job-id", job_id, "--git-dir", str(git_dir),
+            str(runner), "--job-id", job_id,
             "--expected-version", latest["version"],
             "--expected-tag", latest["tag"],
             "--expected-commit", latest["commit_sha"],

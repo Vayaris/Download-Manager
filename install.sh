@@ -29,6 +29,13 @@ echo ""
 INSTALL_DIR="/opt/download-manager"
 CONFIG_DIR="/etc/download-manager"
 LOG_DIR="/var/log/download-manager"
+STATE_DIR="/var/lib/download-manager"
+BACKUP_ROOT="/var/backups/download-manager"
+REPOSITORY_DIR="${STATE_DIR}/repository.git"
+RELEASES_DIR="${INSTALL_DIR}/releases"
+VENVS_DIR="${INSTALL_DIR}/venvs"
+UPGRADE_MODE=0
+[ "${1:-}" = "--upgrade" ] && UPGRADE_MODE=1
 CLONED_TEMP=""
 
 # ---- Detect execution context (local clone vs bash <(curl ...)) ----
@@ -54,8 +61,14 @@ fi
 
 # ---- Port selection ----
 DEFAULT_PORT=40320
-read -rp "Which port should the web interface listen on? [${DEFAULT_PORT}] : " INPUT_PORT
-PORT="${INPUT_PORT:-$DEFAULT_PORT}"
+if [ "${UPGRADE_MODE}" -eq 1 ] && [ -f "${CONFIG_DIR}/config.yml" ]; then
+    PORT=$(awk '/^server:/{inside=1; next} inside && /^[^[:space:]]/{inside=0} inside && /^[[:space:]]+port:/{print $2; exit}' "${CONFIG_DIR}/config.yml")
+    PORT="${PORT:-$DEFAULT_PORT}"
+    info "Upgrade mode: preserving the configured port ${PORT}"
+else
+    read -rp "Which port should the web interface listen on? [${DEFAULT_PORT}] : " INPUT_PORT
+    PORT="${INPUT_PORT:-$DEFAULT_PORT}"
+fi
 
 if ! echo "$PORT" | grep -qE '^[0-9]+$' || [ "$PORT" -lt 1 ] || [ "$PORT" -gt 65535 ]; then
     warn "Invalid port, using default: ${DEFAULT_PORT}"
@@ -97,8 +110,8 @@ fi
 PYTHON_VERSION=$(python3 -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')")
 PYTHON_MAJOR=$(echo "$PYTHON_VERSION" | cut -d. -f1)
 PYTHON_MINOR=$(echo "$PYTHON_VERSION" | cut -d. -f2)
-if [ "$PYTHON_MAJOR" -lt 3 ] || ( [ "$PYTHON_MAJOR" -eq 3 ] && [ "$PYTHON_MINOR" -lt 8 ] ); then
-    die "Python 3.8+ required. Found: ${PYTHON_VERSION}"
+if [ "$PYTHON_MAJOR" -lt 3 ] || ( [ "$PYTHON_MAJOR" -eq 3 ] && [ "$PYTHON_MINOR" -lt 10 ] ); then
+    die "Python 3.10+ required. Found: ${PYTHON_VERSION}"
 fi
 success "Python ${PYTHON_VERSION} detected"
 success "aria2c $(aria2c --version | head -1 | awk '{print $3}') installed"
@@ -112,31 +125,38 @@ fi
 
 # ---- Create directories ----
 info "Creating directory structure..."
-mkdir -p "${INSTALL_DIR}"/{backend,frontend,downloads,config}
-mkdir -p "${INSTALL_DIR}/backend"/{routers,services}
-mkdir -p "${INSTALL_DIR}/frontend/static"/{css,js}
+mkdir -p "${INSTALL_DIR}"/{downloads,config,releases,venvs}
 mkdir -p "${CONFIG_DIR}"
 mkdir -p "${LOG_DIR}"
-mkdir -p /var/lib/download-manager /var/backups/download-manager
-chmod 700 /var/lib/download-manager /var/backups/download-manager
+mkdir -p "${STATE_DIR}" "${BACKUP_ROOT}"
+chmod 700 "${STATE_DIR}" "${BACKUP_ROOT}"
 
-# ---- Copy project files ----
-info "Copying project files..."
-cp -r "${SCRIPT_DIR}/backend/"*   "${INSTALL_DIR}/backend/"
-cp -r "${SCRIPT_DIR}/frontend/"*  "${INSTALL_DIR}/frontend/"
-cp    "${SCRIPT_DIR}/requirements.txt" "${INSTALL_DIR}/"
-cp    "${SCRIPT_DIR}/start.sh"    "${INSTALL_DIR}/start.sh"
-chmod +x "${INSTALL_DIR}/start.sh"
-[ -f "${SCRIPT_DIR}/VERSION" ] && cp "${SCRIPT_DIR}/VERSION" "${INSTALL_DIR}/VERSION"
-success "Files copied"
+# ---- Prepare immutable release ----
+VERSION=$(tr -d '[:space:]' < "${SCRIPT_DIR}/VERSION")
+[ -n "${VERSION}" ] || die "VERSION is empty"
+RELEASE_DIR="${RELEASES_DIR}/v${VERSION}"
+RELEASE_STAGING="${RELEASES_DIR}/.v${VERSION}.installer-staging"
+info "Preparing release v${VERSION}..."
+rm -rf "${RELEASE_STAGING}"
+mkdir -p "${RELEASE_STAGING}"
+for path in backend frontend deploy requirements.txt start.sh start-aria2.sh VERSION; do
+    [ -e "${SCRIPT_DIR}/${path}" ] || die "Release source is missing ${path}"
+    cp -a "${SCRIPT_DIR}/${path}" "${RELEASE_STAGING}/"
+done
+chmod 755 "${RELEASE_STAGING}/start.sh" "${RELEASE_STAGING}/start-aria2.sh"
+rm -rf "${RELEASE_DIR}"
+mv "${RELEASE_STAGING}" "${RELEASE_DIR}"
+success "Release v${VERSION} prepared"
 
 # ---- Generate aria2 secret ----
 ARIA2_SECRET=$(tr -dc 'a-zA-Z0-9' < /dev/urandom | head -c 32)
 
 # ---- Config file ----
 if [ -f "${CONFIG_DIR}/config.yml" ]; then
-    info "Existing configuration detected, updating port only."
-    sed -i "s/^\(\s*port:\s*\).*/\1${PORT}/" "${CONFIG_DIR}/config.yml"
+    info "Existing configuration detected and preserved."
+    if [ "${UPGRADE_MODE}" -ne 1 ]; then
+        sed -i "s/^\(\s*port:\s*\).*/\1${PORT}/" "${CONFIG_DIR}/config.yml"
+    fi
     if ! grep -q "webhooks:" "${CONFIG_DIR}/config.yml" 2>/dev/null; then
         cat >> "${CONFIG_DIR}/config.yml" <<EOF
 
@@ -224,78 +244,28 @@ EOF
     success "Configuration created: ${CONFIG_DIR}/config.yml"
 fi
 
-# ---- systemd service (created BEFORE pip install) ----
-info "Configuring systemd service..."
-cat > /etc/systemd/system/download-manager.service <<EOF
-[Unit]
-Description=Download Manager
-After=network-online.target
-Wants=network-online.target
-StartLimitIntervalSec=60
-StartLimitBurst=5
-
-[Service]
-Type=simple
-User=root
-WorkingDirectory=${INSTALL_DIR}
-UMask=0077
-PrivateTmp=true
-ProtectClock=true
-ProtectKernelLogs=true
-LockPersonality=true
-
-Environment=DM_CONFIG=${CONFIG_DIR}/config.yml
-Environment=DM_DB=${INSTALL_DIR}/config/downloads.db
-
-ExecStart=${INSTALL_DIR}/start.sh
-ExecStopPost=-/usr/bin/pkill -f ^aria2c.*--rpc-listen-port=
-
-Restart=on-failure
-RestartSec=5
-
-StandardOutput=journal
-StandardError=journal
-SyslogIdentifier=download-manager
-
-[Install]
-WantedBy=multi-user.target
-EOF
-
-# Reload systemd (works on both VM and LXC)
-if command -v systemctl >/dev/null 2>&1 && systemctl --version >/dev/null 2>&1; then
-    systemctl daemon-reload
-    systemctl enable download-manager 2>/dev/null || true
-    success "Systemd service configured and enabled"
-    HAVE_SYSTEMD=1
-else
-    warn "systemctl not available — service file written but could not be enabled automatically"
-    HAVE_SYSTEMD=0
-fi
-
-# ---- Python virtual environment ----
-if [ -d "${INSTALL_DIR}/venv" ]; then
-    info "Existing virtualenv found, updating..."
-else
-    info "Creating Python virtualenv..."
-    if ! python3 -m venv "${INSTALL_DIR}/venv"; then
+# ---- Isolated Python environment ----
+TARGET_VENV="${VENVS_DIR}/v${VERSION}"
+rm -rf "${TARGET_VENV}"
+info "Creating isolated Python environment for v${VERSION}..."
+if ! python3 -m venv "${TARGET_VENV}"; then
         warn "python3 -m venv failed, trying python3-venv package..."
         apt-get install -y python3-venv python3-full 2>/dev/null || true
-        if ! python3 -m venv "${INSTALL_DIR}/venv"; then
+        if ! python3 -m venv "${TARGET_VENV}"; then
             die "Failed to create Python virtualenv. Try: apt-get install python3-venv"
         fi
-    fi
-    success "Virtualenv created"
 fi
 
 info "Upgrading pip..."
-"${INSTALL_DIR}/venv/bin/pip" install --upgrade pip --quiet || true
+"${TARGET_VENV}/bin/pip" install --upgrade pip --quiet || true
 
 info "Installing Python dependencies (this may take several minutes due to native compilation)..."
-if ! "${INSTALL_DIR}/venv/bin/pip" install -r "${INSTALL_DIR}/requirements.txt"; then
+if ! "${TARGET_VENV}/bin/pip" install -r "${RELEASE_DIR}/requirements.txt"; then
     error "pip install failed. Trying with verbose output..."
-    "${INSTALL_DIR}/venv/bin/pip" install -r "${INSTALL_DIR}/requirements.txt" --no-cache-dir \
+    "${TARGET_VENV}/bin/pip" install -r "${RELEASE_DIR}/requirements.txt" --no-cache-dir \
         || die "Failed to install Python dependencies. Check the errors above."
 fi
+"${TARGET_VENV}/bin/python" -m compileall -q "${RELEASE_DIR}/backend" || die "Backend compilation failed"
 success "Python dependencies installed"
 
 # Existing installations may have been created before private data modes were
@@ -303,43 +273,129 @@ success "Python dependencies installed"
 chmod 700 "${CONFIG_DIR}" "${INSTALL_DIR}/config" /var/lib/download-manager /var/backups/download-manager 2>/dev/null || true
 chmod 600 "${CONFIG_DIR}/config.yml" "${INSTALL_DIR}/config/downloads.db" 2>/dev/null || true
 
-# ---- Git repo for auto-updates ----
-if [ ! -d "${INSTALL_DIR}/.git" ]; then
-    info "Setting up git repository for future updates..."
-    GITTMP="$(mktemp -d)"
-    if git clone --depth 1 https://github.com/Vayaris/Download-Manager.git "${GITTMP}/repo" >/dev/null 2>&1; then
-        mv "${GITTMP}/repo/.git" "${INSTALL_DIR}/.git"
-        rm -rf "${GITTMP}"
-        git -C "${INSTALL_DIR}" reset --hard HEAD >/dev/null 2>&1 || true
-        success "Git repository configured for future updates"
-    else
-        warn "Could not set up git repository (in-app updates will not be available)"
-        rm -rf "${GITTMP}" 2>/dev/null || true
-    fi
+# ---- Private bare repository for future updates ----
+if [ ! -d "${REPOSITORY_DIR}" ]; then
+    info "Creating private update repository..."
+    git clone --mirror https://github.com/Vayaris/Download-Manager.git "${REPOSITORY_DIR}" >/dev/null 2>&1 \
+        || die "Could not create the update repository"
+else
+    git --git-dir="${REPOSITORY_DIR}" fetch --force --prune origin '+refs/tags/*:refs/tags/*' >/dev/null 2>&1 \
+        || warn "Could not refresh the update repository"
 fi
+chmod 700 "${REPOSITORY_DIR}"
+
+# ---- Backup and atomic runtime switch ----
+STAMP=$(date -u +%Y%m%dT%H%M%SZ)
+INSTALL_BACKUP="${BACKUP_ROOT}/installer-v${VERSION}-${STAMP}"
+mkdir -m 700 "${INSTALL_BACKUP}" || die "Could not create installer backup"
+[ -f "${CONFIG_DIR}/config.yml" ] && cp -a "${CONFIG_DIR}/config.yml" "${INSTALL_BACKUP}/config.yml"
+if [ -f "${INSTALL_DIR}/config/downloads.db" ]; then
+    BACKUP_DB="${INSTALL_BACKUP}/downloads.db" "${TARGET_VENV}/bin/python" - <<'PY' || die "SQLite backup failed"
+import os, sqlite3
+source = sqlite3.connect('/opt/download-manager/config/downloads.db')
+target = sqlite3.connect(os.environ['BACKUP_DB'])
+with target:
+    source.backup(target)
+source.close(); target.close(); os.chmod(os.environ['BACKUP_DB'], 0o600)
+PY
+fi
+mkdir -m 700 "${INSTALL_BACKUP}/systemd"
+for unit in download-manager.service download-manager-aria2.service; do
+    [ -f "/etc/systemd/system/${unit}" ] && cp -a "/etc/systemd/system/${unit}" "${INSTALL_BACKUP}/systemd/${unit}"
+done
+
+PREVIOUS_CURRENT=""
+[ -L "${INSTALL_DIR}/current" ] && PREVIOUS_CURRENT=$(readlink -f "${INSTALL_DIR}/current")
+PREVIOUS_VENV=""
+if [ -L "${INSTALL_DIR}/venv" ]; then
+    PREVIOUS_VENV=$(readlink -f "${INSTALL_DIR}/venv")
+elif [ -d "${INSTALL_DIR}/venv" ]; then
+    PREVIOUS_VENV="${VENVS_DIR}/legacy-${STAMP}"
+fi
+
+if command -v systemctl >/dev/null 2>&1 && systemctl --version >/dev/null 2>&1; then
+    HAVE_SYSTEMD=1
+    systemctl stop download-manager.service download-manager-aria2.service 2>/dev/null || true
+else
+    HAVE_SYSTEMD=0
+fi
+if [ -d "${INSTALL_DIR}/venv" ] && [ ! -L "${INSTALL_DIR}/venv" ]; then
+    mv "${INSTALL_DIR}/venv" "${PREVIOUS_VENV}" || die "Could not preserve the previous virtualenv"
+fi
+ln -sfn "${RELEASE_DIR}" "${INSTALL_DIR}/.current-new"
+mv -Tf "${INSTALL_DIR}/.current-new" "${INSTALL_DIR}/current"
+ln -sfn "${TARGET_VENV}" "${INSTALL_DIR}/.venv-new"
+mv -Tf "${INSTALL_DIR}/.venv-new" "${INSTALL_DIR}/venv"
+
+if [ "${HAVE_SYSTEMD}" -eq 1 ]; then
+    info "Installing Download Manager systemd units..."
+    cp "${RELEASE_DIR}/deploy/systemd/download-manager.service" /etc/systemd/system/download-manager.service
+    cp "${RELEASE_DIR}/deploy/systemd/download-manager-aria2.service" /etc/systemd/system/download-manager-aria2.service
+    chmod 644 /etc/systemd/system/download-manager.service /etc/systemd/system/download-manager-aria2.service
+    systemd-analyze verify /etc/systemd/system/download-manager.service /etc/systemd/system/download-manager-aria2.service \
+        || die "The Download Manager systemd units are invalid"
+    systemctl daemon-reload
+    systemctl enable download-manager-aria2.service download-manager.service >/dev/null 2>&1 || true
+fi
+
+restore_previous_installation() {
+    error "The new runtime failed its health check; restoring the previous installation."
+    systemctl stop download-manager.service download-manager-aria2.service 2>/dev/null || true
+    if [ -n "${PREVIOUS_CURRENT}" ]; then
+        ln -sfn "${PREVIOUS_CURRENT}" "${INSTALL_DIR}/.current-rollback"
+        mv -Tf "${INSTALL_DIR}/.current-rollback" "${INSTALL_DIR}/current"
+    else
+        rm -f "${INSTALL_DIR}/current"
+    fi
+    if [ -n "${PREVIOUS_VENV}" ]; then
+        ln -sfn "${PREVIOUS_VENV}" "${INSTALL_DIR}/.venv-rollback"
+        mv -Tf "${INSTALL_DIR}/.venv-rollback" "${INSTALL_DIR}/venv"
+    fi
+    [ -f "${INSTALL_BACKUP}/config.yml" ] && cp -a "${INSTALL_BACKUP}/config.yml" "${CONFIG_DIR}/config.yml"
+    if [ -f "${INSTALL_BACKUP}/downloads.db" ]; then
+        rm -f "${INSTALL_DIR}/config/downloads.db-wal" "${INSTALL_DIR}/config/downloads.db-shm"
+        cp -a "${INSTALL_BACKUP}/downloads.db" "${INSTALL_DIR}/config/downloads.db"
+    fi
+    for unit in download-manager.service download-manager-aria2.service; do
+        if [ -f "${INSTALL_BACKUP}/systemd/${unit}" ]; then
+            cp -a "${INSTALL_BACKUP}/systemd/${unit}" "/etc/systemd/system/${unit}"
+        else
+            rm -f "/etc/systemd/system/${unit}"
+        fi
+    done
+    systemctl daemon-reload 2>/dev/null || true
+    systemctl restart download-manager.service 2>/dev/null || true
+    die "Upgrade rolled back. See ${INSTALL_BACKUP} and journalctl -u download-manager -n 100"
+}
 
 # ---- Start service ----
 if [ "${HAVE_SYSTEMD:-0}" -eq 1 ]; then
     info "Starting Download Manager service..."
-    systemctl reset-failed download-manager 2>/dev/null || true
-    if systemctl restart download-manager; then
+    systemctl reset-failed download-manager download-manager-aria2 2>/dev/null || true
+    START_OK=0
+    if systemctl restart download-manager-aria2.service download-manager.service; then
         # Wait up to 10 seconds for service to become active
         for i in 1 2 3 4 5 6 7 8 9 10; do
             sleep 1
-            if systemctl is-active --quiet download-manager; then
+            if systemctl is-active --quiet download-manager \
+                && systemctl is-active --quiet download-manager-aria2 \
+                && curl -fsS --max-time 2 "http://127.0.0.1:${PORT}/api/auth/status" >/dev/null; then
                 success "Service started successfully"
+                START_OK=1
                 break
             fi
             if [ "$i" -eq 10 ]; then
-                warn "Service did not start within 10s. Check: journalctl -u download-manager -n 50"
+                warn "Service did not start within 10s."
             fi
         done
     else
-        warn "Failed to start service. Check: journalctl -u download-manager -n 50"
+        warn "Failed to start Download Manager services."
     fi
+    [ "${START_OK}" -eq 1 ] || restore_previous_installation
 else
     info "Starting Download Manager manually..."
-    nohup "${INSTALL_DIR}/start.sh" >> "${LOG_DIR}/download-manager.log" 2>&1 &
+    nohup "${INSTALL_DIR}/current/start-aria2.sh" >> "${LOG_DIR}/aria2-console.log" 2>&1 &
+    DM_ARIA2_EXTERNAL=1 nohup "${INSTALL_DIR}/current/start.sh" >> "${LOG_DIR}/download-manager.log" 2>&1 &
     sleep 3
     warn "systemd not available — service started in background (PID: $!). It will NOT restart automatically."
 fi

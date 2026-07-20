@@ -8,6 +8,7 @@ from database import db_session
 from models import MagnetUploadRequest
 from auth import get_current_user
 from services.alldebrid import alldebrid
+from services.diagnostics import record_event_nowait
 from utils import validate_destination as _validate_destination
 
 router = APIRouter()
@@ -17,16 +18,23 @@ def _qm(request: Request):
     return request.app.state.queue_manager
 
 
+async def _delete_remote_magnet(magnet_id: int):
+    try:
+        await alldebrid.magnet_delete(magnet_id)
+    except Exception as exc:
+        record_event_nowait(
+            "torrent", "remote_delete_failed", exc,
+            severity="warning", context={"alldebrid_id": magnet_id},
+        )
+
+
 async def _process_ready_magnet(magnet_id: int, name: str, destination: str, qm):
     """Magnet is ready: import its files and clean up."""
     links = await alldebrid.magnet_files(magnet_id)
     if not links:
         raise Exception("No files found in torrent")
     await qm.import_torrent_links(name or "Torrent", links, destination)
-    try:
-        await alldebrid.magnet_delete(magnet_id)
-    except Exception:
-        pass
+    await _delete_remote_magnet(magnet_id)
 
 
 async def _process_ready_into_package(magnet_id: int, destination: str, package_id: str, qm) -> int:
@@ -34,10 +42,7 @@ async def _process_ready_into_package(magnet_id: int, destination: str, package_
     if not links:
         return 0
     result = await qm.import_torrent_links("Torrent", links, destination, package_id=package_id)
-    try:
-        await alldebrid.magnet_delete(magnet_id)
-    except Exception:
-        pass
+    await _delete_remote_magnet(magnet_id)
     return len(result["download_ids"])
 
 
@@ -46,10 +51,7 @@ async def _process_ready_without_package(magnet_id: int, name: str, destination:
     if not links:
         return 0
     result = await qm.import_torrent_links(name or "Torrent", links, destination)
-    try:
-        await alldebrid.magnet_delete(magnet_id)
-    except Exception:
-        pass
+    await _delete_remote_magnet(magnet_id)
     return len(result["download_ids"])
 
 
@@ -81,42 +83,24 @@ async def submit_magnets(body: MagnetUploadRequest, request: Request, _=Depends(
     now = datetime.now(timezone.utc).isoformat()
     qm = _qm(request)
     added = []
+    pending = []
+
+    for mag in results:
+        if mag.get("error"):
+            continue
+        name = mag.get("name", "Torrent")
+        if mag.get("ready", False):
+            try:
+                await _process_ready_magnet(mag["id"], name, body.destination, qm)
+                added.append({"id": mag["id"], "name": name, "ready": True})
+            except Exception:
+                pending.append(mag)
+        else:
+            pending.append(mag)
 
     async with db_session() as db:
-        for mag in results:
-            if mag.get("error"):
-                continue
-            ad_id = mag["id"]
-            name = mag.get("name", "Torrent")
-            size = mag.get("size", 0)
-            ready = mag.get("ready", False)
-
-            if ready:
-                # Instantly ready — create package directly
-                try:
-                    await _process_ready_magnet(ad_id, name, body.destination, qm)
-                    added.append({"id": ad_id, "name": name, "ready": True})
-                except Exception as e:
-                    # Store as processing if package creation fails
-                    t_id = str(uuid.uuid4())
-                    await db.execute(
-                        """INSERT INTO torrents
-                           (id, alldebrid_id, name, size, status, destination,
-                            created_at, updated_at, last_progress_at)
-                           VALUES (?, ?, ?, ?, 'processing', ?, ?, ?, ?)""",
-                        (t_id, ad_id, name, size, body.destination, now, now, now),
-                    )
-                    added.append({"id": t_id, "name": name, "ready": False})
-            else:
-                t_id = str(uuid.uuid4())
-                await db.execute(
-                    """INSERT INTO torrents
-                       (id, alldebrid_id, name, size, status, destination,
-                        created_at, updated_at, last_progress_at)
-                       VALUES (?, ?, ?, ?, 'processing', ?, ?, ?, ?)""",
-                    (t_id, ad_id, name, size, body.destination, now, now, now),
-                )
-                added.append({"id": t_id, "name": name, "ready": False})
+        for mag in pending:
+            added.append(await _insert_torrent(db, mag, body.destination, now))
         await db.commit()
 
     return {"added": len(added), "torrents": added}
@@ -145,40 +129,24 @@ async def upload_torrent(
     now = datetime.now(timezone.utc).isoformat()
     qm = _qm(request)
     added = []
+    pending = []
+
+    for mag in results:
+        if mag.get("error"):
+            continue
+        name = mag.get("name", file.filename)
+        if mag.get("ready", False):
+            try:
+                await _process_ready_magnet(mag["id"], name, destination, qm)
+                added.append({"id": mag["id"], "name": name, "ready": True})
+            except Exception:
+                pending.append(mag)
+        else:
+            pending.append(mag)
 
     async with db_session() as db:
-        for mag in results:
-            if mag.get("error"):
-                continue
-            ad_id = mag["id"]
-            name = mag.get("name", file.filename)
-            size = mag.get("size", 0)
-            ready = mag.get("ready", False)
-
-            if ready:
-                try:
-                    await _process_ready_magnet(ad_id, name, destination, qm)
-                    added.append({"id": ad_id, "name": name, "ready": True})
-                except Exception:
-                    t_id = str(uuid.uuid4())
-                    await db.execute(
-                        """INSERT INTO torrents
-                           (id, alldebrid_id, name, size, status, destination,
-                            created_at, updated_at, last_progress_at)
-                           VALUES (?, ?, ?, ?, 'processing', ?, ?, ?, ?)""",
-                        (t_id, ad_id, name, size, destination, now, now, now),
-                    )
-                    added.append({"id": t_id, "name": name, "ready": False})
-            else:
-                t_id = str(uuid.uuid4())
-                await db.execute(
-                    """INSERT INTO torrents
-                       (id, alldebrid_id, name, size, status, destination,
-                        created_at, updated_at, last_progress_at)
-                       VALUES (?, ?, ?, ?, 'processing', ?, ?, ?, ?)""",
-                    (t_id, ad_id, name, size, destination, now, now, now),
-                )
-                added.append({"id": t_id, "name": name, "ready": False})
+        for mag in pending:
+            added.append(await _insert_torrent(db, mag, destination, now))
         await db.commit()
 
     return {"added": len(added), "torrents": added}
@@ -228,23 +196,27 @@ async def upload_torrent_batch(
     package_name = f"Lot torrents - {datetime.now().strftime('%Y-%m-%d %H:%M')}" if use_package else None
     package_id = await qm.create_package(package_name, destination) if use_package else None
     added = []
+    pending = []
+
+    for mag in uploaded:
+        ad_id = mag["id"]
+        name = mag.get("name", "Torrent")
+        if mag.get("ready", False):
+            try:
+                imported = await (
+                    _process_ready_into_package(ad_id, destination, package_id, qm)
+                    if use_package
+                    else _process_ready_without_package(ad_id, name, destination, qm)
+                )
+                added.append({"id": ad_id, "name": name, "ready": True, "imported": imported})
+            except Exception:
+                pending.append(mag)
+        else:
+            pending.append(mag)
 
     async with db_session() as db:
-        for mag in uploaded:
-            ad_id = mag["id"]
-            name = mag.get("name", "Torrent")
-            if mag.get("ready", False):
-                try:
-                    imported = await (
-                        _process_ready_into_package(ad_id, destination, package_id, qm)
-                        if use_package
-                        else _process_ready_without_package(ad_id, name, destination, qm)
-                    )
-                    added.append({"id": ad_id, "name": name, "ready": True, "imported": imported})
-                except Exception:
-                    added.append(await _insert_torrent(db, mag, destination, now, package_id=package_id))
-            else:
-                added.append(await _insert_torrent(db, mag, destination, now, package_id=package_id))
+        for mag in pending:
+            added.append(await _insert_torrent(db, mag, destination, now, package_id=package_id))
         await db.commit()
 
     response = {"added": len(added), "torrents": added}
@@ -271,11 +243,9 @@ async def delete_torrent(torrent_id: str, _=Depends(get_current_user)):
         if not row:
             raise HTTPException(status_code=404, detail="Torrent not found")
 
-        try:
-            await alldebrid.magnet_delete(row["alldebrid_id"])
-        except Exception:
-            pass
+    await _delete_remote_magnet(row["alldebrid_id"])
 
+    async with db_session() as db:
         await db.execute("DELETE FROM torrents WHERE id = ?", (torrent_id,))
         await db.commit()
 

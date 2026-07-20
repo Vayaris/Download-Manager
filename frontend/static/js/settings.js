@@ -1315,12 +1315,10 @@ async function loadStorage() {
       }
       const pct = item.percent;
       const color = pct >= 90 ? "var(--red)" : pct >= 70 ? "var(--orange, #f97316)" : "var(--green)";
-      const usedGb = (item.used / 1e9).toFixed(1);
-      const totalGb = (item.total / 1e9).toFixed(1);
       return `
         <div class="storage-row">
           <span class="storage-path" title="${pathEsc}">${pathEsc}</span>
-          <span class="storage-numbers">${usedGb} GB / ${totalGb} GB (${pct}%)</span>
+          <span class="storage-numbers">${formatSize(item.used)} / ${formatSize(item.total)} (${pct}%)</span>
           ${deleteBtn}
           <div class="storage-bar-wrap"><div class="storage-bar" style="width:${pct}%;background:${color}"></div></div>
         </div>`;

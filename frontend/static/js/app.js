@@ -573,8 +573,12 @@ function renderRuntimeAlert(status = lastRuntimeStatus) {
   if (status && !status.queue_running) warnings.push(t("runtime_queue_unavailable"));
   if (status && !status.aria2_ok && consecutiveAria2Failures >= 2) warnings.push(t("runtime_aria2_unavailable"));
   if (status?.queue_error) warnings.push(status.queue_error);
+  const engineUnavailable = Boolean(
+    status && (!status.queue_running || (!status.aria2_ok && consecutiveAria2Failures >= 2) || status.queue_error)
+  );
   alert.classList.toggle("hidden", warnings.length === 0);
-  alert.innerHTML = warnings.length ? `<strong>${t("runtime_alert_title")}</strong><span>${escHtml(warnings.join(" · "))}</span>` : "";
+  const title = engineUnavailable ? t("runtime_alert_title") : t("runtime_realtime_title");
+  alert.innerHTML = warnings.length ? `<strong>${title}</strong><span>${escHtml(warnings.join(" · "))}</span>` : "";
 }
 
 async function checkRuntimeStatus() {
@@ -1692,7 +1696,12 @@ function startApp() {
 
   let _lastHistoryLoad = 0;
   let _prevCompleteIds = new Set();
-  WS.on("downloads_update", (data, msg) => {
+  let _snapshotRevision = 0;
+  let _snapshotPollTimer = null;
+  let _snapshotPollDelay = null;
+
+  function applyQueueUpdate(data, msg) {
+    if (msg?.revision) _snapshotRevision = msg.revision;
     renderDownloads(data);
     if (msg && msg.packages) {
       renderPackages(msg.packages);
@@ -1715,8 +1724,35 @@ function startApp() {
       loadHistory(true);
     }
     if (newCompletion) loadStorageOverview();
+  }
+
+  async function pollQueueSnapshot() {
+    if (WS.isConnected()) return;
+    try {
+      const snapshot = await API.get(`/api/downloads/snapshot?since=${_snapshotRevision}`);
+      if (snapshot.changed) {
+        applyQueueUpdate(snapshot.downloads || [], {
+          revision: snapshot.revision,
+          packages: snapshot.packages || [],
+          torrents: snapshot.torrents || [],
+        });
+      }
+    } catch {}
+  }
+
+  WS.on("downloads_update", applyQueueUpdate);
+  WS.on("connection_status", (connected) => {
+    renderRuntimeAlert();
+    clearTimeout(_snapshotPollDelay);
+    if (_snapshotPollTimer) clearInterval(_snapshotPollTimer);
+    _snapshotPollTimer = null;
+    if (!connected) {
+      _snapshotPollDelay = setTimeout(() => {
+        pollQueueSnapshot();
+        _snapshotPollTimer = setInterval(pollQueueSnapshot, 3000);
+      }, 5000);
+    }
   });
-  WS.on("connection_status", () => renderRuntimeAlert());
   WS.init();
   setTimeout(checkRuntimeStatus, 2500);
   setInterval(checkRuntimeStatus, 30000);

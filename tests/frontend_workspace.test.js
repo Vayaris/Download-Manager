@@ -1,7 +1,26 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
+const fs = require("node:fs");
+const vm = require("node:vm");
 
 const utils = require("../frontend/static/js/workspace-utils.js");
+
+test("storage units follow the selected interface language", () => {
+  let language = "fr";
+  const context = {
+    getLang: () => language,
+    fetch: () => {},
+  };
+  vm.runInNewContext(
+    fs.readFileSync("frontend/static/js/api.js", "utf8"),
+    context,
+  );
+  assert.equal(context.formatSize(1024 ** 3), "1.0 Go");
+  assert.equal(context.formatSize(1024 ** 4), "1.0 To");
+  language = "en";
+  assert.equal(context.formatSize(1024 ** 3), "1.0 GB");
+  assert.equal(context.formatSize(1024 ** 4), "1.0 TB");
+});
 
 test("global paste accepts links and magnets but leaves ordinary text alone", () => {
   assert.deepEqual(

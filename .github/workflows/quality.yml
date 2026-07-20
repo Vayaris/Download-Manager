@@ -22,6 +22,7 @@ jobs:
       - run: python -m compileall -q backend tests
       - run: bash -n install.sh
       - run: bash -n start.sh
+      - run: bash -n start-aria2.sh
 
   frontend:
     runs-on: ubuntu-latest

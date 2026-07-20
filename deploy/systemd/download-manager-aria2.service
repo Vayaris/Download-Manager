@@ -1,0 +1,27 @@
+[Unit]
+Description=Download Manager aria2 engine
+After=network-online.target
+Wants=network-online.target
+StartLimitIntervalSec=60
+StartLimitBurst=5
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/download-manager/current
+UMask=0077
+PrivateTmp=true
+ProtectClock=true
+ProtectKernelLogs=true
+LockPersonality=true
+Environment=DM_CONFIG=/etc/download-manager/config.yml
+Environment=DM_INSTALL_DIR=/opt/download-manager
+ExecStart=/opt/download-manager/current/start-aria2.sh
+Restart=on-failure
+RestartSec=3
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=download-manager-aria2
+
+[Install]
+WantedBy=multi-user.target

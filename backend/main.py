@@ -1,3 +1,4 @@
+import asyncio
 import sys
 import logging
 import re
@@ -16,7 +17,7 @@ from config import get_config
 from database import init_db
 from services.queue_manager import QueueManager
 from services.diagnostics import record_event_nowait
-from routers import downloads, settings, filebrowser, torrents, youtube, smb as smb_router
+from routers import downloads, settings, runtime, filebrowser, torrents, youtube, smb as smb_router
 from routers import auth as auth_router
 
 BASE_DIR = Path(__file__).parent
@@ -59,11 +60,13 @@ class ConnectionManager:
         self.connections = [c for c in self.connections if c is not ws]
 
     async def broadcast(self, message: dict):
-        for ws in self.connections[:]:
+        async def send(ws):
             try:
-                await ws.send_json(message)
+                await asyncio.wait_for(ws.send_json(message), timeout=2)
             except Exception:
                 self.disconnect(ws)
+
+        await asyncio.gather(*(send(ws) for ws in self.connections[:]))
 
 
 ws_manager = ConnectionManager()
@@ -167,6 +170,7 @@ if _cors_origins:
 
 app.include_router(downloads.router, prefix="/api/downloads", tags=["downloads"])
 app.include_router(settings.router,  prefix="/api/settings",  tags=["settings"])
+app.include_router(runtime.router,   prefix="/api/settings",  tags=["runtime"])
 app.include_router(filebrowser.router, prefix="/api/files",   tags=["files"])
 app.include_router(auth_router.router, prefix="/api/auth",    tags=["auth"])
 app.include_router(torrents.router,    prefix="/api/torrents", tags=["torrents"])

@@ -190,6 +190,48 @@ async def init_db():
             )
         """)
         await db.execute("""
+            CREATE TABLE IF NOT EXISTS media_refresh_state (
+                id         INTEGER PRIMARY KEY CHECK (id = 1),
+                pending    INTEGER NOT NULL DEFAULT 0,
+                retry_at   TEXT,
+                updated_at TEXT NOT NULL
+            )
+        """)
+        await db.execute(
+            "INSERT OR IGNORE INTO media_refresh_state (id, pending, updated_at) "
+            "VALUES (1, 0, datetime('now'))"
+        )
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS queue_revision (
+                id       INTEGER PRIMARY KEY CHECK (id = 1),
+                revision INTEGER NOT NULL DEFAULT 0
+            )
+        """)
+        await db.execute(
+            "INSERT OR IGNORE INTO queue_revision (id, revision) VALUES (1, 0)"
+        )
+        for trigger_sql in (
+            "CREATE TRIGGER IF NOT EXISTS trg_downloads_insert_revision AFTER INSERT ON downloads "
+            "BEGIN UPDATE queue_revision SET revision = revision + 1 WHERE id = 1; END",
+            "CREATE TRIGGER IF NOT EXISTS trg_downloads_update_revision AFTER UPDATE ON downloads "
+            "BEGIN UPDATE queue_revision SET revision = revision + 1 WHERE id = 1; END",
+            "CREATE TRIGGER IF NOT EXISTS trg_downloads_delete_revision AFTER DELETE ON downloads "
+            "BEGIN UPDATE queue_revision SET revision = revision + 1 WHERE id = 1; END",
+            "CREATE TRIGGER IF NOT EXISTS trg_packages_insert_revision AFTER INSERT ON packages "
+            "BEGIN UPDATE queue_revision SET revision = revision + 1 WHERE id = 1; END",
+            "CREATE TRIGGER IF NOT EXISTS trg_packages_update_revision AFTER UPDATE ON packages "
+            "BEGIN UPDATE queue_revision SET revision = revision + 1 WHERE id = 1; END",
+            "CREATE TRIGGER IF NOT EXISTS trg_packages_delete_revision AFTER DELETE ON packages "
+            "BEGIN UPDATE queue_revision SET revision = revision + 1 WHERE id = 1; END",
+            "CREATE TRIGGER IF NOT EXISTS trg_torrents_insert_revision AFTER INSERT ON torrents "
+            "BEGIN UPDATE queue_revision SET revision = revision + 1 WHERE id = 1; END",
+            "CREATE TRIGGER IF NOT EXISTS trg_torrents_update_revision AFTER UPDATE ON torrents "
+            "BEGIN UPDATE queue_revision SET revision = revision + 1 WHERE id = 1; END",
+            "CREATE TRIGGER IF NOT EXISTS trg_torrents_delete_revision AFTER DELETE ON torrents "
+            "BEGIN UPDATE queue_revision SET revision = revision + 1 WHERE id = 1; END",
+        ):
+            await db.execute(trigger_sql)
+        await db.execute("""
             CREATE INDEX IF NOT EXISTS idx_diagnostic_events_created
             ON diagnostic_events (created_at DESC)
         """)
@@ -256,11 +298,27 @@ async def init_db():
 
         await db.execute("CREATE INDEX IF NOT EXISTS idx_downloads_source_key ON downloads (source_key)")
         await db.execute("CREATE INDEX IF NOT EXISTS idx_downloads_source_id ON downloads (source_id)")
+        await db.execute(
+            "CREATE INDEX IF NOT EXISTS idx_downloads_status_position "
+            "ON downloads (status, position, created_at)"
+        )
+        await db.execute(
+            "CREATE INDEX IF NOT EXISTS idx_downloads_package_status "
+            "ON downloads (package_id, status)"
+        )
+        await db.execute(
+            "CREATE INDEX IF NOT EXISTS idx_downloads_gid_status "
+            "ON downloads (aria2_gid, status)"
+        )
         await db.execute("CREATE INDEX IF NOT EXISTS idx_history_source_key ON history (source_key)")
         await db.execute("CREATE INDEX IF NOT EXISTS idx_history_completed ON history (completed_at DESC)")
         await db.execute("CREATE INDEX IF NOT EXISTS idx_history_status ON history (status)")
         await db.execute("CREATE INDEX IF NOT EXISTS idx_history_package ON history (package_id)")
         await db.execute("CREATE INDEX IF NOT EXISTS idx_torrents_source_key ON torrents (source_key)")
+        await db.execute(
+            "CREATE INDEX IF NOT EXISTS idx_torrents_package_status "
+            "ON torrents (package_id, status)"
+        )
 
         await db.commit()
     try:

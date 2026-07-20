@@ -39,6 +39,18 @@ async def list_downloads(request: Request, _=Depends(get_current_user)):
         return [dict(r) for r in rows]
 
 
+@router.get("/snapshot")
+async def queue_snapshot(
+    request: Request,
+    since: int = Query(0, ge=0),
+    _=Depends(get_current_user),
+):
+    snapshot = await _qm(request).get_snapshot()
+    if since == snapshot["revision"]:
+        return {"revision": snapshot["revision"], "changed": False}
+    return {**snapshot, "changed": True}
+
+
 
 @router.post("/")
 async def add_downloads(body: AddDownloadsRequest, request: Request, _=Depends(get_current_user)):
@@ -147,6 +159,7 @@ async def add_automatic_batch(
         direct_links, destination, package_id=package_id, allow_duplicates=allow_duplicates
     )
     added_torrents = []
+    pending_torrents = []
     now = datetime.now(timezone.utc).isoformat()
 
     # Reuse the torrent import primitives so delayed and instantly-ready torrents
@@ -157,31 +170,31 @@ async def add_automatic_batch(
         _process_ready_without_package,
     )
 
-    async with db_session() as db:
-        for magnet in uploaded:
-            name = magnet.get("name", "Torrent")
-            if magnet.get("ready", False):
-                try:
-                    imported = await (
-                        _process_ready_into_package(magnet["id"], destination, package_id, qm)
-                        if package_id
-                        else _process_ready_without_package(magnet["id"], name, destination, qm)
-                    )
-                    if imported == 0:
-                        failed_sources.append((name, "AllDebrid returned no downloadable files"))
-                    added_torrents.append({
-                        "id": magnet["id"], "name": name,
-                        "ready": True, "imported": imported,
-                    })
-                except Exception:
-                    added_torrents.append(
-                        await _insert_torrent(db, magnet, destination, now, package_id=package_id)
-                    )
-            else:
-                added_torrents.append(
-                    await _insert_torrent(db, magnet, destination, now, package_id=package_id)
+    for magnet in uploaded:
+        name = magnet.get("name", "Torrent")
+        if magnet.get("ready", False):
+            try:
+                imported = await (
+                    _process_ready_into_package(magnet["id"], destination, package_id, qm)
+                    if package_id
+                    else _process_ready_without_package(magnet["id"], name, destination, qm)
                 )
+                if imported == 0:
+                    failed_sources.append((name, "AllDebrid returned no downloadable files"))
+                added_torrents.append({
+                    "id": magnet["id"], "name": name,
+                    "ready": True, "imported": imported,
+                })
+            except Exception:
+                pending_torrents.append(magnet)
+        else:
+            pending_torrents.append(magnet)
 
+    async with db_session() as db:
+        for magnet in pending_torrents:
+            added_torrents.append(
+                await _insert_torrent(db, magnet, destination, now, package_id=package_id)
+            )
         if package_id and failed_sources:
             for name, error in failed_sources:
                 await db.execute(

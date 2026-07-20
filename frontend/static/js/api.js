@@ -19,8 +19,11 @@ function escHtml(str) {
 function formatSize(bytes) {
   if (!bytes || bytes === 0) return "\u2014";
   const k = 1024;
-  const sizes = ["B", "KB", "MB", "GB", "TB"];
-  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  const french = typeof getLang === "function" && getLang() === "fr";
+  const sizes = french
+    ? ["o", "Ko", "Mo", "Go", "To", "Po"]
+    : ["B", "KB", "MB", "GB", "TB", "PB"];
+  const i = Math.min(Math.floor(Math.log(bytes) / Math.log(k)), sizes.length - 1);
   return `${(bytes / Math.pow(k, i)).toFixed(1)} ${sizes[i]}`;
 }
 

@@ -32,6 +32,8 @@ from services.queue_utils import (
     parse_datetime as _parse_datetime,
     path_is_allowed as _path_is_allowed,
 )
+from services.queue_snapshot import load_queue_revision, load_queue_snapshot
+from services.torrent_tracker import check_torrents
 
 
 class QueueManager:
@@ -42,7 +44,10 @@ class QueueManager:
         self._ws_manager = None
         self._running = False
         self._last_torrent_check = 0
-        self._media_auto_refresh_pending = True
+        self._snapshot = {"revision": 0, "downloads": [], "packages": [], "torrents": []}
+        self._snapshot_db_revision = -1
+        self._snapshot_lock = asyncio.Lock()
+        self._media_auto_refresh_pending = False
         self._media_auto_refresh_running = False
         self._media_auto_refresh_retry_at = 0.0
         self._recent_errors = deque(maxlen=20)
@@ -50,6 +55,7 @@ class QueueManager:
             "running": False,
             "last_tick_at": None,
             "last_tick_seconds": 0,
+            "last_aria2_batch_seconds": 0,
             "last_tick_error": "",
             "tick_errors": 0,
             "temporary_aria2_errors": 0,
@@ -75,6 +81,10 @@ class QueueManager:
         })
         record_event_nowait("queue", source, message)
 
+    @staticmethod
+    def log_torrent_failure(torrent_id: str, exc: Exception):
+        log(f"Torrent check failed for {torrent_id}: {exc}")
+
     async def _finalize_download(self, db, row, parsed: dict, now: str):
         cursor = await db.execute(
             """UPDATE downloads SET
@@ -95,7 +105,6 @@ class QueueManager:
         if cursor.rowcount == 0:
             return
 
-        await aria2.remove_result(row["aria2_gid"])
         await self._move_to_history(db, row["id"], now)
         if not row["package_id"]:
             await db.execute("DELETE FROM downloads WHERE id = ?", (row["id"],))
@@ -114,8 +123,6 @@ class QueueManager:
         config = get_config()
         if file_path and _path_is_allowed(file_path, row["destination"], config):
             sidecar_was_present = Path(f"{file_path}.aria2").is_file()
-
-        await aria2.remove(row["aria2_gid"])
 
         if file_path and sidecar_was_present and _path_is_allowed(file_path, row["destination"], config):
             for partial_path in (file_path, Path(f"{file_path}.aria2")):
@@ -163,6 +170,9 @@ class QueueManager:
         # A service restart kills in-flight resolver tasks. Requeue them immediately.
         async with db_session() as db:
             await db.execute(
+                "UPDATE packages SET status = 'active' WHERE status = 'finalizing'"
+            )
+            await db.execute(
                 "UPDATE downloads SET status = 'pending', error_msg = 'Recovered after restart' "
                 "WHERE status IN ('submitting', 'postprocessing') AND aria2_gid IS NULL"
             )
@@ -170,7 +180,19 @@ class QueueManager:
                 "UPDATE downloads SET status = 'pending', speed = 0, error_msg = 'Recovered after restart' "
                 "WHERE engine = 'youtube' AND status = 'downloading'"
             )
+            state = await (await db.execute(
+                "SELECT pending, retry_at FROM media_refresh_state WHERE id = 1"
+            )).fetchone()
             await db.commit()
+        if state:
+            self._media_auto_refresh_pending = bool(state[0])
+            retry_at = _parse_datetime(state[1])
+            if retry_at:
+                remaining = max(
+                    0.0,
+                    (retry_at - datetime.now(timezone.utc)).total_seconds(),
+                )
+                self._media_auto_refresh_retry_at = time.monotonic() + remaining
         self._running = True
         self._health["running"] = True
         self._task = asyncio.create_task(self._loop())
@@ -184,6 +206,7 @@ class QueueManager:
                 await self._task
             except asyncio.CancelledError:
                 pass
+            self._task = None
         tasks = list(self._submission_tasks.values())
         for task in tasks:
             task.cancel()
@@ -191,6 +214,24 @@ class QueueManager:
             await asyncio.gather(*tasks, return_exceptions=True)
         self._submission_tasks.clear()
         await self.youtube_downloads.stop()
+        await aria2.close()
+
+    async def refresh_snapshot(self, *, force: bool = False) -> tuple[dict, bool]:
+        async with self._snapshot_lock:
+            current_revision = await load_queue_revision()
+            if not force and current_revision == self._snapshot_db_revision:
+                return self._snapshot, False
+            snapshot = await load_queue_snapshot()
+            db_revision = snapshot.pop("db_revision")
+            revision = self._snapshot["revision"] + 1
+            self._snapshot = {"revision": revision, **snapshot}
+            self._snapshot_db_revision = db_revision
+            return self._snapshot, True
+
+    async def get_snapshot(self) -> dict:
+        if self._snapshot["revision"] == 0:
+            await self.refresh_snapshot(force=True)
+        return self._snapshot
 
     def _start_submission(self, item: dict, segments: int):
         download_id = item["id"]
@@ -343,17 +384,29 @@ class QueueManager:
         now_dt = datetime.now(timezone.utc)
         stalled_timeout_hours = max(0, min(168, int(config["downloads"].get("stalled_timeout_hours", 3) or 0)))
 
+        # Never hold SQLite while waiting for the local RPC engine. One JSON-RPC
+        # batch keeps tick cost nearly constant as the active queue grows.
         async with db_session(row_factory=True) as db:
-
-            # ---- Update status for downloads submitted to aria2 ---- #
             cursor = await db.execute(
                 "SELECT * FROM downloads WHERE aria2_gid IS NOT NULL AND status NOT IN ('complete', 'error', 'failed')"
             )
             active_rows = await cursor.fetchall()
+        rpc_started = time.monotonic()
+        try:
+            aria2_results = await aria2.tell_status_many([row["aria2_gid"] for row in active_rows])
+        except Exception as exc:
+            aria2_results = {row["aria2_gid"]: exc for row in active_rows}
+        self._health["last_aria2_batch_seconds"] = round(time.monotonic() - rpc_started, 3)
+        aria2_cleanup: list[tuple[str, str]] = []
 
+        async with db_session(row_factory=True) as db:
+
+            # ---- Update status for downloads submitted to aria2 ---- #
             for row in active_rows:
                 try:
-                    data = await aria2.tell_status(row["aria2_gid"])
+                    data = aria2_results[row["aria2_gid"]]
+                    if isinstance(data, Exception):
+                        raise data
                     parsed = aria2.parse_status(data)
 
                     name_update = parsed["name"] if parsed["name"] else row["name"]
@@ -381,6 +434,7 @@ class QueueManager:
                         and parsed["progress"] < 100
                         and now_dt - last_progress_dt >= timedelta(hours=stalled_timeout_hours)
                     ):
+                        aria2_cleanup.append(("remove", row["aria2_gid"]))
                         await self._expire_download(
                             db, row, parsed, data, now, stalled_timeout_hours
                         )
@@ -391,7 +445,7 @@ class QueueManager:
                         retry_count = (row["retry_count"] or 0) + 1
                         max_retries = row["max_retries"] or 5
 
-                        await aria2.remove_result(row["aria2_gid"])
+                        aria2_cleanup.append(("result", row["aria2_gid"]))
 
                         if retry_count >= max_retries:
                             # Max retries reached — mark as failed definitively
@@ -434,6 +488,7 @@ class QueueManager:
                                  now, row["id"], row["aria2_gid"]),
                             )
                     elif parsed["status"] == "complete":
+                        aria2_cleanup.append(("result", row["aria2_gid"]))
                         await self._finalize_download(db, row, parsed, now)
                     else:
                         await db.execute(
@@ -570,56 +625,29 @@ class QueueManager:
             # ---- Update package statuses ---- #
             await self._update_package_statuses(db, now)
 
-            # ---- Check torrents (every 5s) ---- #
-            import time
-            _now_ts = time.time()
-            if _now_ts - self._last_torrent_check >= 5:
-                self._last_torrent_check = _now_ts
-                await self._check_torrents(db, now)
+        for action, gid in aria2_cleanup:
+            try:
+                if action == "remove":
+                    await aria2.remove(gid)
+                else:
+                    await aria2.remove_result(gid)
+            except Exception as exc:
+                self._record_error("aria2_cleanup", exc)
 
-            # ---- Broadcast to WebSocket clients ---- #
-            if self._ws_manager:
-                cursor = await db.execute(
-                    "SELECT * FROM downloads WHERE status NOT IN ('complete', 'failed') ORDER BY position ASC, created_at ASC"
-                )
-                active_downloads = [dict(r) for r in await cursor.fetchall()]
+        now_ts = time.time()
+        if now_ts - self._last_torrent_check >= 5:
+            self._last_torrent_check = now_ts
+            await check_torrents(self, now)
 
-                cursor = await db.execute(
-                    "SELECT * FROM downloads WHERE status IN ('complete', 'failed') ORDER BY updated_at DESC"
-                )
-                finished_downloads = [dict(r) for r in await cursor.fetchall()]
-
-                cursor = await db.execute(
-                    "SELECT * FROM packages ORDER BY created_at DESC"
-                )
-                packages = [dict(r) for r in await cursor.fetchall()]
-
-                # Enrich packages with download data for frontend
-                all_downloads = active_downloads + finished_downloads
-                for pkg in packages:
-                    pkg_downloads = [d for d in all_downloads if d.get("package_id") == pkg["id"]]
-                    pkg["downloads"] = pkg_downloads
-                    pkg["total_files"] = len(pkg_downloads)
-                    pkg["completed_files"] = sum(1 for d in pkg_downloads if d["status"] == "complete")
-                    pkg["active_files"] = sum(1 for d in pkg_downloads if d["status"] == "downloading")
-                    total_size = sum(d.get("size") or 0 for d in pkg_downloads)
-                    total_downloaded = sum(d.get("downloaded") or 0 for d in pkg_downloads)
-                    pkg["total_size"] = total_size
-                    pkg["total_downloaded"] = total_downloaded
-                    pkg["progress"] = round(total_downloaded / total_size * 100, 1) if total_size > 0 else 0
-
-                # Fetch torrents for broadcast
-                cursor = await db.execute(
-                    "SELECT * FROM torrents ORDER BY created_at DESC"
-                )
-                torrents_list = [dict(r) for r in await cursor.fetchall()]
-
-                await self._ws_manager.broadcast({
-                    "type": "downloads_update",
-                    "data": active_downloads + finished_downloads,
-                    "packages": packages,
-                    "torrents": torrents_list,
-                })
+        snapshot, changed = await self.refresh_snapshot()
+        if changed and self._ws_manager:
+            await self._ws_manager.broadcast({
+                "type": "downloads_update",
+                "revision": snapshot["revision"],
+                "data": snapshot["downloads"],
+                "packages": snapshot["packages"],
+                "torrents": snapshot["torrents"],
+            })
 
         await self._maybe_auto_refresh_media()
 
@@ -664,12 +692,33 @@ class QueueManager:
                 log(f"Media auto-refresh completed for: {names}")
             if errors:
                 self._media_auto_refresh_retry_at = time.monotonic() + 300
+                retry_at = (datetime.now(timezone.utc) + timedelta(minutes=5)).isoformat()
+                async with db_session() as db:
+                    await db.execute(
+                        "UPDATE media_refresh_state SET pending = 1, retry_at = ?, updated_at = ? WHERE id = 1",
+                        (retry_at, datetime.now(timezone.utc).isoformat()),
+                    )
+                    await db.commit()
                 for item in errors:
                     self._record_error("media_auto_refresh", item.get("error", "Unknown media refresh error"))
                 return
             self._media_auto_refresh_pending = False
+            self._media_auto_refresh_retry_at = 0.0
+            async with db_session() as db:
+                await db.execute(
+                    "UPDATE media_refresh_state SET pending = 0, retry_at = NULL, updated_at = ? WHERE id = 1",
+                    (datetime.now(timezone.utc).isoformat(),),
+                )
+                await db.commit()
         except Exception as e:
             self._media_auto_refresh_retry_at = time.monotonic() + 300
+            retry_at = (datetime.now(timezone.utc) + timedelta(minutes=5)).isoformat()
+            async with db_session() as db:
+                await db.execute(
+                    "UPDATE media_refresh_state SET pending = 1, retry_at = ?, updated_at = ? WHERE id = 1",
+                    (retry_at, datetime.now(timezone.utc).isoformat()),
+                )
+                await db.commit()
             self._record_error("media_auto_refresh", f"{type(e).__name__}: {e}")
         finally:
             self._media_auto_refresh_running = False
@@ -729,115 +778,6 @@ class QueueManager:
             }))
         await db.commit()
 
-    async def _check_torrents(self, db, now: str):
-        cursor = await db.execute(
-            "SELECT * FROM torrents WHERE status IN ('processing', 'ready_importing')"
-        )
-        rows = await cursor.fetchall()
-        torrent_errors = 0
-        timeout_hours = max(
-            0,
-            min(168, int(get_config()["downloads"].get("stalled_timeout_hours", 3) or 0)),
-        )
-        now_dt = _parse_datetime(now) or datetime.now(timezone.utc)
-        for row in rows:
-            importing = row["status"] == "ready_importing"
-            try:
-                last_progress_dt = _parse_datetime(
-                    row["last_progress_at"] or row["created_at"]
-                ) or now_dt
-                if (
-                    timeout_hours > 0
-                    and now_dt - last_progress_dt >= timedelta(hours=timeout_hours)
-                ):
-                    await self._fail_torrent(
-                        db,
-                        row,
-                        now,
-                        f"No AllDebrid progress for {timeout_hours} hours (timeout)",
-                    )
-                    continue
-
-                status_data = await alldebrid.magnet_status(row["alldebrid_id"])
-                sc = status_data.get("statusCode", 0)
-
-                if sc == 4:
-                    importing = True
-                    await db.execute(
-                        "UPDATE torrents SET status = 'ready_importing', status_message = ?, updated_at = ? WHERE id = ? AND status IN ('processing', 'ready_importing')",
-                        ("Ready on AllDebrid, importing files", now, row["id"]),
-                    )
-                    await db.commit()
-                    # Ready — get files and create package
-                    links = await alldebrid.magnet_files(row["alldebrid_id"])
-                    if not links:
-                        if row["package_id"]:
-                            await db.execute("DELETE FROM torrents WHERE id = ?", (row["id"],))
-                            await db.commit()
-                            await self._check_package_complete(db, row["package_id"], now)
-                            continue
-                        raise Exception("AllDebrid returned no files for ready torrent")
-                    await self.import_torrent_links(
-                        row["name"] or status_data.get("filename") or "Torrent",
-                        links,
-                        row["destination"],
-                        package_id=row["package_id"],
-                    )
-                    await db.execute("DELETE FROM torrents WHERE id = ?", (row["id"],))
-                    await db.commit()
-                    if row["package_id"]:
-                        await self._check_package_complete(db, row["package_id"], now)
-                    try:
-                        await alldebrid.magnet_delete(row["alldebrid_id"])
-                    except Exception:
-                        pass
-                elif sc >= 5:
-                    # Error
-                    torrent_errors += 1
-                    await self._fail_torrent(
-                        db,
-                        row,
-                        now,
-                        status_data.get("filename", "AllDebrid torrent error"),
-                    )
-                else:
-                    # Processing — update progress
-                    dl = status_data.get("downloaded", 0)
-                    size = status_data.get("size", 0) or row["size"]
-                    progress = round(dl / size * 100, 1) if size > 0 else 0
-                    speed = status_data.get("downloadSpeed", 0)
-                    seeders = status_data.get("seeders", 0)
-                    progressed = dl > (row["downloaded"] or 0)
-                    last_progress_at = now if progressed else (
-                        row["last_progress_at"] or row["created_at"] or now
-                    )
-                    await db.execute(
-                        """UPDATE torrents SET progress = ?, speed = ?, seeders = ?,
-                               size = ?, downloaded = ?, status_message = ?,
-                               updated_at = ?, last_progress_at = ?
-                           WHERE id = ?""",
-                        (progress, speed, seeders,
-                         size, dl, status_data.get("filename", ""),
-                         now, last_progress_at, row["id"]),
-                    )
-                    await db.commit()
-            except Exception as e:
-                torrent_errors += 1
-                self._record_error("torrent", e)
-                if importing:
-                    await db.execute(
-                        "UPDATE torrents SET status = 'import_failed', status_message = ?, updated_at = ? WHERE id = ?",
-                        (str(e)[:400], now, row["id"]),
-                    )
-                else:
-                    await db.execute(
-                        "UPDATE torrents SET status_message = ?, updated_at = ? WHERE id = ? AND status = 'processing'",
-                        (f"Temporary torrent check failed: {type(e).__name__}", now, row["id"]),
-                    )
-                await db.commit()
-                log(f"Torrent check failed for {row['id']}: {e}")
-        self._health["torrent_errors"] = torrent_errors
-
     async def _move_to_history(self, db, download_id: str, now: str):
         cursor = await db.execute("SELECT * FROM downloads WHERE id = ?", (download_id,))
         row = await cursor.fetchone()
@@ -860,9 +800,13 @@ class QueueManager:
              row["size"], row["status"], row["error_msg"], pkg_name,
              row["created_at"], now, row["source_key"], row["package_id"]),
         )
-        await db.commit()
         if row["status"] == "complete":
             self._media_auto_refresh_pending = True
+            await db.execute(
+                "UPDATE media_refresh_state SET pending = 1, retry_at = NULL, updated_at = ? WHERE id = 1",
+                (now,),
+            )
+        await db.commit()
 
     async def _check_package_complete(self, db, package_id: str, now: str):
         pcur = await db.execute("SELECT * FROM packages WHERE id = ?", (package_id,))
@@ -884,6 +828,15 @@ class QueueManager:
         )
         (remaining,) = await cursor.fetchone()
         if remaining == 0:
+            claim = await db.execute(
+                """UPDATE packages SET status = 'finalizing', updated_at = ?
+                   WHERE id = ? AND status = 'active'""",
+                (now, package_id),
+            )
+            if claim.rowcount == 0:
+                return
+            await db.commit()
+
             cursor = await db.execute(
                 "SELECT COUNT(*) FROM downloads WHERE package_id = ?",
                 (package_id,),
@@ -1160,25 +1113,27 @@ class QueueManager:
 
     async def resume_download(self, download_id: str):
         async with db_session(row_factory=True) as db:
-            cursor = await db.execute(
+            row = await (await db.execute(
                 "SELECT aria2_gid, status FROM downloads WHERE id = ?", (download_id,)
-            )
-            row = await cursor.fetchone()
-            if not row or row["status"] not in ("paused", "error", "failed"):
-                return
+            )).fetchone()
+        if not row or row["status"] not in ("paused", "error", "failed"):
+            return
 
-            new_status = "pending"
-            if row["aria2_gid"]:
-                try:
-                    await aria2.resume(row["aria2_gid"])
-                    new_status = "downloading"
-                except Exception:
-                    await db.execute(
-                        "UPDATE downloads SET aria2_gid = NULL WHERE id = ?", (download_id,)
-                    )
+        new_status = "pending"
+        clear_gid = False
+        if row["aria2_gid"]:
+            try:
+                await aria2.resume(row["aria2_gid"])
+                new_status = "downloading"
+            except Exception:
+                clear_gid = True
 
+        async with db_session() as db:
+            if clear_gid:
+                await db.execute(
+                    "UPDATE downloads SET aria2_gid = NULL WHERE id = ?", (download_id,)
+                )
             now = datetime.now(timezone.utc).isoformat()
-            # Reset retry count on manual resume of failed downloads
             if row["status"] == "failed":
                 await db.execute(
                     "UPDATE downloads SET status = ?, retry_count = 0, error_msg = NULL, updated_at = ? WHERE id = ?",
@@ -1234,13 +1189,15 @@ class QueueManager:
     async def remove_all(self):
         await self.youtube_downloads.stop()
         async with db_session(row_factory=True) as db:
-            cursor = await db.execute("SELECT aria2_gid FROM downloads WHERE aria2_gid IS NOT NULL")
-            rows = await cursor.fetchall()
-            for row in rows:
-                try:
-                    await aria2.remove(row["aria2_gid"])
-                except Exception:
-                    pass
+            rows = await (await db.execute(
+                "SELECT aria2_gid FROM downloads WHERE aria2_gid IS NOT NULL"
+            )).fetchall()
+        for row in rows:
+            try:
+                await aria2.remove(row["aria2_gid"])
+            except Exception:
+                pass
+        async with db_session() as db:
             await db.execute("DELETE FROM downloads")
             await db.execute("DELETE FROM packages")
             await db.commit()

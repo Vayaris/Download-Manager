@@ -22,6 +22,7 @@ def classify_rpc_error(code: Optional[int], message: str) -> str:
 class Aria2Service:
     def __init__(self):
         self._id = 0
+        self._client: httpx.AsyncClient | None = None
 
     def _get_url(self) -> str:
         config = get_config()
@@ -34,6 +35,25 @@ class Aria2Service:
         self._id += 1
         return self._id
 
+    def _get_client(self) -> httpx.AsyncClient:
+        if self._client is None or self._client.is_closed:
+            self._client = httpx.AsyncClient(
+                timeout=httpx.Timeout(5.0, connect=1.0),
+                limits=httpx.Limits(max_connections=5, max_keepalive_connections=2),
+            )
+        return self._client
+
+    @staticmethod
+    def _rpc_error(data: dict) -> Aria2RpcError:
+        error = data.get("error") or {}
+        message = str(error.get("message", error))
+        code = error.get("code")
+        return Aria2RpcError(
+            f"aria2 RPC error: {message}",
+            code=code,
+            category=classify_rpc_error(code, message),
+        )
+
     async def _call(self, method: str, params: list = None) -> Any:
         params = params or []
         payload = {
@@ -42,20 +62,48 @@ class Aria2Service:
             "method": method,
             "params": [f"token:{self._get_secret()}"] + params,
         }
-        async with httpx.AsyncClient(timeout=30.0) as client:
-            resp = await client.post(self._get_url(), json=payload)
-            resp.raise_for_status()
-            data = resp.json()
-            if "error" in data:
-                err = data["error"]
-                message = str(err.get("message", err))
-                code = err.get("code")
-                raise Aria2RpcError(
-                    f"aria2 RPC error: {message}",
-                    code=code,
-                    category=classify_rpc_error(code, message),
-                )
-            return data.get("result")
+        resp = await self._get_client().post(self._get_url(), json=payload)
+        resp.raise_for_status()
+        data = resp.json()
+        if "error" in data:
+            raise self._rpc_error(data)
+        return data.get("result")
+
+    async def tell_status_many(self, gids: List[str]) -> Dict[str, Any]:
+        """Return one result or Exception per GID using a single JSON-RPC request."""
+        if not gids:
+            return {}
+        secret = self._get_secret()
+        requests = []
+        request_ids = {}
+        for gid in gids:
+            request_id = str(self._next_id())
+            request_ids[request_id] = gid
+            requests.append({
+                "jsonrpc": "2.0",
+                "id": request_id,
+                "method": "aria2.tellStatus",
+                "params": [f"token:{secret}", gid],
+            })
+        response = await self._get_client().post(self._get_url(), json=requests)
+        response.raise_for_status()
+        payload = response.json()
+        if not isinstance(payload, list):
+            raise Aria2RpcError("aria2 returned an invalid batch response")
+        results: Dict[str, Any] = {}
+        for item in payload:
+            gid = request_ids.get(str(item.get("id")))
+            if not gid:
+                continue
+            results[gid] = self._rpc_error(item) if "error" in item else item.get("result")
+        for gid in gids:
+            results.setdefault(gid, Aria2RpcError("aria2 returned no status for this GID"))
+        return results
+
+    async def close(self):
+        if self._client is not None and not self._client.is_closed:
+            await self._client.aclose()
+        self._client = None
 
     async def add_uri(self, url: str, destination: str, filename: Optional[str] = None, split: int = 1) -> str:
         options: Dict[str, str] = {

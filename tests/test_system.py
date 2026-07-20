@@ -1,6 +1,7 @@
 import os
 import re
 import sys
+import tarfile
 import tempfile
 import unittest
 from pathlib import Path
@@ -69,8 +70,9 @@ class SystemTests(unittest.TestCase):
             response = Response()
             with (
                 patch.object(update_runner, "CONFIG_FILE", config),
-                patch.object(update_runner, "INSTALL_DIR", root),
+                patch.object(update_runner, "CURRENT_LINK", root),
                 patch.object(update_runner, "run", return_value=SimpleNamespace(returncode=0)),
+                patch.object(update_runner, "_aria2_healthy", return_value=True),
                 patch.object(update_runner.urllib.request, "urlopen", return_value=response) as urlopen,
             ):
                 self.assertTrue(update_runner.healthy("1.13.0", timeout=1))
@@ -104,32 +106,65 @@ class SystemTests(unittest.TestCase):
                 self.assertEqual(backup.execute("SELECT value FROM values_test").fetchone()[0], "committed")
             self.assertEqual(destination.stat().st_mode & 0o777, 0o600)
 
-    def test_update_installs_the_exact_verified_tag_commit(self):
+    def test_update_accepts_the_exact_verified_tag_commit(self):
         expected = "a" * 40
-        responses = [
-            SimpleNamespace(returncode=0, stdout="", stderr=""),
-            SimpleNamespace(returncode=0, stdout=expected + "\n", stderr=""),
-            SimpleNamespace(returncode=0, stdout="", stderr=""),
-        ]
-        with patch.object(update_runner, "run", side_effect=responses) as run:
-            installed = update_runner.install_target(Path("/repo"), "v2.0.0-rc.1", expected)
+        with patch.object(
+            update_runner, "run",
+            return_value=SimpleNamespace(returncode=0, stdout=expected + "\n", stderr=""),
+        ) as run:
+            installed = update_runner._validate_release("v2.0.0-rc.1", expected)
         self.assertEqual(installed, expected)
-        self.assertEqual(run.call_args_list[0].args[0][:4], ["git", "fetch", "--force", "origin"])
-        self.assertEqual(run.call_args_list[2].args[0], ["git", "reset", "--hard", expected])
+        self.assertEqual(run.call_args.args[0][-2:], ["1", "v2.0.0-rc.1"])
 
     def test_update_rejects_a_tag_commit_mismatch(self):
-        responses = [
-            SimpleNamespace(returncode=0, stdout="", stderr=""),
-            SimpleNamespace(returncode=0, stdout="b" * 40 + "\n", stderr=""),
-        ]
-        with patch.object(update_runner, "run", side_effect=responses):
+        with patch.object(
+            update_runner, "run",
+            return_value=SimpleNamespace(returncode=0, stdout="b" * 40 + "\n", stderr=""),
+        ):
             with self.assertRaisesRegex(RuntimeError, "does not match"):
-                update_runner.install_target(Path("/repo"), "v2.0.0", "a" * 40)
+                update_runner._validate_release("v2.0.0", "a" * 40)
 
     def test_update_runner_propagates_failure_exit_code(self):
         source = (ROOT / "backend" / "update_runner.py").read_text()
         self.assertIn("return 1", source)
-        self.assertIn("sys.exit(main())", source)
+        self.assertIn("raise SystemExit(main())", source)
+
+    def test_update_migrates_a_legacy_virtualenv_without_deleting_it(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            install = root / "install"
+            venvs = install / "venvs"
+            legacy = install / "venv"
+            backup = root / "backup"
+            venvs.mkdir(parents=True)
+            legacy.mkdir()
+            backup.mkdir()
+            (legacy / "marker").write_text("preserved")
+            (backup / "previous.json").write_text("{}")
+            previous = {"release": str(install), "venv": str(legacy)}
+            with (
+                patch.object(update_runner, "VENV_LINK", legacy),
+                patch.object(update_runner, "VENVS_DIR", venvs),
+            ):
+                update_runner.migrate_legacy_runtime(previous, backup, "job")
+            migrated = venvs / "legacy-job"
+            self.assertEqual((migrated / "marker").read_text(), "preserved")
+            self.assertEqual(previous["venv"], str(migrated))
+            self.assertFalse(legacy.exists())
+
+    def test_update_rejects_symlinks_in_release_archives(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            archive = root / "release.tar"
+            destination = root / "release"
+            destination.mkdir()
+            with tarfile.open(archive, "w") as bundle:
+                entry = tarfile.TarInfo("unsafe-link")
+                entry.type = tarfile.SYMTYPE
+                entry.linkname = "/etc/passwd"
+                bundle.addfile(entry)
+            with self.assertRaisesRegex(RuntimeError, "unsupported"):
+                update_runner._safe_extract(archive, destination)
 
 
 if __name__ == "__main__":

@@ -2,7 +2,7 @@
 
 Self-hosted download manager powered by **FastAPI**, **aria2** and **AllDebrid**. It provides a responsive web/PWA interface for direct links, magnets and `.torrent` files, with real-time queue updates and optional Plex or Jellyfin library refreshes.
 
-Current release: **v2.1.0**
+Current release: **v2.2.0**
 
 ![Python](https://img.shields.io/badge/Python-3.10+-3776AB?logo=python&logoColor=white)
 ![FastAPI](https://img.shields.io/badge/FastAPI-009688?logo=fastapi&logoColor=white)
@@ -29,7 +29,7 @@ Current release: **v2.1.0**
 - Plex or Jellyfin integration with favorites, manual refresh suggestions and optional automatic refresh
 - Webhooks for Discord, Slack, Telegram, Gotify, ntfy, Signal and generic JSON
 - Mandatory authentication, optional TOTP 2FA, login rate limiting and IP blocking
-- Persistent structured diagnostics, safe updates with automatic rollback, SMB/CIFS support and admin CLI
+- Persistent structured diagnostics, immutable releases with automatic rollback, SMB/CIFS support and admin CLI
 
 ## Requirements
 
@@ -47,7 +47,7 @@ Current release: **v2.1.0**
 bash <(curl -fsSL https://raw.githubusercontent.com/Vayaris/download-manager/main/install.sh)
 ```
 
-The installer asks for the HTTP port (`40320` by default), installs system dependencies, creates a Python virtual environment, configures `download-manager.service`, and starts the application. It does not configure or modify Plex/Jellyfin services.
+The installer asks for the HTTP port (`40320` by default), installs system dependencies, prepares an immutable release with its own Python environment, configures `download-manager.service` and `download-manager-aria2.service`, then starts the application. It does not configure, restart or modify Plex/Jellyfin services.
 
 Open `http://<SERVER_IP>:40320` and create the administrator account on first launch.
 
@@ -185,10 +185,15 @@ Existing installations keep their configuration during installer updates. Missin
 
 | Path | Purpose |
 |---|---|
-| `/opt/download-manager` | Application and Python virtual environment |
+| `/opt/download-manager/current` | Atomic link to the active immutable release |
+| `/opt/download-manager/releases` | Current and previous application releases |
+| `/opt/download-manager/venvs` | Versioned Python environments |
 | `/opt/download-manager/config/downloads.db` | SQLite database |
+| `/opt/download-manager/config/aria2.session` | aria2 recovery session |
 | `/opt/download-manager/config/youtube-cookies.txt` | Optional YouTube authentication cookies; mode `0600` |
 | `/etc/download-manager/config.yml` | Runtime configuration and integration secrets |
+| `/var/lib/download-manager/repository.git` | Private bare repository used by verified updates |
+| `/var/backups/download-manager` | Update configuration and SQLite backups |
 | `/var/log/download-manager` | aria2/application logs |
 | `/opt/download-manager/tools/deno/deno` | Verified Deno runtime for optional direct YouTube downloads |
 
@@ -196,14 +201,16 @@ Useful commands:
 
 ```bash
 systemctl status download-manager
+systemctl status download-manager-aria2
 systemctl restart download-manager
 journalctl -u download-manager -f
+journalctl -u download-manager-aria2 -f
 ```
 
 Admin CLI:
 
 ```bash
-cd /opt/download-manager/backend
+cd /opt/download-manager/current/backend
 /opt/download-manager/venv/bin/python dm-cli.py reset-admin
 /opt/download-manager/venv/bin/python dm-cli.py list-ips
 /opt/download-manager/venv/bin/python dm-cli.py unblock 1.2.3.4
@@ -214,16 +221,16 @@ cd /opt/download-manager/backend
 
 Use **Settings > Updates > Check for updates**. When a newer GitHub release is available, the interface shows its changelog, installs it, restarts Download Manager if required, and reloads the page.
 
-Updates run in an independent systemd unit. Before changing files, Download Manager saves the current commit, configuration and SQLite database. If the new service does not pass its health check, the previous version is restored automatically. The three most recent update backups are retained.
+Updates run in an independent systemd unit. The requested GitHub tag and commit are verified, then a fresh release and Python environment are prepared before the short service interruption. Download Manager snapshots the configuration, SQLite database and service units before switching atomic links. If FastAPI or aria2 does not pass its health check, the previous links, database, configuration and units are restored automatically. The two previous runtimes and three most recent update backups are retained.
 
 Version 2 makes the modern interface the default and requires one new login so the browser can move the session into a secure HttpOnly cookie. **Old look v1** remains selectable in the account settings and will be kept through the v2.1 stabilization period; it will not be removed without explicit validation.
 
 For a manual update:
 
 ```bash
-cd /opt/download-manager
-git pull --ff-only
-sudo bash install.sh
+git clone https://github.com/Vayaris/Download-Manager.git
+cd Download-Manager
+sudo bash install.sh --upgrade
 ```
 
 Back up `/etc/download-manager/config.yml` and `/opt/download-manager/config/downloads.db` before a manual recovery or migration.
@@ -250,9 +257,11 @@ tail -n 100 /var/log/download-manager/aria2.log
 
 If a destination is unavailable, verify the mount first and confirm that its path is included in `downloads.allowed_paths`. For speed-limit issues, use the status shown in Settings: it reports the value effectively read back from aria2, not the speed of AllDebrid's remote cache.
 
+If the interface reports that only the real-time connection is unavailable while downloads still work, enable WebSocket forwarding for `/ws/downloads` in the reverse proxy. In Nginx Proxy Manager, turn on **Websockets Support** for the proxy host. The Downloads page falls back to a lightweight three-second HTTP snapshot poll after five seconds, but WebSocket support remains the preferred configuration.
+
 ## Architecture
 
-Browser/PWA communicates with FastAPI over HTTP and authenticated WebSocket. FastAPI stores queue and account state in SQLite, delegates local transfers to aria2 RPC, and uses AllDebrid for debrid/torrent/streaming resolution. Optional direct YouTube transfers run in isolated yt-dlp subprocesses so analysis and post-processing do not block the queue loop. The frontend is framework-free Vanilla JS.
+Browser/PWA communicates with FastAPI over HTTP and authenticated WebSocket. FastAPI stores queue and account state in SQLite, delegates local transfers to the separately supervised aria2 RPC service, and uses AllDebrid for debrid/torrent/streaming resolution. Queue status calls are batched, WebSocket snapshots are emitted only when state changes, and AllDebrid network waits do not retain SQLite connections. Optional direct YouTube transfers run in isolated yt-dlp subprocesses so analysis and post-processing do not block the queue loop. The frontend is framework-free Vanilla JS.
 
 This project is designed for a single self-hosted user. SQLite and the current service model are intentional for that scope.
 
