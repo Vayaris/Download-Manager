@@ -59,6 +59,10 @@ class SystemTests(unittest.TestCase):
             root = Path(temp)
             config = root / "config.yml"
             version = root / "VERSION"
+            systemd = root / "systemd"
+            systemd.mkdir()
+            for unit_name in update_runner.UNIT_NAMES:
+                (systemd / unit_name).write_text("[Unit]\n")
             config.write_text("server:\n  port: 45678\n")
             version.write_text("1.13.0")
             class Response:
@@ -71,6 +75,7 @@ class SystemTests(unittest.TestCase):
             with (
                 patch.object(update_runner, "CONFIG_FILE", config),
                 patch.object(update_runner, "CURRENT_LINK", root),
+                patch.object(update_runner, "SYSTEMD_DIR", systemd),
                 patch.object(update_runner, "run", return_value=SimpleNamespace(returncode=0)),
                 patch.object(update_runner, "_aria2_healthy", return_value=True),
                 patch.object(update_runner.urllib.request, "urlopen", return_value=response) as urlopen,
