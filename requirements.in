@@ -1,6 +1,6 @@
 aiofiles
 aiosqlite
-bcrypt<5
+bcrypt<6
 defusedxml
 fastapi
 httpx
