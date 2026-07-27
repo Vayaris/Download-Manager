@@ -8,7 +8,7 @@ import subprocess
 from datetime import datetime, timezone
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
+from fastapi import APIRouter, Depends, File, HTTPException, Query, Request, UploadFile
 from urllib.parse import urlparse
 
 from models import SettingsUpdate, StoragePathRequest, MediaSettingsRequest, SignalCheckRequest, SignalDeployRequest, SignalRegisterRequest, SignalVerifyRequest, SignalResetRequest
@@ -90,6 +90,7 @@ def _media_public_config(cfg: dict, include_status: bool = False) -> dict:
         "token_configured": bool(token),
         "last_refreshes": media_cfg.get("last_refreshes", {}),
         "favorite_keys": media_cfg.get("favorite_keys", []),
+        "path_mappings": media_cfg.get("path_mappings", []) if provider == "jellyfin" else [],
         **media_auto_public_fields(media_cfg),
         "providers": {
             "plex": _plex_public_config(cfg, include_status=False),
@@ -99,6 +100,7 @@ def _media_public_config(cfg: dict, include_status: bool = False) -> dict:
                 "token_configured": bool(cfg.get("jellyfin", {}).get("token", "")),
                 "last_refreshes": cfg.get("jellyfin", {}).get("last_refreshes", {}),
                 "favorite_keys": cfg.get("jellyfin", {}).get("favorite_keys", []),
+                "path_mappings": cfg.get("jellyfin", {}).get("path_mappings", []),
                 **media_auto_public_fields(cfg.get("jellyfin", {})),
             },
         },
@@ -131,6 +133,29 @@ def _normalize_plex_favorite_keys(keys: list[str] | None) -> list[str]:
             continue
         seen.add(clean)
         result.append(clean)
+    return result
+
+
+def _normalize_jellyfin_path_mappings(mappings) -> list[dict[str, str]]:
+    if mappings is None:
+        return []
+    result = []
+    seen_sources = set()
+    for mapping in mappings:
+        download_prefix = os.path.normpath(str(mapping.download_prefix or "").strip())
+        jellyfin_prefix = os.path.normpath(str(mapping.jellyfin_prefix or "").strip())
+        if not Path(download_prefix).is_absolute() or not Path(jellyfin_prefix).is_absolute():
+            raise HTTPException(status_code=400, detail="Jellyfin path mappings must use absolute paths")
+        if download_prefix == "/":
+            raise HTTPException(status_code=400, detail="The Download Manager mapping prefix cannot be the filesystem root")
+        validate_destination(download_prefix)
+        if download_prefix in seen_sources:
+            raise HTTPException(status_code=400, detail="A Download Manager path prefix can only be mapped once")
+        seen_sources.add(download_prefix)
+        result.append({
+            "download_prefix": download_prefix.rstrip("/") or "/",
+            "jellyfin_prefix": jellyfin_prefix.rstrip("/") or "/",
+        })
     return result
 
 
@@ -369,7 +394,7 @@ async def get_media_settings(_=Depends(get_current_user)):
 
 
 @router.put("/media")
-async def update_media_settings(body: MediaSettingsRequest, _=Depends(get_current_user)):
+async def update_media_settings(body: MediaSettingsRequest, request: Request, _=Depends(get_current_user)):
     current = get_config()
     provider = (body.provider or _active_media_provider(current)).strip().lower()
     if provider not in ("plex", "jellyfin"):
@@ -380,6 +405,13 @@ async def update_media_settings(body: MediaSettingsRequest, _=Depends(get_curren
         raise HTTPException(status_code=400, detail="Media token is too long")
     if body.favorite_keys is not None and len(body.favorite_keys) > 500:
         raise HTTPException(status_code=400, detail="Too many favorite libraries")
+    if body.path_mappings is not None and provider != "jellyfin":
+        raise HTTPException(status_code=400, detail="Path mappings are only supported for Jellyfin")
+    normalized_mappings = (
+        _normalize_jellyfin_path_mappings(body.path_mappings)
+        if body.path_mappings is not None else None
+    )
+    previous_mappings = current.get("jellyfin", {}).get("path_mappings", [])
 
     def mutate(cfg):
         media_cfg = cfg.setdefault(provider, _media_defaults(provider))
@@ -401,13 +433,22 @@ async def update_media_settings(body: MediaSettingsRequest, _=Depends(get_curren
             media_cfg["auto_refresh_enabled"] = bool(body.auto_refresh_enabled)
             if body.auto_refresh_enabled and not previous:
                 media_cfg["auto_refresh_enabled_at"] = datetime.now(timezone.utc).isoformat()
+        if normalized_mappings is not None:
+            media_cfg["path_mappings"] = normalized_mappings
         media_cfg.setdefault("last_refreshes", {})
         media_cfg.setdefault("favorite_keys", [])
         media_cfg.setdefault("auto_refreshes", {})
         media_cfg.setdefault("auto_refresh_enabled", False)
         media_cfg.setdefault("auto_refresh_enabled_at", None)
+        media_cfg.setdefault("auto_refresh_last_result", None)
+        media_cfg.setdefault("path_mappings", [])
 
     cfg, _ = update_config(mutate)
+    mappings_changed = normalized_mappings is not None and normalized_mappings != previous_mappings
+    if mappings_changed and cfg.get("jellyfin", {}).get("auto_refresh_enabled", False):
+        manager = getattr(request.app.state, "queue_manager", None)
+        if manager and hasattr(manager, "schedule_media_auto_refresh"):
+            await manager.schedule_media_auto_refresh()
     return {"status": "saved", **_media_public_config(cfg, include_status=True)}
 
 

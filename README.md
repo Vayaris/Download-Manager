@@ -2,7 +2,7 @@
 
 Self-hosted download manager powered by **FastAPI**, **aria2** and **AllDebrid**. It provides a responsive web/PWA interface for direct links, magnets and `.torrent` files, with real-time queue updates and optional Plex or Jellyfin library refreshes.
 
-Current release: **v2.2.0**
+Current release: **v2.2.1**
 
 ![Python](https://img.shields.io/badge/Python-3.10+-3776AB?logo=python&logoColor=white)
 ![FastAPI](https://img.shields.io/badge/FastAPI-009688?logo=fastapi&logoColor=white)
@@ -123,6 +123,8 @@ Settings supports one active media provider at a time:
 - **Jellyfin:** server URL and API key
 
 The media tab lists libraries, allows favorites with drag-and-drop ordering, and suggests likely libraries from completed download destinations. Automatic refresh is disabled by default; when enabled, recommended libraries are refreshed only after the entire download queue has reached a terminal state.
+
+If Jellyfin runs in Docker and sees different paths from Download Manager, add a path mapping in the Jellyfin settings. For example, map the host destination `/mnt/movies` to the container path `/media/movies`. Unmatched destinations are reported on the media page instead of triggering a global library scan.
 
 Media credentials are stored server-side and are never returned to the browser. Download Manager calls the configured API but does not restart or reconfigure the media server.
 

@@ -222,6 +222,7 @@ plex:
   auto_refresh_enabled: false
   auto_refresh_enabled_at: null
   auto_refreshes: {}
+  auto_refresh_last_result: null
 
 jellyfin:
   enabled: false
@@ -232,6 +233,8 @@ jellyfin:
   auto_refresh_enabled: false
   auto_refresh_enabled_at: null
   auto_refreshes: {}
+  auto_refresh_last_result: null
+  path_mappings: []
 
 media:
   active: "plex"

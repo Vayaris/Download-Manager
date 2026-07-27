@@ -126,6 +126,11 @@ class StoragePathRequest(BaseModel):
     path: str = Field(min_length=1, max_length=4096)
 
 
+class MediaPathMapping(BaseModel):
+    download_prefix: str = Field(min_length=1, max_length=4096)
+    jellyfin_prefix: str = Field(min_length=1, max_length=4096)
+
+
 class MediaSettingsRequest(BaseModel):
     provider: Optional[str] = None
     enabled: Optional[bool] = None
@@ -133,6 +138,7 @@ class MediaSettingsRequest(BaseModel):
     token: Optional[str] = None
     favorite_keys: Optional[List[str]] = None
     auto_refresh_enabled: Optional[bool] = None
+    path_mappings: Optional[List[MediaPathMapping]] = Field(default=None, max_length=50)
 
 
 class SignalCheckRequest(BaseModel):

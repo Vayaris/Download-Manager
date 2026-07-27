@@ -315,6 +315,49 @@ async function refreshAllDebridHosts() {
   }
 }
 
+let _jellyfinPathMappings = [];
+
+function collectJellyfinPathMappings() {
+  const rows = document.querySelectorAll("[data-jellyfin-path-mapping]");
+  return Array.from(rows).map((row) => ({
+    download_prefix: row.querySelector("[data-mapping-download]")?.value.trim() || "",
+    jellyfin_prefix: row.querySelector("[data-mapping-jellyfin]")?.value.trim() || "",
+  })).filter((item) => item.download_prefix || item.jellyfin_prefix);
+}
+
+function renderJellyfinPathMappings(mappings = _jellyfinPathMappings) {
+  const container = document.getElementById("jellyfin-path-mappings");
+  if (!container) return;
+  _jellyfinPathMappings = Array.isArray(mappings) ? mappings.map((item) => ({
+    download_prefix: String(item.download_prefix || ""),
+    jellyfin_prefix: String(item.jellyfin_prefix || ""),
+  })) : [];
+  if (!_jellyfinPathMappings.length) {
+    container.innerHTML = `<p class="form-hint jellyfin-mapping-empty">${escHtml(t("jellyfin_path_mapping_empty"))}</p>`;
+    return;
+  }
+  container.innerHTML = _jellyfinPathMappings.map((item, index) => `
+    <div class="jellyfin-path-mapping-row" data-jellyfin-path-mapping="${index}">
+      <input class="form-input" type="text" value="${escHtml(item.download_prefix)}" data-mapping-download placeholder="${escHtml(t("jellyfin_download_prefix_placeholder"))}" autocomplete="off">
+      <span class="jellyfin-mapping-arrow" aria-hidden="true">→</span>
+      <input class="form-input" type="text" value="${escHtml(item.jellyfin_prefix)}" data-mapping-jellyfin placeholder="${escHtml(t("jellyfin_container_prefix_placeholder"))}" autocomplete="off">
+      <button class="btn btn-sm jellyfin-mapping-remove" type="button" onclick="removeJellyfinPathMapping(${index})" title="${escHtml(t("jellyfin_path_mapping_remove"))}" aria-label="${escHtml(t("jellyfin_path_mapping_remove"))}">×</button>
+    </div>`).join("");
+}
+
+function addJellyfinPathMapping() {
+  _jellyfinPathMappings = collectJellyfinPathMappings();
+  _jellyfinPathMappings.push({ download_prefix: "", jellyfin_prefix: "" });
+  renderJellyfinPathMappings();
+  document.querySelector("[data-jellyfin-path-mapping]:last-child [data-mapping-download]")?.focus();
+}
+
+function removeJellyfinPathMapping(index) {
+  _jellyfinPathMappings = collectJellyfinPathMappings();
+  _jellyfinPathMappings.splice(index, 1);
+  renderJellyfinPathMappings();
+}
+
 function toggleMediaProviderFields() {
   const provider = document.getElementById("media-provider")?.value || "plex";
   document.getElementById("plex-fields")?.classList.toggle("hidden", provider !== "plex");
@@ -348,6 +391,7 @@ function renderMediaSettings(data) {
   jellyfinUrl.value = jellyfinData.url || "http://127.0.0.1:8096";
   jellyfinToken.value = "";
   jellyfinToken.placeholder = jellyfinData.token_configured ? t("jellyfin_token_configured") : t("jellyfin_token_placeholder");
+  renderJellyfinPathMappings(jellyfinData.path_mappings || []);
   toggleMediaProviderFields();
 }
 
@@ -372,6 +416,7 @@ async function saveMedia() {
     ? document.getElementById("jellyfin-token").value.trim()
     : document.getElementById("plex-token").value.trim());
   const payload = { provider, enabled, url, auto_refresh_enabled: autoRefreshEnabled };
+  if (isJellyfin) payload.path_mappings = collectJellyfinPathMappings();
   if (token) payload.token = token;
   try {
     await API.put("/api/settings/media", payload);

@@ -52,7 +52,8 @@ DEFAULT_CONFIG = {
         "favorite_keys": [],
         "auto_refresh_enabled": False,
         "auto_refresh_enabled_at": None,
-        "auto_refreshes": {}
+        "auto_refreshes": {},
+        "auto_refresh_last_result": None
     },
     "jellyfin": {
         "enabled": False,
@@ -62,7 +63,9 @@ DEFAULT_CONFIG = {
         "favorite_keys": [],
         "auto_refresh_enabled": False,
         "auto_refresh_enabled_at": None,
-        "auto_refreshes": {}
+        "auto_refreshes": {},
+        "auto_refresh_last_result": None,
+        "path_mappings": []
     },
     "media": {
         "active": "plex"

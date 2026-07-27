@@ -1457,6 +1457,56 @@ tr:hover .btn-copy-path { opacity: 1; }
 
 .key-actions { display: flex; gap: 6px; margin-top: 8px; }
 
+.jellyfin-path-mappings {
+  display: grid;
+  gap: 8px;
+  margin: 12px 0 10px;
+}
+
+.jellyfin-path-mapping-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+}
+
+.jellyfin-mapping-arrow {
+  color: var(--text-3);
+  font-weight: 800;
+}
+
+.jellyfin-mapping-remove:hover {
+  color: var(--red);
+  border-color: var(--red-border);
+  background: var(--red-dim);
+}
+
+.jellyfin-mapping-empty { margin: 0; }
+
+.plex-auto-refresh-section.is-warning {
+  border-color: var(--yellow-border);
+  background: linear-gradient(135deg, var(--yellow-dim), var(--surface));
+}
+
+.plex-auto-refresh-section.is-warning .plex-auto-refresh-icon { color: var(--yellow); }
+
+.media-unmatched-paths {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 10px 0;
+}
+
+.media-unmatched-paths code {
+  padding: 4px 7px;
+  border: 1px solid var(--yellow-border);
+  border-radius: 6px;
+  background: var(--surface-2);
+  color: var(--text-2);
+  font-size: 11px;
+  overflow-wrap: anywhere;
+}
+
 .advanced-settings {
   margin: 18px 0 20px;
   padding: 14px;
@@ -1723,6 +1773,8 @@ tr:hover .btn-copy-path { opacity: 1; }
 
 .plex-library-info {
   min-width: 0;
+  display: grid;
+  gap: 2px;
 }
 
 .plex-row-actions {
@@ -1959,6 +2011,10 @@ tr:hover .btn-copy-path { opacity: 1; }
   .settings-card { padding: 16px; }
   .settings-wrap { padding: 0 4px; }
   .key-actions { flex-wrap: wrap; }
+  .jellyfin-path-mapping-row { grid-template-columns: 1fr auto; }
+  .jellyfin-path-mapping-row .form-input { grid-column: 1; }
+  .jellyfin-path-mapping-row .jellyfin-mapping-arrow { display: none; }
+  .jellyfin-path-mapping-row .btn { grid-column: 2; grid-row: 1 / span 2; height: 100%; }
   .plex-page-toolbar { grid-template-columns: 1fr; }
   .plex-page-toolbar-actions { justify-content: stretch; }
   .plex-page-toolbar-actions .btn,

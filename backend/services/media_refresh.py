@@ -35,6 +35,8 @@ def media_defaults(provider: str) -> dict:
         "auto_refresh_enabled": False,
         "auto_refresh_enabled_at": None,
         "auto_refreshes": {},
+        "auto_refresh_last_result": None,
+        "path_mappings": [],
     }
 
 
@@ -43,6 +45,7 @@ def media_auto_public_fields(media_cfg: dict) -> dict:
         "auto_refresh_enabled": bool(media_cfg.get("auto_refresh_enabled", False)),
         "auto_refresh_enabled_at": media_cfg.get("auto_refresh_enabled_at"),
         "auto_refreshes": media_cfg.get("auto_refreshes", {}),
+        "auto_refresh_last_result": media_cfg.get("auto_refresh_last_result"),
     }
 
 
@@ -90,19 +93,51 @@ def _path_is_inside(candidate: str, root: str) -> bool:
     return candidate_norm == root_norm or candidate_norm.startswith(root_norm + "/")
 
 
-async def media_refresh_suggestions(
+def _normalized_path_mappings(media_cfg: dict) -> list[dict[str, str]]:
+    mappings = []
+    for item in media_cfg.get("path_mappings", []):
+        if not isinstance(item, dict):
+            continue
+        download_prefix = _normalize_media_path(item.get("download_prefix"))
+        jellyfin_prefix = _normalize_media_path(item.get("jellyfin_prefix"))
+        if download_prefix and jellyfin_prefix:
+            mappings.append({
+                "download_prefix": download_prefix,
+                "jellyfin_prefix": jellyfin_prefix,
+            })
+    return sorted(mappings, key=lambda item: len(item["download_prefix"]), reverse=True)
+
+
+def _media_candidates(candidate: str, mappings: list[dict[str, str]]) -> list[tuple[str, str]]:
+    """Return the original path plus its most specific Docker path translation."""
+    normalized = _normalize_media_path(candidate)
+    if not normalized:
+        return []
+    results = [(normalized, "")]
+    for mapping in mappings:
+        source = mapping["download_prefix"]
+        if not _path_is_inside(normalized, source):
+            continue
+        relative = os.path.relpath(normalized, source)
+        translated = mapping["jellyfin_prefix"]
+        if relative != ".":
+            translated = os.path.join(translated, relative)
+        results.insert(0, (_normalize_media_path(translated), source))
+        break
+    return results
+
+
+async def media_refresh_analysis(
     cfg: dict,
     limit: int = 20,
     since: datetime | None = None,
-) -> list[dict]:
+) -> dict:
     provider, url, token = require_media_config(cfg)
     libraries = await media_service(provider).libraries(url, token)
     libraries_with_locations = [
         library for library in libraries
         if library.get("locations") and library.get("key") and library.get("title")
     ]
-    if not libraries_with_locations:
-        return []
 
     cutoff = datetime.now(timezone.utc) - timedelta(hours=24)
     if since and since > cutoff:
@@ -119,8 +154,11 @@ async def media_refresh_suggestions(
         history_rows = [dict(row) for row in await cursor.fetchall()]
 
     last_refreshes = cfg.get(provider, {}).get("last_refreshes", {})
+    mappings = _normalized_path_mappings(cfg.get(provider, {})) if provider == "jellyfin" else []
     suggestions: list[dict] = []
+    unmatched: list[dict] = []
     seen: set[tuple[str, str]] = set()
+    seen_unmatched: set[str] = set()
 
     for row in history_rows:
         completed_at = parse_iso_datetime(row.get("completed_at"))
@@ -133,25 +171,37 @@ async def media_refresh_suggestions(
         if destination and name:
             candidates.insert(0, _normalize_media_path(os.path.join(destination, name)))
 
+        matched = False
         for library in libraries_with_locations:
             library_key = str(library.get("key", "")).strip()
-            refreshed_at = parse_iso_datetime(last_refreshes.get(library_key))
-            if refreshed_at and refreshed_at >= completed_at:
-                continue
-
             matched_location = ""
+            mapped_from = ""
+            matched_candidate = ""
             for location in library.get("locations", []):
-                if any(_path_is_inside(candidate, location) for candidate in candidates):
-                    matched_location = _normalize_media_path(location)
+                for candidate in candidates:
+                    for media_candidate, source_prefix in _media_candidates(candidate, mappings):
+                        if _path_is_inside(media_candidate, location):
+                            matched_location = _normalize_media_path(location)
+                            mapped_from = source_prefix
+                            matched_candidate = media_candidate
+                            break
+                    if matched_location:
+                        break
+                if matched_location:
                     break
 
             if not matched_location:
                 continue
 
+            matched = True
+            refreshed_at = parse_iso_datetime(last_refreshes.get(library_key))
+            if refreshed_at and refreshed_at >= completed_at:
+                break
+
             package_name = str(row.get("package_name") or "").strip()
             unique_key = (f"pkg:{package_name}" if package_name else f"history:{row['id']}", library_key)
             if unique_key in seen:
-                continue
+                break
             seen.add(unique_key)
             suggestions.append({
                 "history_id": package_name or row["id"],
@@ -162,13 +212,34 @@ async def media_refresh_suggestions(
                 "destination": destination,
                 "completed_at": row.get("completed_at"),
                 "matched_location": matched_location,
+                "matched_candidate": matched_candidate,
+                "mapped_from": mapped_from,
             })
             break
+
+        unmatched_key = str(row.get("package_name") or row.get("id") or "")
+        if not matched and unmatched_key and unmatched_key not in seen_unmatched:
+            seen_unmatched.add(unmatched_key)
+            unmatched.append({
+                "history_id": unmatched_key,
+                "download_name": str(row.get("package_name") or name or row.get("id") or ""),
+                "destination": destination,
+                "completed_at": row.get("completed_at"),
+            })
 
         if len(suggestions) >= limit:
             break
 
-    return suggestions
+    return {"suggestions": suggestions, "unmatched": unmatched[:limit]}
+
+
+async def media_refresh_suggestions(
+    cfg: dict,
+    limit: int = 20,
+    since: datetime | None = None,
+) -> list[dict]:
+    analysis = await media_refresh_analysis(cfg, limit=limit, since=since)
+    return analysis["suggestions"]
 
 
 async def refresh_library_from_config(
@@ -216,7 +287,9 @@ async def auto_refresh_recommended_libraries(limit: int = 50) -> dict:
         return {"attempted": False, "provider": provider, "refreshed": [], "errors": []}
 
     since = parse_iso_datetime(media_cfg.get("auto_refresh_enabled_at"))
-    suggestions = await media_refresh_suggestions(cfg, limit=limit, since=since)
+    analysis = await media_refresh_analysis(cfg, limit=limit, since=since)
+    suggestions = analysis["suggestions"]
+    unmatched = analysis["unmatched"]
     by_library: dict[str, dict] = {}
     for suggestion in suggestions:
         key = str(suggestion.get("library_key") or "").strip()
@@ -250,9 +323,39 @@ async def auto_refresh_recommended_libraries(limit: int = 50) -> dict:
                 "error": str(exc)[:200],
             })
 
+    completed_at = datetime.now(timezone.utc).isoformat()
+    status = (
+        "partial" if refreshed and (errors or unmatched)
+        else "refreshed" if refreshed
+        else "error" if errors
+        else "unmatched" if unmatched
+        else "idle"
+    )
+    last_result = {
+        "status": status,
+        "completed_at": completed_at,
+        "refreshed_libraries": [item.get("library_title") or item.get("library_key", "") for item in refreshed],
+        "unmatched_destinations": list(dict.fromkeys(item.get("destination", "") for item in unmatched if item.get("destination")))[:10],
+        "errors": [item.get("error", "") for item in errors][:5],
+    }
+
+    def record_result(current):
+        current.setdefault(provider, media_defaults(provider))["auto_refresh_last_result"] = last_result
+
+    update_config(record_result)
+    if unmatched:
+        record_event_nowait(
+            "media_refresh", "unmatched_path",
+            f"No {provider.title()} library matches the completed download destination",
+            severity="warning",
+            context={"provider": provider, "destinations": last_result["unmatched_destinations"]},
+        )
+
     return {
         "attempted": bool(by_library),
         "provider": provider,
         "refreshed": refreshed,
         "errors": errors,
+        "unmatched": unmatched,
+        "status": status,
     }

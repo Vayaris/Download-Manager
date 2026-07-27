@@ -45,6 +45,7 @@ let _plexState = {
   lastRefreshes: {},
   autoRefreshEnabled: false,
   autoRefreshes: {},
+  autoRefreshLastResult: null,
   query: "",
   error: "",
 };
@@ -67,6 +68,8 @@ function normalizePlexState(data) {
     destination: String(item.destination || "").trim(),
     completedAt: String(item.completed_at || "").trim(),
     matchedLocation: String(item.matched_location || "").trim(),
+    matchedCandidate: String(item.matched_candidate || "").trim(),
+    mappedFrom: String(item.mapped_from || "").trim(),
   })).filter((item) => item.historyId && item.libraryKey && item.libraryTitle) : [];
   const byKey = new Map(libraries.map((library) => [library.key, library]));
   const favoriteKeys = Array.isArray(data.favorite_keys) ? data.favorite_keys.map((key) => String(key || "").trim()).filter((key) => byKey.has(key)) : [];
@@ -90,6 +93,7 @@ function normalizePlexState(data) {
     lastRefreshes: data.last_refreshes || {},
     autoRefreshEnabled: !!data.auto_refresh_enabled,
     autoRefreshes: data.auto_refreshes || {},
+    autoRefreshLastResult: data.auto_refresh_last_result || null,
     query: typeof _plexState.query === "string" ? _plexState.query : "",
     error: String(data.error || ""),
   };
@@ -157,7 +161,7 @@ function buildPlexSuggestionRow(item) {
       <div class="plex-suggestion-main">
         <span class="plex-suggestion-label">${escHtml(t("plex_suggestion_library", { library: item.libraryTitle }))}</span>
         <span class="plex-library-meta">${escHtml(item.downloadName || t("plex_suggestion_unknown_download"))}${completed ? ` · ${escHtml(completed)}` : ""}</span>
-        ${item.matchedLocation ? `<span class="plex-suggestion-path">${escHtml(t("plex_suggestion_path", { path: item.matchedLocation }))}</span>` : ""}
+        ${item.mappedFrom ? `<span class="plex-suggestion-path">${escHtml(t("jellyfin_suggestion_mapping", { source: item.destination, target: item.matchedCandidate || item.matchedLocation }))}</span>` : item.matchedLocation ? `<span class="plex-suggestion-path">${escHtml(t("plex_suggestion_path", { path: item.matchedLocation }))}</span>` : ""}
       </div>
       <button class="btn btn-sm plex-refresh-btn" type="button" data-plex-action="refresh" data-plex-key="${escHtml(item.libraryKey)}">${escHtml(t("plex_btn_refresh_library"))}</button>
     </div>`;
@@ -173,7 +177,21 @@ function getLatestAutoRefresh() {
 function buildPlexAutoRefreshBanner() {
   if (!_plexState.autoRefreshEnabled || String(_plexState.query || "").trim() !== "") return "";
   const latest = getLatestAutoRefresh();
+  const result = _plexState.autoRefreshLastResult;
   const providerName = _plexState.provider === "jellyfin" ? "Jellyfin" : "Plex";
+  const unmatched = result && Array.isArray(result.unmatched_destinations) ? result.unmatched_destinations.filter(Boolean) : [];
+  if (_plexState.provider === "jellyfin" && result && (result.status === "unmatched" || result.status === "partial") && unmatched.length) {
+    return `
+      <section class="plex-section plex-auto-refresh-section is-warning">
+        <div class="plex-auto-refresh-icon">!</div>
+        <div>
+          <h2>${escHtml(t("media_auto_refresh_unmatched_title"))}</h2>
+          <p class="form-hint">${escHtml(t("media_auto_refresh_unmatched_hint"))}</p>
+          <div class="media-unmatched-paths">${unmatched.map((path) => `<code>${escHtml(path)}</code>`).join("")}</div>
+          <a class="btn btn-sm" href="/settings-page#media-settings">${escHtml(t("media_auto_refresh_configure_mapping"))}</a>
+        </div>
+      </section>`;
+  }
   const detail = latest
     ? t("media_auto_refresh_last", {
         library: latest.library_title || latest.library_key || "-",
@@ -205,6 +223,9 @@ function buildPlexRow(library, options = {}) {
   const favorite = !!options.favorite;
   const starTitle = favorite ? t("plex_favorite_remove") : t("plex_favorite_add");
   const starIcon = favorite ? "★" : "☆";
+  const jellyfinPaths = _plexState.provider === "jellyfin" && library.locations.length
+    ? `<span class="plex-suggestion-path">${escHtml(t("jellyfin_library_paths", { paths: library.locations.join(" · ") }))}</span>`
+    : "";
   return `
     <div class="plex-library-row ${favorite ? "is-favorite" : ""}" data-plex-key="${escHtml(key)}">
       <div class="plex-row-main">
@@ -213,6 +234,7 @@ function buildPlexRow(library, options = {}) {
         <div class="plex-library-info">
           <span class="plex-library-title">${escHtml(library.title || key)}</span>
           <span class="plex-library-meta">${escHtml(library.type || "")} · ${escHtml(t("plex_last_refresh", { time: last }))}</span>
+          ${jellyfinPaths}
         </div>
       </div>
       <div class="plex-row-actions">

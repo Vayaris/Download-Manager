@@ -73,6 +73,18 @@ class QueueManager:
         snapshot["recent_errors"] = list(self._recent_errors)
         return snapshot
 
+    async def schedule_media_auto_refresh(self):
+        """Persist and arm a media refresh request outside the download finalizer."""
+        now = datetime.now(timezone.utc).isoformat()
+        self._media_auto_refresh_pending = True
+        self._media_auto_refresh_retry_at = 0.0
+        async with db_session() as db:
+            await db.execute(
+                "UPDATE media_refresh_state SET pending = 1, retry_at = NULL, updated_at = ? WHERE id = 1",
+                (now,),
+            )
+            await db.commit()
+
     def _record_error(self, source: str, message: str):
         self._recent_errors.appendleft({
             "at": datetime.now(timezone.utc).isoformat(),

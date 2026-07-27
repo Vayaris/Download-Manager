@@ -4,9 +4,10 @@ import os
 import sys
 import tempfile
 import unittest
+from datetime import datetime, timezone
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 
 if "database" not in sys.modules:
@@ -16,8 +17,8 @@ if "database" not in sys.modules:
     sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "backend"))
 
 import database
-from models import DuplicateCommitRequest, DuplicateDecision
-from routers import downloads
+from models import DuplicateCommitRequest, DuplicateDecision, MediaSettingsRequest
+from routers import downloads, settings
 from services import diagnostics, duplicates, media_refresh, queue_manager
 
 
@@ -170,12 +171,167 @@ class V112Tests(unittest.IsolatedAsyncioTestCase):
         refresh = AsyncMock(return_value={"status": "refreshed", "library_key": "1"})
         with (
             patch.object(media_refresh, "get_config", return_value=config),
-            patch.object(media_refresh, "media_refresh_suggestions", AsyncMock(return_value=suggestions)),
+            patch.object(
+                media_refresh, "media_refresh_analysis",
+                AsyncMock(return_value={"suggestions": suggestions, "unmatched": []}),
+            ),
             patch.object(media_refresh, "refresh_library_from_config", refresh),
+            patch.object(media_refresh, "update_config", side_effect=lambda mutate: (mutate(config), True)),
         ):
             result = await media_refresh.auto_refresh_recommended_libraries()
         self.assertTrue(result["attempted"])
         refresh.assert_awaited_once()
+
+    async def test_jellyfin_docker_mapping_matches_download_destination(self):
+        completed_at = datetime.now(timezone.utc).isoformat()
+        async with database.db_session() as db:
+            await db.execute(
+                """INSERT INTO history
+                   (id, name, url, destination, status, created_at, completed_at)
+                   VALUES ('movie', 'Example.mkv', 'https://example.test/movie', ?, 'complete', ?, ?)""",
+                ("/mnt/media/movies", completed_at, completed_at),
+            )
+            await db.commit()
+
+        config = {
+            "media": {"active": "jellyfin"},
+            "plex": {"enabled": False},
+            "jellyfin": {
+                "enabled": True,
+                "url": "http://jellyfin:8096",
+                "token": "api-key",
+                "last_refreshes": {},
+                "path_mappings": [{
+                    "download_prefix": "/mnt/media",
+                    "jellyfin_prefix": "/media",
+                }],
+            },
+        }
+        libraries = AsyncMock(return_value=[{
+            "key": "0123456789abcdef0123456789abcdef",
+            "title": "Movies",
+            "type": "movies",
+            "locations": ["/media/movies"],
+        }])
+        with patch.object(media_refresh.jellyfin, "libraries", libraries):
+            result = await media_refresh.media_refresh_analysis(config)
+
+        self.assertEqual(len(result["suggestions"]), 1)
+        self.assertEqual(result["unmatched"], [])
+        suggestion = result["suggestions"][0]
+        self.assertEqual(suggestion["mapped_from"], "/mnt/media")
+        self.assertEqual(suggestion["matched_candidate"], "/media/movies/Example.mkv")
+
+    async def test_plex_same_path_matching_is_unchanged(self):
+        completed_at = datetime.now(timezone.utc).isoformat()
+        async with database.db_session() as db:
+            await db.execute(
+                """INSERT INTO history
+                   (id, name, url, destination, status, created_at, completed_at)
+                   VALUES ('plex-movie', 'Example.mkv', 'https://example.test/plex', ?, 'complete', ?, ?)""",
+                ("/mnt/media/movies", completed_at, completed_at),
+            )
+            await db.commit()
+
+        config = {
+            "media": {"active": "plex"},
+            "plex": {
+                "enabled": True,
+                "url": "http://127.0.0.1:32400",
+                "token": "plex-token",
+                "last_refreshes": {},
+            },
+            "jellyfin": {"enabled": False},
+        }
+        libraries = AsyncMock(return_value=[{
+            "key": "1",
+            "title": "Films",
+            "type": "movie",
+            "locations": ["/mnt/media/movies"],
+        }])
+        with patch.object(media_refresh.plex, "libraries", libraries):
+            result = await media_refresh.media_refresh_analysis(config)
+
+        self.assertEqual(len(result["suggestions"]), 1)
+        self.assertEqual(result["suggestions"][0]["mapped_from"], "")
+        self.assertEqual(result["unmatched"], [])
+
+    async def test_jellyfin_unmatched_path_is_reported_without_refresh(self):
+        config = {
+            "media": {"active": "jellyfin"},
+            "plex": {"enabled": False},
+            "jellyfin": {
+                "enabled": True,
+                "url": "http://jellyfin:8096",
+                "token": "api-key",
+                "auto_refresh_enabled": True,
+                "auto_refresh_enabled_at": None,
+            },
+        }
+        analysis = {
+            "suggestions": [],
+            "unmatched": [{"destination": "/mnt/media/movies", "history_id": "movie"}],
+        }
+
+        def update(mutator):
+            mutator(config)
+            return config, True
+
+        diagnostic = MagicMock()
+        refresh = AsyncMock()
+        with (
+            patch.object(media_refresh, "get_config", return_value=config),
+            patch.object(media_refresh, "media_refresh_analysis", AsyncMock(return_value=analysis)),
+            patch.object(media_refresh, "refresh_library_from_config", refresh),
+            patch.object(media_refresh, "update_config", side_effect=update),
+            patch.object(media_refresh, "record_event_nowait", diagnostic),
+        ):
+            result = await media_refresh.auto_refresh_recommended_libraries()
+
+        self.assertEqual(result["status"], "unmatched")
+        self.assertFalse(result["attempted"])
+        refresh.assert_not_awaited()
+        self.assertEqual(
+            config["jellyfin"]["auto_refresh_last_result"]["unmatched_destinations"],
+            ["/mnt/media/movies"],
+        )
+        diagnostic.assert_called_once()
+
+    async def test_saving_jellyfin_mapping_rearms_auto_refresh(self):
+        config = {
+            "media": {"active": "jellyfin"},
+            "plex": {"enabled": False},
+            "jellyfin": {
+                "enabled": True,
+                "url": "http://jellyfin:8096",
+                "token": "api-key",
+                "auto_refresh_enabled": True,
+                "path_mappings": [],
+            },
+        }
+        manager = SimpleNamespace(schedule_media_auto_refresh=AsyncMock())
+        request = SimpleNamespace(app=SimpleNamespace(state=SimpleNamespace(queue_manager=manager)))
+        body = MediaSettingsRequest(
+            provider="jellyfin",
+            path_mappings=[{
+                "download_prefix": "/mnt/media",
+                "jellyfin_prefix": "/media",
+            }],
+        )
+
+        def update(mutator):
+            mutator(config)
+            return config, True
+
+        with (
+            patch.object(settings, "get_config", return_value=config),
+            patch.object(settings, "update_config", side_effect=update),
+            patch.object(settings, "validate_destination"),
+        ):
+            result = await settings.update_media_settings(body, request, _={"username": "vayaris"})
+
+        self.assertEqual(result["path_mappings"][0]["jellyfin_prefix"], "/media")
+        manager.schedule_media_auto_refresh.assert_awaited_once()
 
 
 if __name__ == "__main__":
