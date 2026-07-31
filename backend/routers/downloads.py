@@ -382,12 +382,12 @@ async def resolve_all_pending_conflicts(
     ))
     if not body.apply_to_all or not conflict_ids:
         raise HTTPException(status_code=400, detail="Pending conflict IDs are required")
-    placeholders = ",".join("?" for _ in conflict_ids)
+    requested_ids = set(conflict_ids)
     async with db_session(row_factory=True) as db:
-        rows = await (await db.execute(
-            f"SELECT * FROM downloads WHERE status = 'duplicate_pending' AND id IN ({placeholders}) ORDER BY created_at",
-            conflict_ids,
+        pending_rows = await (await db.execute(
+            "SELECT * FROM downloads WHERE status = 'duplicate_pending' ORDER BY created_at"
         )).fetchall()
+        rows = [row for row in pending_rows if row["id"] in requested_ids]
         resolved = await _resolve_pending_conflicts(db, rows, body)
     return {"status": "resolved", "action": body.action, "resolved": resolved}
 
