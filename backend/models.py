@@ -52,6 +52,7 @@ class SettingsUpdate(BaseModel):
     max_retries: Optional[int] = None
     retry_delay_seconds: Optional[int] = None
     skip_nfo_files: Optional[bool] = None
+    existing_file_check_enabled: Optional[bool] = None
     stalled_timeout_hours: Optional[int] = None
     webhook_enabled: Optional[bool] = None
     webhook_url: Optional[str] = None

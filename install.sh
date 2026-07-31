@@ -191,6 +191,7 @@ downloads:
   max_retries: 3
   retry_delay_seconds: 5
   skip_nfo_files: true
+  existing_file_check_enabled: true
   stalled_timeout_hours: 3
   default_destination: "${INSTALL_DIR}/downloads"
   allowed_paths:

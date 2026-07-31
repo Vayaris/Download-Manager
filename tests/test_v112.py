@@ -19,7 +19,7 @@ if "database" not in sys.modules:
 import database
 from models import (
     DuplicateCommitRequest, DuplicateDecision, DuplicateResolutionRequest,
-    MediaSettingsRequest,
+    MediaSettingsRequest, SettingsUpdate,
 )
 from routers import downloads, settings
 from services import diagnostics, duplicates, media_refresh, queue_manager
@@ -27,6 +27,8 @@ from services import diagnostics, duplicates, media_refresh, queue_manager
 
 class V112Tests(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
+        if database.DB_PATH == Path("/opt/download-manager/config/downloads.db"):
+            self.fail("Refusing to run tests against the production database")
         if database.DB_PATH.exists():
             database.DB_PATH.unlink()
         await database.init_db()
@@ -88,6 +90,81 @@ class V112Tests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("batch_duplicate", conflict_types[1])
         self.assertIn("history", conflict_types[2])
         self.assertIn("destination", conflict_types[3])
+
+    async def test_preflight_can_skip_only_existing_file_conflicts(self):
+        (self.root / "movie.mkv").write_bytes(b"existing")
+        config = duplicates.get_config()
+        config["downloads"]["existing_file_check_enabled"] = False
+
+        with patch.object(duplicates, "get_config", return_value=config):
+            result = await duplicates.create_submission(
+                "vayaris", str(self.root), "Overwrite allowed",
+                ["https://example.com/movie.mkv"], [],
+            )
+
+        self.assertFalse(result["has_conflicts"])
+        self.assertEqual(result["items"][0]["conflicts"], [])
+
+    async def test_disabling_existing_file_check_resumes_pending_conflicts(self):
+        await self._add_pending_conflicts(["one.mkv", "two.mkv"])
+        try:
+            result = await settings.update_settings(
+                SettingsUpdate(existing_file_check_enabled=False),
+                _={"username": "vayaris"},
+            )
+            self.assertEqual(result["resumed_conflicts"], 2)
+            current = await settings.get_settings(_={"username": "vayaris"})
+            self.assertFalse(current["existing_file_check_enabled"])
+            async with database.db_session() as db:
+                resumed = (await (await db.execute(
+                    """SELECT COUNT(*) FROM downloads
+                       WHERE status = 'pending' AND overwrite_confirmed = 1"""
+                )).fetchone())[0]
+            self.assertEqual(resumed, 2)
+        finally:
+            await settings.update_settings(
+                SettingsUpdate(existing_file_check_enabled=True),
+                _={"username": "vayaris"},
+            )
+
+    async def test_queue_skips_late_file_conflict_when_check_is_disabled(self):
+        target = self.root / "movie.mkv"
+        target.write_bytes(b"existing")
+        item = {
+            "id": "unchecked-file",
+            "url": "https://example.com/source",
+            "name": "source",
+            "destination": str(self.root),
+            "overwrite_confirmed": 0,
+            "source_key": "url:https://example.com/source",
+        }
+        async with database.db_session() as db:
+            await db.execute(
+                """INSERT INTO downloads
+                   (id, url, name, status, destination, overwrite_confirmed,
+                    source_key, created_at, updated_at)
+                   VALUES (?, ?, ?, 'submitting', ?, 0, ?, 'now', 'now')""",
+                (item["id"], item["url"], item["name"], item["destination"], item["source_key"]),
+            )
+            await db.commit()
+
+        config = queue_manager.get_config()
+        config["downloads"]["existing_file_check_enabled"] = False
+        manager = queue_manager.QueueManager()
+        with (
+            patch.object(queue_manager, "get_config", return_value=config),
+            patch.object(queue_manager.alldebrid, "process_url", AsyncMock(return_value="https://cdn.test/movie.mkv")),
+            patch.object(queue_manager.aria2, "add_uri", AsyncMock(return_value="gid-1")) as add_uri,
+        ):
+            await manager._submit_to_aria2(item, 1)
+
+        add_uri.assert_awaited_once()
+        async with database.db_session(row_factory=True) as db:
+            row = await (await db.execute(
+                "SELECT status, aria2_gid FROM downloads WHERE id = ?", (item["id"],)
+            )).fetchone()
+        self.assertEqual(row["status"], "downloading")
+        self.assertEqual(row["aria2_gid"], "gid-1")
 
     async def test_commit_can_ignore_one_duplicate_without_creating_empty_package(self):
         staged = await duplicates.create_submission(

@@ -23,6 +23,8 @@ from services import history, queue_manager
 
 class V113Tests(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
+        if database.DB_PATH == Path("/opt/download-manager/config/downloads.db"):
+            self.fail("Refusing to run tests against the production database")
         if database.DB_PATH.exists():
             database.DB_PATH.unlink()
         await database.init_db()

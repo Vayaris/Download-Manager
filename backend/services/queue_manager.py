@@ -18,7 +18,7 @@ from services.aria2_service import aria2
 from services.alldebrid import AllDebridError, alldebrid
 from services.media_refresh import auto_refresh_recommended_libraries
 from services.diagnostics import record_event_nowait
-from services.duplicates import inferred_name, source_key
+from services.duplicates import inferred_name, resume_pending_file_conflicts, source_key
 from services.webhook import send_webhook
 from services.youtube_download import YouTubeDownloadService
 from services.youtube_setup import status as youtube_direct_status
@@ -180,6 +180,8 @@ class QueueManager:
 
     async def start(self):
         # A service restart kills in-flight resolver tasks. Requeue them immediately.
+        if not get_config()["downloads"].get("existing_file_check_enabled", True):
+            await resume_pending_file_conflicts()
         async with db_session() as db:
             await db.execute(
                 "UPDATE packages SET status = 'active' WHERE status = 'finalizing'"
@@ -266,7 +268,13 @@ class QueueManager:
             resolved_name = inferred_name(direct_url) or inferred_name(item["url"])
             target_path = Path(item["destination"]) / resolved_name if resolved_name else None
             now = datetime.now(timezone.utc).isoformat()
-            if target_path and target_path.is_file() and not item["overwrite_confirmed"]:
+            check_existing_files = bool(
+                get_config()["downloads"].get("existing_file_check_enabled", True)
+            )
+            if (
+                check_existing_files and target_path and target_path.is_file()
+                and not item["overwrite_confirmed"]
+            ):
                 async with db_session() as db:
                     await db.execute(
                         """UPDATE downloads SET status = 'duplicate_pending', name = ?,

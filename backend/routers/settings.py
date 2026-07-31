@@ -15,6 +15,7 @@ from models import SettingsUpdate, StoragePathRequest, MediaSettingsRequest, Sig
 from auth import get_current_user, get_password_hash
 from config import get_config, update_config
 from services.alldebrid import alldebrid
+from services.duplicates import resume_pending_file_conflicts
 from services.jellyfin import jellyfin
 from services.media_refresh import (
     MediaRefreshError,
@@ -176,6 +177,7 @@ async def get_settings(_=Depends(get_current_user)):
         "max_retries": cfg["downloads"].get("max_retries", 3),
         "retry_delay_seconds": cfg["downloads"].get("retry_delay_seconds", 5),
         "skip_nfo_files": cfg["downloads"].get("skip_nfo_files", True),
+        "existing_file_check_enabled": cfg["downloads"].get("existing_file_check_enabled", True),
         "stalled_timeout_hours": cfg["downloads"].get("stalled_timeout_hours", 3),
         "media_provider": _active_media_provider(cfg),
         "port": cfg["server"]["port"],
@@ -250,6 +252,7 @@ async def update_settings(body: SettingsUpdate, _=Depends(get_current_user)):
             "max_retries": body.max_retries,
             "retry_delay_seconds": body.retry_delay_seconds,
             "skip_nfo_files": body.skip_nfo_files,
+            "existing_file_check_enabled": body.existing_file_check_enabled,
             "stalled_timeout_hours": body.stalled_timeout_hours,
         }
         for key, value in updates.items():
@@ -276,6 +279,8 @@ async def update_settings(body: SettingsUpdate, _=Depends(get_current_user)):
 
     cfg, _ = update_config(mutate)
     response = {"status": "saved"}
+    if body.existing_file_check_enabled is False:
+        response["resumed_conflicts"] = await resume_pending_file_conflicts()
     if body.speed_limit is not None and body.speed_limit >= 0:
         from services.aria2_service import aria2
         expected_bytes = body.speed_limit * 1024 * 1024 if body.speed_limit > 0 else 0

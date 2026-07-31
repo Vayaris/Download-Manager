@@ -12,6 +12,9 @@ import yaml
 
 
 ROOT = Path(__file__).resolve().parents[1]
+TEST_ROOT = tempfile.TemporaryDirectory()
+os.environ.setdefault("DM_DB", str(Path(TEST_ROOT.name) / "downloads.db"))
+os.environ.setdefault("DM_CONFIG", str(Path(TEST_ROOT.name) / "config.yml"))
 sys.path.insert(0, str(ROOT / "backend"))
 
 import update_runner
@@ -19,6 +22,13 @@ from services import update_service
 
 
 class SystemTests(unittest.TestCase):
+    def test_suite_never_targets_production_state(self):
+        import config
+        import database
+
+        self.assertNotEqual(database.DB_PATH, Path("/opt/download-manager/config/downloads.db"))
+        self.assertNotEqual(config.CONFIG_PATH, Path("/etc/download-manager/config.yml"))
+
     def test_release_candidate_sorts_before_stable_release(self):
         self.assertLess(
             update_service.parse_version_tag("2.0.0-rc.3"),
@@ -46,6 +56,7 @@ class SystemTests(unittest.TestCase):
         config = yaml.safe_load(config_text)
         self.assertEqual(config["downloads"]["simultaneous"], 3)
         self.assertTrue(config["downloads"]["skip_nfo_files"])
+        self.assertTrue(config["downloads"]["existing_file_check_enabled"])
         self.assertEqual(config["downloads"]["stalled_timeout_hours"], 3)
         self.assertFalse(config["plex"]["auto_refresh_enabled"])
         self.assertFalse(config["jellyfin"]["auto_refresh_enabled"])

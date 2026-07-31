@@ -29,6 +29,7 @@ DEFAULT_CONFIG = {
         "max_retries": 3,
         "retry_delay_seconds": 5,
         "skip_nfo_files": True,
+        "existing_file_check_enabled": True,
         "stalled_timeout_hours": 3
     },
     "auth": {

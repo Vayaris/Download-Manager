@@ -216,6 +216,11 @@ async function saveYouTubeSettings() {
 
 // ---- Other settings ----
 
+function confirmExistingFileCheck(enabled) {
+  if (enabled || window._existingFileCheckEnabled === false) return true;
+  return confirm(t("settings_existing_file_check_confirm"));
+}
+
 async function saveDownloadSettings() {
   const simultaneous = Math.min(20, Math.max(1, parseInt(document.getElementById("simultaneous-input").value) || 3));
   const segments = Math.min(16, Math.max(1, parseInt(document.getElementById("segments-input").value) || 1));
@@ -227,7 +232,10 @@ async function saveDownloadSettings() {
   const retryDelay = Math.min(3600, Math.max(0, Number.isNaN(retryDelayRaw) ? 5 : retryDelayRaw));
   const stalledTimeout = Math.min(168, Math.max(0, Number.isNaN(stalledTimeoutRaw) ? 3 : stalledTimeoutRaw));
   const skipNfo = document.getElementById("skip-nfo-files").checked;
+  const existingFileCheck = document.getElementById("existing-file-check-enabled").checked;
   const dest = document.getElementById("default-dest").value.trim() || undefined;
+
+  if (!confirmExistingFileCheck(existingFileCheck)) return;
 
   // Clamp input values visually
   document.getElementById("simultaneous-input").value = simultaneous;
@@ -245,10 +253,17 @@ async function saveDownloadSettings() {
       retry_delay_seconds: retryDelay,
       stalled_timeout_hours: stalledTimeout,
       skip_nfo_files: skipNfo,
+      existing_file_check_enabled: existingFileCheck,
       default_destination: dest,
     });
+    window._existingFileCheckEnabled = existingFileCheck;
     if (result.speed_limit) renderSpeedLimitStatus(result.speed_limit);
-    showToast(t("settings_downloads_saved"), "ok");
+    showToast(
+      result.resumed_conflicts > 0
+        ? t("settings_existing_file_conflicts_resumed", { count: result.resumed_conflicts })
+        : t("settings_downloads_saved"),
+      "ok",
+    );
   } catch (e) {
     showToast(t("error_prefix") + e.message, "error");
   }
@@ -1083,6 +1098,11 @@ async function saveSettings() {
   const maxRetriesRaw = parseInt(document.getElementById("max-retries-input").value);
   const retryDelayRaw = parseInt(document.getElementById("retry-delay-input").value);
   const stalledTimeoutRaw = parseInt(document.getElementById("stalled-timeout-input").value);
+  const existingFileCheck = document.getElementById("existing-file-check-enabled").checked;
+  if (!confirmExistingFileCheck(existingFileCheck)) {
+    resultEl.textContent = "";
+    return;
+  }
   const payload = {
     alldebrid_api_key: newAllDebridKey || undefined,
     alldebrid_enabled: document.getElementById("alldebrid-enabled").checked,
@@ -1092,6 +1112,8 @@ async function saveSettings() {
     max_retries: Math.min(20, Math.max(0, Number.isNaN(maxRetriesRaw) ? 3 : maxRetriesRaw)),
     retry_delay_seconds: Math.min(3600, Math.max(0, Number.isNaN(retryDelayRaw) ? 5 : retryDelayRaw)),
     stalled_timeout_hours: Math.min(168, Math.max(0, Number.isNaN(stalledTimeoutRaw) ? 3 : stalledTimeoutRaw)),
+    skip_nfo_files: document.getElementById("skip-nfo-files").checked,
+    existing_file_check_enabled: existingFileCheck,
     default_destination: document.getElementById("default-dest").value.trim() || undefined,
     webhook_enabled: document.getElementById("webhook-enabled").checked,
     webhook_url: document.getElementById("webhook-url").value.trim() || undefined,
@@ -1105,7 +1127,8 @@ async function saveSettings() {
   Object.keys(payload).forEach((k) => payload[k] === undefined && delete payload[k]);
 
   try {
-    await API.put("/api/settings/", payload);
+    const result = await API.put("/api/settings/", payload);
+    window._existingFileCheckEnabled = existingFileCheck;
     await saveMedia();
     if (newAllDebridKey) {
       window._alldebridKeyConfigured = true;
@@ -1117,7 +1140,12 @@ async function saveSettings() {
     await loadMediaSettings();
     resultEl.textContent = t("settings_saved");
     resultEl.className = "inline-result ok";
-    showToast(t("settings_all_saved"), "ok");
+    showToast(
+      result.resumed_conflicts > 0
+        ? t("settings_existing_file_conflicts_resumed", { count: result.resumed_conflicts })
+        : t("settings_all_saved"),
+      "ok",
+    );
   } catch (e) {
     resultEl.textContent = t("settings_error");
     resultEl.className = "inline-result error";
@@ -1498,6 +1526,8 @@ async function bootSettings() {
     document.getElementById("retry-delay-input").value = cfg.retry_delay_seconds ?? 5;
     document.getElementById("stalled-timeout-input").value = cfg.stalled_timeout_hours ?? 3;
     document.getElementById("skip-nfo-files").checked = cfg.skip_nfo_files !== false;
+    window._existingFileCheckEnabled = cfg.existing_file_check_enabled !== false;
+    document.getElementById("existing-file-check-enabled").checked = window._existingFileCheckEnabled;
     document.getElementById("youtube-direct-enabled").checked = cfg.youtube_direct_enabled === true;
     document.getElementById("youtube-concurrency").value = cfg.youtube_max_concurrent || 2;
     document.getElementById("youtube-speed-limit").value = cfg.youtube_speed_limit || 0;

@@ -76,6 +76,22 @@ async def cleanup_expired_submissions():
         shutil.rmtree(STAGING_ROOT / submission_id, ignore_errors=True)
 
 
+async def resume_pending_file_conflicts() -> int:
+    """Resume conflicts as explicit overwrites when file protection is disabled."""
+    db = await open_db()
+    try:
+        cursor = await db.execute(
+            """UPDATE downloads SET status = 'pending', overwrite_confirmed = 1,
+                   error_msg = NULL, updated_at = ?
+               WHERE status = 'duplicate_pending'""",
+            (datetime.now(timezone.utc).isoformat(),),
+        )
+        await db.commit()
+        return max(0, cursor.rowcount)
+    finally:
+        await db.close()
+
+
 async def create_submission(username: str, destination: str, package_name: str, links: list[str], files: list[tuple[str, bytes]]):
     await cleanup_expired_submissions()
     submission_id = str(uuid.uuid4())
@@ -83,6 +99,9 @@ async def create_submission(username: str, destination: str, package_name: str, 
     stage.mkdir(parents=True, mode=0o700)
     items = []
     seen: dict[str, str] = {}
+    check_existing_files = bool(
+        get_config()["downloads"].get("existing_file_check_enabled", True)
+    )
 
     db = await open_db(row_factory=True)
     try:
@@ -92,7 +111,7 @@ async def create_submission(username: str, destination: str, package_name: str, 
                 "id": str(uuid.uuid4()), "kind": "magnet" if value.lower().startswith("magnet:") else "url",
                 "value": value, "display_name": inferred_name(value) or value[:120], "source_key": key, "conflicts": [],
             }
-            await _detect_conflicts(db, item, destination, seen)
+            await _detect_conflicts(db, item, destination, seen, check_existing_files)
             seen.setdefault(key, item["id"])
             items.append(item)
 
@@ -106,7 +125,7 @@ async def create_submission(username: str, destination: str, package_name: str, 
                 "id": str(uuid.uuid4()), "kind": "torrent", "stored": stored,
                 "display_name": filename, "source_key": key, "conflicts": [],
             }
-            await _detect_conflicts(db, item, destination, seen)
+            await _detect_conflicts(db, item, destination, seen, check_existing_files)
             seen.setdefault(key, item["id"])
             items.append(item)
 
@@ -126,7 +145,10 @@ async def create_submission(username: str, destination: str, package_name: str, 
     return {"submission_id": submission_id, "items": items, "has_conflicts": any(item["conflicts"] for item in items)}
 
 
-async def _detect_conflicts(db, item: dict, destination: str, seen: dict[str, str]):
+async def _detect_conflicts(
+    db, item: dict, destination: str, seen: dict[str, str],
+    check_existing_files: bool = True,
+):
     key = item["source_key"]
     if key in seen:
         item["conflicts"].append({"type": "batch_duplicate", "message": "Duplicate inside this submission"})
@@ -153,7 +175,7 @@ async def _detect_conflicts(db, item: dict, destination: str, seen: dict[str, st
     if history:
         item["conflicts"].append({"type": "history", "id": history["id"], "name": history["name"], "destination": history["destination"]})
     name = inferred_name(item.get("value", ""))
-    if name:
+    if name and check_existing_files:
         target = Path(destination) / name
         if target.is_file():
             item["conflicts"].append({"type": "destination", "path": str(target), "name": name})

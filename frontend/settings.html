@@ -392,6 +392,17 @@
           <span class="toggle-slider"></span>
         </label>
       </div>
+
+      <div class="form-group toggle-group">
+        <div>
+          <label class="form-label" data-i18n="settings_existing_file_check">Check existing destination files</label>
+          <p class="form-hint" data-i18n="settings_existing_file_check_hint">Recommended. When disabled, files with the same name can be overwritten by aria2 without another prompt. URL and batch duplicate checks remain enabled.</p>
+        </div>
+        <label class="toggle">
+          <input type="checkbox" id="existing-file-check-enabled" checked>
+          <span class="toggle-slider"></span>
+        </label>
+      </div>
       </details>
 
       <div class="key-actions">
@@ -889,10 +900,10 @@ function pwaInstall(){if(pwaDeferred){pwaDeferred.prompt();pwaDeferred.userChoic
 </script>
 
 <script src="/static/js/theme.js?v=37"></script>
-<script src="/static/js/i18n.js?v=57"></script>
+<script src="/static/js/i18n.js?v=59"></script>
 <script src="/static/js/api.js?v=31"></script>
 <script src="/static/js/filebrowser.js?v=37"></script>
-<script src="/static/js/settings.js?v=51"></script>
+<script src="/static/js/settings.js?v=52"></script>
 <script src="/static/js/account.js?v=31"></script>
 <script>if("serviceWorker"in navigator)navigator.serviceWorker.register("/sw.js").catch(()=>{})</script>
 </body>

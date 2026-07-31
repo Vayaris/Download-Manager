@@ -2,7 +2,7 @@
 
 Self-hosted download manager powered by **FastAPI**, **aria2** and **AllDebrid**. It provides a responsive web/PWA interface for direct links, magnets and `.torrent` files, with real-time queue updates and optional Plex or Jellyfin library refreshes.
 
-Current release: **v2.2.2**
+Current release: **v2.2.3**
 
 ![Python](https://img.shields.io/badge/Python-3.10+-3776AB?logo=python&logoColor=white)
 ![FastAPI](https://img.shields.io/badge/FastAPI-009688?logo=fastapi&logoColor=white)
@@ -156,6 +156,7 @@ downloads:
   max_retries: 3
   retry_delay_seconds: 5
   skip_nfo_files: true
+  existing_file_check_enabled: true
   stalled_timeout_hours: 3
   default_destination: "/opt/download-manager/downloads"
   allowed_paths:
@@ -177,6 +178,7 @@ Important ranges and behavior:
 | `speed_limit` | `0` or MB/s | Aggregate local aria2 limit; `0` is unlimited |
 | `max_retries` | `0` to `20` | Captured when a new download is created |
 | `retry_delay_seconds` | `0` to `3600` | Delay between attempts |
+| `existing_file_check_enabled` | `true` or `false` | Protect existing destination files; disabling it permits overwrite without another prompt |
 | `stalled_timeout_hours` | `0` to `168` | No-progress timeout; `0` disables the watchdog |
 | `youtube.max_concurrent` | `1` to `4` | Concurrent direct yt-dlp workers; default `2` |
 | `youtube.speed_limit` | `0` or MB/s | Per direct YouTube download; `0` is unlimited |

@@ -97,3 +97,11 @@ test("late duplicate dialog can apply one explicit action to displayed conflicts
   assert.match(app, /\/api\/downloads\/conflicts\/resolve/);
   assert.match(app, /conflict_ids: applyToAll \? conflicts\.map/);
 });
+
+test("settings expose an explicit existing-file protection switch", () => {
+  const html = fs.readFileSync("frontend/settings.html", "utf8");
+  const settings = fs.readFileSync("frontend/static/js/settings.js", "utf8");
+  assert.match(html, /id="existing-file-check-enabled" checked/);
+  assert.match(settings, /existing_file_check_enabled: existingFileCheck/);
+  assert.match(settings, /settings_existing_file_check_confirm/);
+});
