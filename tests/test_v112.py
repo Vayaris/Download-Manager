@@ -17,7 +17,10 @@ if "database" not in sys.modules:
     sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "backend"))
 
 import database
-from models import DuplicateCommitRequest, DuplicateDecision, MediaSettingsRequest
+from models import (
+    DuplicateCommitRequest, DuplicateDecision, DuplicateResolutionRequest,
+    MediaSettingsRequest,
+)
 from routers import downloads, settings
 from services import diagnostics, duplicates, media_refresh, queue_manager
 
@@ -30,6 +33,25 @@ class V112Tests(unittest.IsolatedAsyncioTestCase):
         self.root = database.DB_PATH.parent / "media-v112"
         self.root.mkdir(exist_ok=True)
         duplicates.STAGING_ROOT = database.DB_PATH.parent / "submissions-v112"
+
+    async def _add_pending_conflicts(self, names):
+        async with database.db_session() as db:
+            for index, name in enumerate(names):
+                target = self.root / name
+                target.write_bytes(f"existing-{index}".encode())
+                await db.execute(
+                    """INSERT INTO downloads
+                       (id, url, name, status, destination, target_path,
+                        created_at, updated_at)
+                       VALUES (?, ?, ?, 'duplicate_pending', ?, ?, ?, ?)""",
+                    (
+                        f"conflict-{index}", f"https://example.test/{name}", name,
+                        str(self.root), str(target), f"2026-07-31T12:00:0{index}+00:00",
+                        f"2026-07-31T12:00:0{index}+00:00",
+                    ),
+                )
+            await db.commit()
+        return [f"conflict-{index}" for index in range(len(names))]
 
     async def test_preflight_detects_internal_active_history_and_disk_duplicates(self):
         existing = self.root / "movie.mkv"
@@ -100,6 +122,105 @@ class V112Tests(unittest.IsolatedAsyncioTestCase):
                 request,
                 {"username": "vayaris"},
             )
+
+    async def test_bulk_late_duplicate_download_resolves_only_displayed_conflicts(self):
+        conflict_ids = await self._add_pending_conflicts(["one.mkv", "two.mkv", "three.mkv"])
+        result = await downloads.resolve_all_pending_conflicts(
+            DuplicateResolutionRequest(
+                action="download",
+                confirm_overwrite=True,
+                apply_to_all=True,
+                conflict_ids=conflict_ids[:2],
+            ),
+            _={"username": "vayaris"},
+        )
+
+        self.assertEqual(result["resolved"], 2)
+        async with database.db_session(row_factory=True) as db:
+            rows = await (await db.execute(
+                "SELECT id, status, overwrite_confirmed FROM downloads ORDER BY id"
+            )).fetchall()
+        by_id = {row["id"]: dict(row) for row in rows}
+        self.assertEqual(by_id["conflict-0"]["status"], "pending")
+        self.assertEqual(by_id["conflict-1"]["overwrite_confirmed"], 1)
+        self.assertEqual(by_id["conflict-2"]["status"], "duplicate_pending")
+
+    async def test_bulk_late_duplicate_download_requires_confirmation(self):
+        conflict_ids = await self._add_pending_conflicts(["one.mkv", "two.mkv"])
+        with self.assertRaisesRegex(Exception, "Explicit overwrite confirmation"):
+            await downloads.resolve_all_pending_conflicts(
+                DuplicateResolutionRequest(
+                    action="download",
+                    apply_to_all=True,
+                    conflict_ids=conflict_ids,
+                ),
+                _={"username": "vayaris"},
+            )
+
+        async with database.db_session() as db:
+            count = (await (await db.execute(
+                "SELECT COUNT(*) FROM downloads WHERE status = 'duplicate_pending'"
+            )).fetchone())[0]
+        self.assertEqual(count, 2)
+
+    async def test_bulk_late_duplicate_ignore_keeps_existing_files(self):
+        names = ["one.mkv", "two.mkv"]
+        conflict_ids = await self._add_pending_conflicts(names)
+        result = await downloads.resolve_all_pending_conflicts(
+            DuplicateResolutionRequest(
+                action="ignore",
+                apply_to_all=True,
+                conflict_ids=conflict_ids,
+            ),
+            _={"username": "vayaris"},
+        )
+
+        self.assertEqual(result["resolved"], 2)
+        self.assertTrue(all((self.root / name).is_file() for name in names))
+        async with database.db_session() as db:
+            count = (await (await db.execute(
+                "SELECT COUNT(*) FROM downloads"
+            )).fetchone())[0]
+        self.assertEqual(count, 0)
+
+    async def test_bulk_late_duplicate_replace_validates_all_paths_first(self):
+        names = ["safe.mkv", "unsafe.mkv"]
+        conflict_ids = await self._add_pending_conflicts(names)
+        with (
+            patch.object(duplicates, "_path_allowed", side_effect=lambda path: path.name != "unsafe.mkv"),
+            self.assertRaisesRegex(Exception, "cannot be replaced safely"),
+        ):
+            await downloads.resolve_all_pending_conflicts(
+                DuplicateResolutionRequest(
+                    action="replace",
+                    apply_to_all=True,
+                    conflict_ids=conflict_ids,
+                ),
+                _={"username": "vayaris"},
+            )
+
+        self.assertTrue(all((self.root / name).is_file() for name in names))
+
+    async def test_bulk_late_duplicate_replace_removes_files_and_resumes_all(self):
+        names = ["one.mkv", "two.mkv"]
+        conflict_ids = await self._add_pending_conflicts(names)
+        with patch.object(duplicates, "_path_allowed", return_value=True):
+            result = await downloads.resolve_all_pending_conflicts(
+                DuplicateResolutionRequest(
+                    action="replace",
+                    apply_to_all=True,
+                    conflict_ids=conflict_ids,
+                ),
+                _={"username": "vayaris"},
+            )
+
+        self.assertEqual(result["resolved"], 2)
+        self.assertTrue(all(not (self.root / name).exists() for name in names))
+        async with database.db_session() as db:
+            pending = (await (await db.execute(
+                "SELECT COUNT(*) FROM downloads WHERE status = 'pending' AND overwrite_confirmed = 1"
+            )).fetchone())[0]
+        self.assertEqual(pending, 2)
 
     async def test_diagnostic_events_are_persisted_and_redacted(self):
         await diagnostics.record_event(

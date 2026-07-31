@@ -90,3 +90,10 @@ test("storage pressure warns at 90 percent and becomes critical above free space
   )[0];
   assert.equal(critical.state, "critical");
 });
+
+test("late duplicate dialog can apply one explicit action to displayed conflicts", () => {
+  const app = fs.readFileSync("frontend/static/js/app.js", "utf8");
+  assert.match(app, /id="duplicate-always-apply"/);
+  assert.match(app, /\/api\/downloads\/conflicts\/resolve/);
+  assert.match(app, /conflict_ids: applyToAll \? conflicts\.map/);
+});

@@ -1377,12 +1377,20 @@ async function checkPendingDuplicateConflicts() {
     if (!conflicts.length) return;
     const item = conflicts[0];
     const path = item.target_path || `${item.destination}/${item.name || ""}`;
+    const conflictCount = conflicts.length;
     const overlay = document.createElement("div");
     overlay.className = "modal-overlay";
     overlay.innerHTML = `<div class="modal-box duplicate-modal" style="width:min(560px,calc(100vw - 24px))">
       <div class="modal-header"><div class="modal-header-title"><h3>${duplicateText("Fichier déjà présent", "File already exists")}</h3></div></div>
       <div style="padding:20px"><p>${duplicateText("Le nom final n’était disponible qu’après le traitement AllDebrid. Le téléchargement local est en attente.", "The final name became available after AllDebrid processing. The local download is waiting.")}</p>
-      <div class="form-hint" style="margin-top:10px;overflow-wrap:anywhere">${escHtml(path)}</div></div>
+      <div class="form-hint" style="margin-top:10px;overflow-wrap:anywhere">${escHtml(path)}</div>
+      <label class="duplicate-always-choice">
+        <input type="checkbox" id="duplicate-always-apply">
+        <span>${duplicateText(
+          conflictCount > 1 ? `Toujours appliquer aux ${conflictCount} conflits en attente` : "Toujours appliquer à tous les conflits en attente",
+          conflictCount > 1 ? `Always apply to all ${conflictCount} pending conflicts` : "Always apply to all pending conflicts"
+        )}</span>
+      </label></div>
       <div class="modal-footer" style="display:flex;justify-content:flex-end;gap:8px;flex-wrap:wrap">
         <button class="btn" data-action="ignore">${duplicateText("Ignorer", "Ignore")}</button>
         <button class="btn" data-action="download">${duplicateText("Télécharger quand même", "Download anyway")}</button>
@@ -1392,19 +1400,43 @@ async function checkPendingDuplicateConflicts() {
     await new Promise(resolve => {
       overlay.querySelectorAll("[data-action]").forEach(button => button.addEventListener("click", async () => {
         const action = button.dataset.action;
+        const applyToAll = overlay.querySelector("#duplicate-always-apply").checked;
         let confirmed = false;
         if (action === "download") {
-          confirmed = confirm(`${duplicateText("Confirmer l’écrasement de", "Confirm overwrite of")}\n${path}`);
+          const paths = applyToAll
+            ? conflicts.map(conflict => conflict.target_path || `${conflict.destination}/${conflict.name || ""}`)
+            : [path];
+          const title = applyToAll
+            ? duplicateText(`Confirmer l’écrasement de ${paths.length} fichiers`, `Confirm overwriting ${paths.length} files`)
+            : duplicateText("Confirmer l’écrasement de", "Confirm overwrite of");
+          confirmed = confirm(`${title}\n\n${paths.join("\n")}`);
           if (!confirmed) return;
         }
         try {
-          await duplicateApi(`/api/downloads/conflicts/${item.id}/resolve`, {
+          const actionButtons = Array.from(overlay.querySelectorAll("[data-action]"));
+          actionButtons.forEach(actionButton => { actionButton.disabled = true; });
+          const endpoint = applyToAll
+            ? "/api/downloads/conflicts/resolve"
+            : `/api/downloads/conflicts/${item.id}/resolve`;
+          const result = await duplicateApi(endpoint, {
             method: "POST", headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ action, confirm_overwrite: confirmed }),
+            body: JSON.stringify({
+              action,
+              confirm_overwrite: confirmed,
+              apply_to_all: applyToAll,
+              conflict_ids: applyToAll ? conflicts.map(conflict => conflict.id) : [],
+            }),
           });
           overlay.remove();
+          if (applyToAll && result.resolved > 1) {
+            showToast(duplicateText(
+              `${result.resolved} conflits résolus`,
+              `${result.resolved} conflicts resolved`
+            ), "ok");
+          }
           resolve();
         } catch (error) {
+          overlay.querySelectorAll("[data-action]").forEach(actionButton => { actionButton.disabled = false; });
           showToast(t("error_prefix") + error.message, "error");
         }
       }));

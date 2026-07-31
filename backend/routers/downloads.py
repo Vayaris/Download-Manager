@@ -328,43 +328,85 @@ async def pending_conflicts(_=Depends(get_current_user)):
         return [dict(row) for row in await cursor.fetchall()]
 
 
+async def _resolve_pending_conflicts(db, rows, body: DuplicateResolutionRequest) -> int:
+    if not rows:
+        raise HTTPException(status_code=404, detail="Duplicate conflict not found")
+    if body.action == "download" and not body.confirm_overwrite:
+        raise HTTPException(status_code=409, detail="Explicit overwrite confirmation is required")
+
+    if body.action == "replace":
+        from services.duplicates import _path_allowed
+
+        # Validate the complete batch before deleting the first existing file.
+        for row in rows:
+            target = Path(row["target_path"] or "")
+            if target.is_file() and not _path_allowed(target):
+                raise HTTPException(status_code=403, detail="Duplicate path cannot be replaced safely")
+
+    now = datetime.now(timezone.utc).isoformat()
+    for row in rows:
+        if body.action == "ignore":
+            await db.execute(
+                "DELETE FROM downloads WHERE id = ? AND status = 'duplicate_pending'",
+                (row["id"],),
+            )
+            continue
+
+        if body.action == "replace":
+            target = Path(row["target_path"] or "")
+            if target.is_file():
+                target.unlink()
+            await db.execute(
+                "DELETE FROM history WHERE status = 'complete' AND destination = ? AND name = ?",
+                (row["destination"], row["name"]),
+            )
+        await db.execute(
+            """UPDATE downloads SET status = 'pending', overwrite_confirmed = 1,
+                   error_msg = NULL, updated_at = ?
+               WHERE id = ? AND status = 'duplicate_pending'""",
+            (now, row["id"]),
+        )
+    await db.commit()
+    return len(rows)
+
+
+@router.post("/conflicts/resolve")
+async def resolve_all_pending_conflicts(
+    body: DuplicateResolutionRequest,
+    _=Depends(get_current_user),
+):
+    if body.action not in ("ignore", "download", "replace"):
+        raise HTTPException(status_code=400, detail="Invalid duplicate action")
+    conflict_ids = list(dict.fromkeys(
+        value.strip() for value in body.conflict_ids if value.strip()
+    ))
+    if not body.apply_to_all or not conflict_ids:
+        raise HTTPException(status_code=400, detail="Pending conflict IDs are required")
+    placeholders = ",".join("?" for _ in conflict_ids)
+    async with db_session(row_factory=True) as db:
+        rows = await (await db.execute(
+            f"SELECT * FROM downloads WHERE status = 'duplicate_pending' AND id IN ({placeholders}) ORDER BY created_at",
+            conflict_ids,
+        )).fetchall()
+        resolved = await _resolve_pending_conflicts(db, rows, body)
+    return {"status": "resolved", "action": body.action, "resolved": resolved}
+
+
 @router.post("/conflicts/{download_id}/resolve")
 async def resolve_pending_conflict(
     download_id: str,
     body: DuplicateResolutionRequest,
-    request: Request,
     _=Depends(get_current_user),
 ):
     if body.action not in ("ignore", "download", "replace"):
         raise HTTPException(status_code=400, detail="Invalid duplicate action")
     async with db_session(row_factory=True) as db:
-        cursor = await db.execute("SELECT * FROM downloads WHERE id = ? AND status = 'duplicate_pending'", (download_id,))
-        row = await cursor.fetchone()
-        if not row:
-            raise HTTPException(status_code=404, detail="Duplicate conflict not found")
-        target = Path(row["target_path"] or "")
-        if body.action == "ignore":
-            await db.execute("DELETE FROM downloads WHERE id = ?", (download_id,))
-        else:
-            if body.action == "download" and not body.confirm_overwrite:
-                raise HTTPException(status_code=409, detail="Explicit overwrite confirmation is required")
-            if body.action == "replace":
-                from services.duplicates import _path_allowed
-                if target.is_file():
-                    if not _path_allowed(target):
-                        raise HTTPException(status_code=403, detail="Duplicate path cannot be replaced safely")
-                    target.unlink()
-                await db.execute(
-                    "DELETE FROM history WHERE status = 'complete' AND destination = ? AND name = ?",
-                    (row["destination"], row["name"]),
-                )
-            await db.execute(
-                """UPDATE downloads SET status = 'pending', overwrite_confirmed = 1,
-                   error_msg = NULL, updated_at = ? WHERE id = ?""",
-                (datetime.now(timezone.utc).isoformat(), download_id),
-            )
-        await db.commit()
-    return {"status": "resolved", "action": body.action}
+        row = await (await db.execute(
+            "SELECT * FROM downloads WHERE id = ? AND status = 'duplicate_pending'",
+            (download_id,),
+        )).fetchone()
+        resolved = await _resolve_pending_conflicts(db, [row] if row else [], body)
+    return {"status": "resolved", "action": body.action, "resolved": resolved}
 
 
 @router.post("/{download_id}/pause")

@@ -34,6 +34,8 @@ class DuplicateCommitRequest(BaseModel):
 class DuplicateResolutionRequest(BaseModel):
     action: str
     confirm_overwrite: bool = False
+    apply_to_all: bool = False
+    conflict_ids: List[str] = Field(default_factory=list, max_length=100)
 
 
 class HistoryRemoveRequest(BaseModel):
