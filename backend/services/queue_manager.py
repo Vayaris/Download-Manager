@@ -373,15 +373,6 @@ class QueueManager:
         else:
             log("aria2 RPC not available after 60s, starting loop anyway")
 
-        # Apply speed limit from config
-        try:
-            config = get_config()
-            limit = config["downloads"].get("speed_limit", 0)
-            limit_str = f"{limit}M" if limit > 0 else "0"
-            await aria2.change_global_option({"max-overall-download-limit": limit_str})
-        except Exception as e:
-            log(f"Could not set speed limit: {e}")
-
         while self._running:
             started = time.monotonic()
             try:
@@ -398,6 +389,11 @@ class QueueManager:
             await asyncio.sleep(1)
 
     async def _tick(self):
+        from services.interface_priority import interface_priority
+        try:
+            await interface_priority.apply()
+        except Exception as exc:
+            self._record_error("speed_limit", exc)
         config = get_config()
         max_concurrent = config["downloads"]["simultaneous"]
         now = datetime.now(timezone.utc).isoformat()

@@ -29,7 +29,10 @@ function formatSize(bytes) {
 
 function formatSpeed(bps) {
   if (!bps || bps === 0) return "\u2014";
-  return formatSize(bps) + "/s";
+  const french = typeof getLang === "function" && getLang() === "fr";
+  const units = french ? ['o/s', 'Kio/s', 'Mio/s', 'Gio/s'] : ['B/s', 'KiB/s', 'MiB/s', 'GiB/s'];
+  const index = Math.min(3, Math.max(0, Math.floor(Math.log(bps) / Math.log(1024))));
+  return (bps / Math.pow(1024, index)).toFixed(1) + ' ' + units[index];
 }
 
 // ---- Auth token helper ----

@@ -3,7 +3,6 @@ import asyncio
 from fastapi import APIRouter, Depends, HTTPException, Request
 
 from auth import get_current_user
-from config import get_config
 from database import db_session
 from services.aria2_service import aria2
 from services.diagnostics import clear_events, list_events
@@ -25,25 +24,23 @@ async def get_version(_=Depends(get_current_user)):
 
 @router.get("/speed-limit/status")
 async def get_speed_limit_status(_=Depends(get_current_user)):
-    configured = max(0, int(get_config()["downloads"].get("speed_limit", 0) or 0))
-    expected_bytes = configured * 1024 * 1024 if configured > 0 else 0
+    from services.interface_priority import interface_priority
+    state = interface_priority.snapshot()
     try:
-        options = await asyncio.wait_for(aria2.get_global_option(), timeout=5)
-        effective_bytes = int(options.get("max-overall-download-limit", 0) or 0)
-        return {
-            "configured_mb_s": configured,
-            "effective_bytes_s": effective_bytes,
-            "applied": effective_bytes == expected_bytes,
-            "available": True,
-        }
+        options, stats = await asyncio.wait_for(asyncio.gather(
+            aria2.get_global_option(), aria2._call("aria2.getGlobalStat")), timeout=3)
+        effective = int(options.get("max-overall-download-limit", 0) or 0)
+        cap = state["configured_mib_s"] * 1048576
+        reserved = bool(state["priority_interface_enabled"] and cap > 0 and cap * 80 // 100 <= effective <= cap)
+        return {**state, "target_percent": state["effective_percent"],
+                "effective_percent": round(effective * 100 / cap) if cap else 100,
+                "priority_interface_active": reserved and effective < cap,
+                "effective_bytes_s": effective,
+                "measured_bytes_s": int(stats.get("downloadSpeed", 0) or 0),
+                "applied": effective == state["temporary_limit_bytes_s"] or reserved, "available": True}
     except Exception as exc:
-        return {
-            "configured_mb_s": configured,
-            "effective_bytes_s": None,
-            "applied": False,
-            "available": False,
-            "error": type(exc).__name__,
-        }
+        return {**state, "effective_bytes_s": None, "measured_bytes_s": None,
+                "applied": False, "available": False, "error": type(exc).__name__}
 
 
 @router.get("/runtime-status")
@@ -105,12 +102,14 @@ async def diagnostics(request: Request, _=Depends(get_current_user)):
         manager.health_snapshot()
         if manager and hasattr(manager, "health_snapshot") else {"running": False}
     )
+    from routers.filebrowser import browse_diagnostics
     return {
         "version": get_current_version(),
         "database": db_info,
         "aria2": aria2_info,
         "queue": queue_info,
         "events": await list_events(100),
+        "filebrowser": browse_diagnostics(),
     }
 
 

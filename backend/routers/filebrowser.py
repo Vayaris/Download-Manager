@@ -3,6 +3,9 @@ import os
 import re
 import time
 from collections import OrderedDict
+from concurrent.futures import ThreadPoolExecutor
+import json
+from services.interface_priority import interface_priority
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -20,22 +23,25 @@ _CACHE_TTL_SECONDS = 10
 _CACHE_MAX_ENTRIES = 128
 _RECENT_MAX = 10
 _FAVORITE_MAX = 50
-_browse_semaphore = asyncio.Semaphore(4)
-_browse_cache: OrderedDict[str, tuple[float, dict]] = OrderedDict()
+_browse_executor = ThreadPoolExecutor(max_workers=2, thread_name_prefix="dm-browse")
+_browse_inflight = {}
+_browse_started = {}
+_browse_metrics = {"completed": 0, "last_scan_seconds": 0, "cache_hits": 0}
+_cache_generation = 0
+_MAX_PENDING_SCANS = 8
+_RESPONSE_WAIT_SECONDS = 0.6
+_browse_cache: OrderedDict[tuple[str, str], tuple[float, dict]] = OrderedDict()
 
 
-def _get_allowed_roots() -> list[Path]:
+def _get_allowed_roots(config: dict | None = None) -> list[Path]:
     """Return browseable roots without exposing unrelated server paths."""
-    cfg = get_config()
+    cfg = config if config is not None else get_config()
     allowed = [Path(p).resolve() for p in cfg["downloads"].get("allowed_paths", [])]
     default_dest = cfg["downloads"].get("default_destination", "")
     if default_dest:
         allowed.append(Path(default_dest).resolve())
-    try:
-        from services.smb import get_all_mount_points
-        allowed.extend(Path(mp).resolve() for mp in get_all_mount_points())
-    except Exception:
-        pass
+    allowed.extend(Path(share["mount_point"]).resolve()
+                   for share in cfg.get("smb_shares", []) if share.get("mount_point"))
 
     unique = []
     seen = set()
@@ -110,7 +116,7 @@ def _scan_directory(target: Path) -> dict:
     return {"directories": directories}
 
 
-def _cache_get(key: str) -> dict | None:
+def _cache_get(key: tuple[str, str]) -> dict | None:
     cached = _browse_cache.get(key)
     if not cached:
         return None
@@ -122,7 +128,7 @@ def _cache_get(key: str) -> dict | None:
     return dict(payload)
 
 
-def _cache_put(key: str, payload: dict):
+def _cache_put(key: tuple[str, str], payload: dict):
     _browse_cache[key] = (time.monotonic() + _CACHE_TTL_SECONDS, dict(payload))
     _browse_cache.move_to_end(key)
     while len(_browse_cache) > _CACHE_MAX_ENTRIES:
@@ -130,8 +136,9 @@ def _cache_put(key: str, payload: dict):
 
 
 def _invalidate_cache(path: Path):
-    key = str(path)
-    _browse_cache.pop(key, None)
+    global _cache_generation
+    _cache_generation += 1
+    _browse_cache.clear()
 
 
 def _decode_mount_path(value: str) -> str:
@@ -197,50 +204,90 @@ def _normalize_place(path: str, allowed_roots: list[Path] | None = None) -> Path
     return target
 
 
-@router.get("/browse")
-async def browse(
-    path: str = Query(default="/"),
-    refresh: bool = Query(default=False),
-    _=Depends(get_current_user),
-):
-    try:
-        target = Path(path).expanduser().resolve()
-        allowed_roots = _get_allowed_roots()
-        if not _is_path_allowed(target, allowed_roots):
-            return {
-                "path": str(target), "directories": [], "breadcrumbs": [],
-                "parent": None, "error": "Access denied for this path",
-            }
+def _permission_scope(cfg):
+    return json.dumps([cfg["downloads"].get("allowed_paths", []),
+                       cfg["downloads"].get("default_destination", ""),
+                       [share.get("mount_point") for share in cfg.get("smb_shares", [])]], sort_keys=True)
 
-        key = str(target)
-        payload = None if refresh else _cache_get(key)
-        cached = payload is not None
-        if payload is None:
-            try:
-                async with _browse_semaphore:
-                    payload = await asyncio.wait_for(
-                        asyncio.to_thread(_scan_directory, target),
-                        timeout=_BROWSE_TIMEOUT_SECONDS,
-                    )
-            except asyncio.TimeoutError:
-                payload = {"directories": [], "error": "Folder response timed out"}
-            if not payload.get("error"):
-                _cache_put(key, payload)
 
-        return {
-            "path": key,
+def _browse_sync(path: str, cfg: dict | None = None) -> dict:
+    started = time.monotonic()
+    target = Path(path).expanduser().resolve()
+    roots = _get_allowed_roots(cfg)
+    if not _is_path_allowed(target, roots):
+        return {"path": str(target), "directories": [], "breadcrumbs": [],
+                "parent": None, "selectable": False, "error": "Access denied for this path"}
+    payload = _scan_directory(target)
+    return {"path": str(target),
             "parent": str(target.parent) if target != target.parent else None,
-            "selectable": _is_destination_allowed(target, allowed_roots),
+            "selectable": _is_destination_allowed(target, roots),
             "directories": payload.get("directories", []),
-            "breadcrumbs": _breadcrumbs(target),
-            "error": payload.get("error"),
-            "cached": cached,
-        }
+            "breadcrumbs": _breadcrumbs(target), "error": payload.get("error"),
+            "scan_seconds": round(time.monotonic() - started, 4)}
+
+
+async def _run_scan(key, path, generation, cfg):
+    interface_priority.begin()
+    try:
+        # Applying a reserve must never prevent the filesystem task from finishing.
+        future = asyncio.get_running_loop().run_in_executor(_browse_executor, _browse_sync, path, cfg)
+        if interface_priority.snapshot()["priority_interface_active"]:
+            try:
+                await interface_priority.apply()
+            except Exception:
+                pass
+        payload = await future
+        _browse_metrics["completed"] += 1
+        _browse_metrics["last_scan_seconds"] = payload.get("scan_seconds", 0)
+        if not payload.get("error") and generation == _cache_generation and _permission_scope(get_config()) == key[0]:
+            _cache_put(key, payload)
+        return payload
     except Exception as exc:
-        return {
-            "path": path, "directories": [], "breadcrumbs": [],
-            "parent": None, "error": str(exc), "cached": False,
-        }
+        return {"path": path, "directories": [], "breadcrumbs": [], "parent": None,
+                "selectable": False, "error": str(exc)}
+    finally:
+        interface_priority.end()
+        _browse_inflight.pop(key, None)
+        _browse_started.pop(key, None)
+
+
+def browse_diagnostics():
+    return {**_browse_metrics, "pending": len(_browse_inflight), "workers": 2,
+            "maximum_pending": _MAX_PENDING_SCANS}
+
+
+@router.get("/browse")
+async def browse(path: str = Query(default="/"), refresh: bool = Query(default=False),
+                 _=Depends(get_current_user)):
+    # Lexical keys only: resolving paths or mounts on the API loop can block it.
+    cfg = get_config()
+    scope = _permission_scope(cfg)
+    key = (scope, path)
+    payload = None if refresh else _cache_get(key)
+    if payload is not None:
+        _browse_metrics["cache_hits"] += 1
+        return {**payload, "cached": True, "loading": False}
+    task = _browse_inflight.get(key)
+    if task is None:
+        if len(_browse_inflight) >= _MAX_PENDING_SCANS:
+            return {"path": path, "directories": [], "breadcrumbs": [], "parent": None,
+                    "selectable": False, "cached": False, "loading": False,
+                    "error": "Storage is busy; retry shortly"}
+        task = asyncio.create_task(_run_scan(key, path, _cache_generation, cfg))
+        _browse_inflight[key] = task
+        _browse_started[key] = time.monotonic()
+    try:
+        # Shielding preserves the occupied slot when clients time out or disconnect.
+        payload = await asyncio.wait_for(asyncio.shield(task), _RESPONSE_WAIT_SECONDS)
+        if _permission_scope(get_config()) != scope:
+            return {"path": path, "directories": [], "breadcrumbs": [], "parent": None,
+                    "selectable": False, "cached": False, "loading": False,
+                    "error": "Folder permissions changed; retry"}
+        return {**payload, "cached": False, "loading": False}
+    except asyncio.TimeoutError:
+        return {"path": path, "directories": [], "breadcrumbs": [], "parent": None,
+                "selectable": False, "cached": False, "loading": True, "retry_after": 1,
+                "elapsed_seconds": round(time.monotonic() - _browse_started.get(key, time.monotonic()), 1)}
 
 
 @router.get("/preferences")
@@ -274,7 +321,7 @@ async def get_preferences(user=Depends(get_current_user)):
 
 @router.post("/favorites")
 async def add_favorite(body: FileBrowserPathRequest, user=Depends(get_current_user)):
-    target = _normalize_place(body.path)
+    target = await asyncio.to_thread(_normalize_place, body.path)
     async with db_session() as db:
         cursor = await db.execute(
             "SELECT COUNT(*) FROM filebrowser_places WHERE username = ? AND kind = 'favorite'",
@@ -297,7 +344,7 @@ async def add_favorite(body: FileBrowserPathRequest, user=Depends(get_current_us
 async def remove_favorite(
     path: str = Query(...), user=Depends(get_current_user)
 ):
-    target = _normalize_place(path)
+    target = await asyncio.to_thread(_normalize_place, path)
     async with db_session() as db:
         await db.execute(
             "DELETE FROM filebrowser_places WHERE username = ? AND path = ? AND kind = 'favorite'",
@@ -311,8 +358,10 @@ async def remove_favorite(
 async def reorder_favorites(
     body: FileBrowserReorderRequest, user=Depends(get_current_user)
 ):
-    allowed_roots = _get_allowed_roots()
-    normalized = [str(_normalize_place(path, allowed_roots)) for path in body.paths]
+    def normalize_all():
+        roots = _get_allowed_roots()
+        return [str(_normalize_place(path, roots)) for path in body.paths]
+    normalized = await asyncio.to_thread(normalize_all)
     if len(normalized) != len(set(normalized)):
         raise HTTPException(status_code=400, detail="Duplicate favorite path")
 
@@ -336,7 +385,7 @@ async def reorder_favorites(
 
 @router.post("/recents")
 async def add_recent(body: FileBrowserPathRequest, user=Depends(get_current_user)):
-    target = _normalize_place(body.path)
+    target = await asyncio.to_thread(_normalize_place, body.path)
     now = datetime.now(timezone.utc).isoformat()
     async with db_session() as db:
         await db.execute(
@@ -370,9 +419,7 @@ async def mkdir(body: MkdirRequest, _=Depends(get_current_user)):
     if name in (".", ".."):
         raise HTTPException(status_code=400, detail="Invalid folder name")
 
-    parent = Path(body.path).resolve()
-    if not _is_destination_allowed(parent, _get_allowed_roots()):
-        raise HTTPException(status_code=403, detail="Access denied for this path")
+    parent = await asyncio.to_thread(_normalize_place, body.path)
 
     def create_directory() -> Path:
         if not parent.exists() or not parent.is_dir():

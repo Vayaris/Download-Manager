@@ -219,9 +219,9 @@ const TRANSLATIONS = {
     // ---- Account ----
     acct_title: "My account",
     acct_appearance_title: "Interface style",
-    acct_appearance_hint: "This preference is synchronized across your devices. The v1 look remains available as a temporary fallback.",
-    acct_ui_classic: "Old look v1",
-    acct_ui_modern: "Interface v2",
+    acct_appearance_hint: "This preference is synchronized across your devices. The classic interface remains available as a temporary fallback.",
+    acct_ui_classic: "Classic interface",
+    acct_ui_modern: "Modern interface",
     acct_role: "Administrator",
     acct_change_password: "Change password",
     acct_password_placeholder: "New password (min. 12 characters)",
@@ -464,7 +464,7 @@ const TRANSLATIONS = {
     settings_youtube_concurrent: "Simultaneous direct downloads",
     settings_youtube_concurrent_hint: "between 1 and 4",
     settings_youtube_speed: "Direct speed limit",
-    settings_youtube_speed_hint: "MB/s per download (0 = unlimited)",
+    settings_youtube_speed_hint: "MiB/s per download (0 = unlimited)",
     settings_youtube_cookies: "YouTube cookies",
     settings_youtube_cookies_help_title: "Get cookies.txt in 5 steps",
     settings_youtube_cookies_step_extension: "Install the exporter for your browser:",
@@ -500,12 +500,12 @@ const TRANSLATIONS = {
     settings_downloads_title: "Downloads",
     settings_simultaneous: "Simultaneous downloads",
     settings_segments: "Segments per file",
-    settings_speed_limit: "Speed limit (MB/s, 0 = unlimited)",
+    settings_speed_limit: "Speed limit (MiB/s, 0 = unlimited)",
     settings_speed_limit_scope: "Applies to the combined local aria2 traffic. The remote AllDebrid cache phase is not limited.",
     settings_speed_checking: "Checking aria2...",
-    settings_speed_applied: "Applied by aria2: {{n}} MB/s total",
+    settings_speed_applied: "Applied by aria2: {{n}} MiB/s total",
     settings_speed_unlimited_applied: "Applied by aria2: unlimited",
-    settings_speed_mismatch: "The active aria2 limit is {{n}} MB/s and differs from the saved value.",
+    settings_speed_mismatch: "The active aria2 limit is {{n}} MiB/s and differs from the saved value.",
     settings_speed_pending_restart: "Saved, but aria2 could not confirm it. It will be applied on the next service start.",
     settings_default_dest: "Default destination",
     settings_btn_save_downloads: "Save",
@@ -571,7 +571,7 @@ const TRANSLATIONS = {
     settings_simultaneous_hint: "between 1 and 20",
     settings_segments_hint: "More segments = more speed (like JDownloader). 1 = single connection.",
     settings_segments_range: "between 1 and 16",
-    settings_speed_limit_hint: "MB/s (0 = unlimited)",
+    settings_speed_limit_hint: "MiB/s (0 = unlimited)",
     settings_advanced_downloads: "Advanced download settings",
     settings_max_retries: "Maximum retries",
     settings_max_retries_hint: "0 to 20, 0 = no retry",
@@ -978,9 +978,9 @@ const TRANSLATIONS = {
     // ---- Account ----
     acct_title: "Mon compte",
     acct_appearance_title: "Style de l’interface",
-    acct_appearance_hint: "Ce choix est synchronisé sur vos appareils. L’ancien look v1 reste disponible temporairement comme solution de secours.",
-    acct_ui_classic: "Ancien look v1",
-    acct_ui_modern: "Interface v2",
+    acct_appearance_hint: "Ce choix est synchronisé sur vos appareils. L’interface classique reste disponible comme solution de repli.",
+    acct_ui_classic: "Interface classique",
+    acct_ui_modern: "Interface moderne",
     acct_role: "Administrateur",
     acct_change_password: "Changer le mot de passe",
     acct_password_placeholder: "Nouveau mot de passe (min. 12 caractères)",
@@ -1223,7 +1223,7 @@ const TRANSLATIONS = {
     settings_youtube_concurrent: "Téléchargements directs simultanés",
     settings_youtube_concurrent_hint: "entre 1 et 4",
     settings_youtube_speed: "Limite de vitesse directe",
-    settings_youtube_speed_hint: "Mo/s par téléchargement (0 = illimité)",
+    settings_youtube_speed_hint: "Mio/s par téléchargement (0 = illimité)",
     settings_youtube_cookies: "Cookies YouTube",
     settings_youtube_cookies_help_title: "Récupérer cookies.txt en 5 étapes",
     settings_youtube_cookies_step_extension: "Installez l’outil adapté à votre navigateur :",
@@ -1259,12 +1259,12 @@ const TRANSLATIONS = {
     settings_downloads_title: "Téléchargements",
     settings_simultaneous: "Téléchargements simultanés",
     settings_segments: "Segments par fichier",
-    settings_speed_limit: "Limite de vitesse (Mo/s, 0 = illimité)",
+    settings_speed_limit: "Limite de vitesse (Mio/s, 0 = illimité)",
     settings_speed_limit_scope: "S’applique au trafic local cumulé d’aria2. La mise en cache distante AllDebrid n’est pas limitée.",
     settings_speed_checking: "Vérification d’aria2...",
-    settings_speed_applied: "Appliquée par aria2 : {{n}} Mo/s au total",
+    settings_speed_applied: "Appliquée par aria2 : {{n}} Mio/s au total",
     settings_speed_unlimited_applied: "Appliquée par aria2 : illimitée",
-    settings_speed_mismatch: "La limite aria2 active est de {{n}} Mo/s et diffère de la valeur enregistrée.",
+    settings_speed_mismatch: "La limite aria2 active est de {{n}} Mio/s et diffère de la valeur enregistrée.",
     settings_speed_pending_restart: "Enregistrée, mais aria2 n’a pas pu la confirmer. Elle sera appliquée au prochain démarrage du service.",
     settings_default_dest: "Destination par défaut",
     settings_btn_save_downloads: "Sauvegarder",
@@ -1330,7 +1330,7 @@ const TRANSLATIONS = {
     settings_simultaneous_hint: "entre 1 et 20",
     settings_segments_hint: "Plus de segments = plus de vitesse (comme JDownloader). 1 = connexion unique.",
     settings_segments_range: "entre 1 et 16",
-    settings_speed_limit_hint: "Mo/s (0 = illimité)",
+    settings_speed_limit_hint: "Mio/s (0 = illimité)",
     settings_advanced_downloads: "Paramètres avancés de téléchargement",
     settings_max_retries: "Tentatives maximum",
     settings_max_retries_hint: "0 à 20, 0 = aucune nouvelle tentative",
@@ -1521,6 +1521,12 @@ const TRANSLATIONS = {
     smb_load_error: "Impossible de charger les partages SMB",
   },
 };
+
+Object.assign(TRANSLATIONS.fr, {"v3_categories": "Catégorie", "v3_appearance": "Apparence", "v3_downloads": "Téléchargements", "v3_storage": "Destinations et stockage", "v3_alldebrid": "AllDebrid", "v3_youtube": "YouTube", "v3_media": "Plex/Jellyfin", "v3_notifications": "Notifications", "v3_account": "Compte et sécurité", "v3_diagnostics": "Mises à jour et diagnostics", "v3_appearance_hint": "Personnalisez ce navigateur. Vos préférences sont enregistrées immédiatement.", "v3_palette": "Palette", "v3_amber": "Ambre", "v3_ocean": "Océan", "v3_forest": "Forêt", "v3_mode": "Mode", "v3_light": "Clair", "v3_dark": "Sombre", "v3_system": "Système", "v3_style": "Interface", "v3_modern": "Moderne", "v3_classic": "Classique", "v3_account_hint": "Gérez votre mot de passe, vos sessions et les préférences du compte.", "v3_account_open": "Ouvrir les réglages du compte", "v3_priority": "Priorité à l’interface pendant les téléchargements", "v3_priority_hint": "Avec un plafond positif, réserve jusqu’à 20 % pendant les explorations. Débit illimité et YouTube direct : réglages inchangés.", "v3_speed_unit": "Mio/s", "v3_unlimited": "Illimité", "v3_speed_state": "Limite choisie : {{chosen}} · Effective : {{effective}} · Débit mesuré : {{measured}}", "v3_priority_active": "Réserve pour l’interface active"});
+Object.assign(TRANSLATIONS.en, {"v3_categories": "Category", "v3_appearance": "Appearance", "v3_downloads": "Downloads", "v3_storage": "Destinations and storage", "v3_alldebrid": "AllDebrid", "v3_youtube": "YouTube", "v3_media": "Plex/Jellyfin", "v3_notifications": "Notifications", "v3_account": "Account and security", "v3_diagnostics": "Updates and diagnostics", "v3_appearance_hint": "Make this browser your own. Preferences are saved immediately.", "v3_palette": "Palette", "v3_amber": "Amber", "v3_ocean": "Ocean", "v3_forest": "Forest", "v3_mode": "Mode", "v3_light": "Light", "v3_dark": "Dark", "v3_system": "System", "v3_style": "Interface", "v3_modern": "Modern", "v3_classic": "Classic", "v3_account_hint": "Manage your password, sessions and account preferences.", "v3_account_open": "Open account settings", "v3_priority": "Prioritize the interface during downloads", "v3_priority_hint": "With a positive limit, reserve up to 20% while browsing folders. Unlimited transfers and direct YouTube downloads keep their separate settings.", "v3_speed_unit": "MiB/s", "v3_unlimited": "Unlimited", "v3_speed_state": "Chosen limit: {{chosen}} · Effective: {{effective}} · Measured rate: {{measured}}", "v3_priority_active": "Interface reserve active"});
+
+Object.assign(TRANSLATIONS.fr, {v3_storage_waiting: 'Le stockage répond lentement. Exploration toujours en cours…'});
+Object.assign(TRANSLATIONS.en, {v3_storage_waiting: 'Storage is responding slowly. Folder exploration is still running…'});
 
 // ---- Translation function ----
 

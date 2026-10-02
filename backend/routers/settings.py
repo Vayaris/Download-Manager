@@ -174,6 +174,7 @@ async def get_settings(_=Depends(get_current_user)):
         "allowed_paths": cfg["downloads"]["allowed_paths"],
         "download_segments": cfg["downloads"].get("download_segments", 1),
         "speed_limit": cfg["downloads"].get("speed_limit", 0),
+        "priority_interface_enabled": cfg["downloads"].get("priority_interface_enabled", False),
         "max_retries": cfg["downloads"].get("max_retries", 3),
         "retry_delay_seconds": cfg["downloads"].get("retry_delay_seconds", 5),
         "skip_nfo_files": cfg["downloads"].get("skip_nfo_files", True),
@@ -249,6 +250,7 @@ async def update_settings(body: SettingsUpdate, _=Depends(get_current_user)):
             "default_destination": body.default_destination,
             "download_segments": body.download_segments,
             "speed_limit": body.speed_limit,
+            "priority_interface_enabled": body.priority_interface_enabled,
             "max_retries": body.max_retries,
             "retry_delay_seconds": body.retry_delay_seconds,
             "skip_nfo_files": body.skip_nfo_files,
@@ -281,30 +283,16 @@ async def update_settings(body: SettingsUpdate, _=Depends(get_current_user)):
     response = {"status": "saved"}
     if body.existing_file_check_enabled is False:
         response["resumed_conflicts"] = await resume_pending_file_conflicts()
-    if body.speed_limit is not None and body.speed_limit >= 0:
-        from services.aria2_service import aria2
-        expected_bytes = body.speed_limit * 1024 * 1024 if body.speed_limit > 0 else 0
+    if body.speed_limit is not None or body.priority_interface_enabled is not None:
+        from services.interface_priority import interface_priority
+        from routers.runtime import get_speed_limit_status
         try:
-            limit_str = f"{body.speed_limit}M" if body.speed_limit > 0 else "0"
-            await asyncio.wait_for(
-                aria2.change_global_option({"max-overall-download-limit": limit_str}),
-                timeout=5,
-            )
-            options = await asyncio.wait_for(aria2.get_global_option(), timeout=5)
-            effective_bytes = int(options.get("max-overall-download-limit", 0) or 0)
-            response["speed_limit"] = {
-                "configured_mb_s": body.speed_limit,
-                "effective_bytes_s": effective_bytes,
-                "applied": effective_bytes == expected_bytes,
-            }
+            await interface_priority.apply(force=True)
+            response["speed_limit"] = await get_speed_limit_status()
         except Exception as exc:
-            logger.warning("Speed limit saved but not applied to aria2: %s", exc)
-            response["speed_limit"] = {
-                "configured_mb_s": body.speed_limit,
-                "effective_bytes_s": None,
-                "applied": False,
-                "error": type(exc).__name__,
-            }
+            logger.warning("Speed limit saved but not applied: %s", type(exc).__name__)
+            response["speed_limit"] = {**interface_priority.snapshot(),
+                                      "applied": False, "effective_bytes_s": None}
     return response
 
 

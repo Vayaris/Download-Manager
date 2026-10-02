@@ -49,6 +49,7 @@ class SettingsUpdate(BaseModel):
     default_destination: Optional[str] = None
     download_segments: Optional[int] = None
     speed_limit: Optional[int] = None
+    priority_interface_enabled: Optional[bool] = None
     max_retries: Optional[int] = None
     retry_delay_seconds: Optional[int] = None
     skip_nfo_files: Optional[bool] = None

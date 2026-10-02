@@ -2,7 +2,7 @@
 
 Self-hosted download manager powered by **FastAPI**, **aria2** and **AllDebrid**. It provides a responsive web/PWA interface for direct links, magnets and `.torrent` files, with real-time queue updates and optional Plex or Jellyfin library refreshes.
 
-Current release: **v2.2.4**
+Current release: **v3.0.0**.
 
 ![Python](https://img.shields.io/badge/Python-3.10+-3776AB?logo=python&logoColor=white)
 ![FastAPI](https://img.shields.io/badge/FastAPI-009688?logo=fastapi&logoColor=white)
@@ -20,8 +20,8 @@ Current release: **v2.2.4**
 - Queue priorities, drag and drop, pause/resume, configurable retries and up to 20 simultaneous downloads
 - Download workspace with queue completion estimate, aggregate storage capacity and per-destination space warnings
 - Page-wide link and magnet paste with `Ctrl+V`, plus five recent completed activities kept visible beside storage
-- Global aria2 speed limit in MB/s, with effective-limit verification in Settings
-- Responsive desktop/mobile interface with the v2 layout by default and a temporary v1 fallback, dark/light themes, French/English and installable PWA
+- Global aria2 speed limit in MiB/s, with chosen/effective limits and measured throughput
+- Responsive desktop/mobile interface, Amber/Ocean/Forest palettes, light/dark/system modes, browser-local preferences, a classic fallback, French/English and installable PWA
 - Account-synced destination explorer with favorites, recent paths, search, breadcrumbs and mobile tabs
 - Silent `.nfo` filtering enabled by default
 - Safe stalled-download watchdog and automatic history
@@ -83,7 +83,7 @@ Two engines are available:
 - **AllDebrid:** attempted first when selected. Download Manager handles streaming choices and delayed links, then automatically falls back to its local direct engine when AllDebrid explicitly reports that YouTube is unsupported.
 - **Direct (yt-dlp):** disabled by default. Enable it under **Settings > YouTube** after installing the checked dependencies. The compatible profile favors MP4/H.264 with audio; the enriched MKV profile keeps the best video, one best non-descriptive audio track per available language, all manual subtitles, and French/English automatic subtitles.
 
-The direct engine defaults to two concurrent jobs and has a separate per-download speed limit in MB/s. Most public videos work anonymously, but YouTube can require authentication for selected videos or server IP addresses. In that case, import a Netscape-format `cookies.txt` under **Settings > YouTube**. Download Manager stores it as `/opt/download-manager/config/youtube-cookies.txt` with mode `0600`, never returns its contents through the API, and gives each yt-dlp worker a private temporary copy.
+The direct engine defaults to two concurrent jobs and has a separate per-download speed limit in MiB/s. Most public videos work anonymously, but YouTube can require authentication for selected videos or server IP addresses. In that case, import a Netscape-format `cookies.txt` under **Settings > YouTube**. Download Manager stores it as `/opt/download-manager/config/youtube-cookies.txt` with mode `0600`, never returns its contents through the API, and gives each yt-dlp worker a private temporary copy.
 
 Cookie setup takes five steps:
 
@@ -153,6 +153,7 @@ downloads:
   simultaneous: 3
   download_segments: 1
   speed_limit: 0
+  priority_interface_enabled: false
   max_retries: 3
   retry_delay_seconds: 5
   skip_nfo_files: true
@@ -175,13 +176,13 @@ Important ranges and behavior:
 |---|---|---|
 | `simultaneous` | `1` to `20` | Concurrent local downloads |
 | `download_segments` | `1` to `16` | Connections per file |
-| `speed_limit` | `0` or MB/s | Aggregate local aria2 limit; `0` is unlimited |
+| `speed_limit` | `0` or MiB/s | Aggregate local aria2 limit; `0` is unlimited |
 | `max_retries` | `0` to `20` | Captured when a new download is created |
 | `retry_delay_seconds` | `0` to `3600` | Delay between attempts |
 | `existing_file_check_enabled` | `true` or `false` | Protect existing destination files; disabling it permits overwrite without another prompt |
 | `stalled_timeout_hours` | `0` to `168` | No-progress timeout; `0` disables the watchdog |
 | `youtube.max_concurrent` | `1` to `4` | Concurrent direct yt-dlp workers; default `2` |
-| `youtube.speed_limit` | `0` or MB/s | Per direct YouTube download; `0` is unlimited |
+| `youtube.speed_limit` | `0` or MiB/s | Per direct YouTube download; `0` is unlimited |
 
 Existing installations keep their configuration during installer updates. Missing keys are supplied by application defaults and saved when changed through the interface.
 
@@ -276,3 +277,17 @@ The modern interface uses desktop sidebar navigation, a full-width layout, and s
 ## License
 
 MIT
+
+## Version 3
+
+Settings now use nine categories with fragment links and browser back/forward navigation. Unsaved fields stay mounted when changing categories. Appearance preferences apply before first paint, migrate the legacy light/dark choice and follow OS changes in System mode.
+
+`downloads.priority_interface_enabled` is off by default. With a positive global aria2 limit, uncached folder exploration temporarily applies 80% of that limit. Five seconds after the last scan finishes, the effective limit increases by five percentage points every five seconds. The saved limit is never overwritten; unlimited aria2 and the direct YouTube engine keep their existing behavior. Values remain binary MiB/s (Mio/s in French).
+
+Filesystem exploration, including path resolution and permissions, runs in two dedicated workers. Concurrent requests for one path share a scan. At most eight distinct scans can be pending; slow scans retain their slot until they actually finish. The API returns a loading response after 600 ms, while the browser cancels obsolete requests and polls the shared result. Successful listings are cached for ten seconds. Runtime diagnostics expose pending scans and scan duration separately from API responsiveness.
+
+The v2.2.4 media permissions and completed-sidecar fix remains included. Version 3 was validated with isolated test data and reviewed on an existing installation.
+
+Version 3 also updates the pinned cryptography, PyJWT and urllib3 dependencies after the dependency audit on v2.2.4 reported newly published advisories. Dependency upgrades were validated in a separate runtime.
+
+Aria2 receives the configured cap at startup, before resuming saved transfers. Download Manager periodically verifies the global cap and reapplies it after an engine restart. Recovery steps are reported as an intentional reserve instead of a limit mismatch. Newly created destination folders inherit 0755; existing destination permissions and private state/log directories remain protected.

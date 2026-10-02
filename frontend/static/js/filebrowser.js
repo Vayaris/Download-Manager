@@ -6,6 +6,10 @@ const FileBrowser = (() => {
   let onSelectCallback = null;
   let browseController = null;
   let dragState = null;
+  let browseGeneration = 0;
+  let browseRetry = null;
+  let browseLoading = false;
+  let returnFocus = null;
 
   const folderIcon = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>';
 
@@ -64,9 +68,11 @@ const FileBrowser = (() => {
       return;
     }
     list.innerHTML = directories.map(item => `
-      <div class="fb-item" data-fb-open="${esc(item.path)}">
+      <div class="fb-item">
+        <button type="button" class="fb-folder-open" data-fb-open="${esc(item.path)}">
         <span class="fb-folder-icon">${folderIcon}</span>
         <span class="fb-name" title="${esc(item.path)}">${esc(item.name)}</span>
+        </button>
         <button type="button" class="fb-star${isFavorite(item.path) ? " active" : ""}"
           data-fb-favorite="${esc(item.path)}" title="${esc(t(isFavorite(item.path) ? "fb_remove_favorite" : "fb_add_favorite"))}">
           ${isFavorite(item.path) ? "★" : "☆"}
@@ -154,7 +160,7 @@ const FileBrowser = (() => {
   async function loadPreferences() {
     try {
       preferences = await request("/api/files/preferences", { headers: authHeaders() });
-      renderPreferences();
+      renderPreferences(!browseLoading);
     } catch (error) {
       showToast(t("fb_preferences_error") + error.message, "error");
     }
@@ -162,20 +168,34 @@ const FileBrowser = (() => {
 
   async function browse(path, refresh = false) {
     const target = String(path || "/").trim() || "/";
+    const generation = ++browseGeneration;
+    browseLoading = true;
+    clearTimeout(browseRetry);
     currentPath = target;
+    selectedPath = "";
+    currentDirectories = [];
+    document.getElementById("fb-select-button").disabled = true;
     const list = document.getElementById("fb-list");
-    list.innerHTML = `<div class="fb-loading"><span class="fb-spinner"></span>${esc(t("fb_loading"))}</div>`;
+    list.innerHTML = `<div class="fb-loading" role="status"><span class="fb-spinner"></span>${esc(t("fb_loading"))}</div>`;
     if (browseController) browseController.abort();
     browseController = new AbortController();
+    const controller = browseController;
     try {
       const query = new URLSearchParams({ path: target });
       if (refresh) query.set("refresh", "true");
       const response = await fetch(`/api/files/browse?${query}`, {
         headers: authHeaders(),
-        signal: browseController.signal,
+        signal: controller.signal,
       });
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
       const data = await response.json();
+      if (generation !== browseGeneration || controller.signal.aborted) return;
+      if (data.loading) {
+        if (data.elapsed_seconds >= 5) list.innerHTML = `<div class="fb-loading" role="status"><span class="fb-spinner"></span>${esc(t('v3_storage_waiting'))}</div>`;
+        browseRetry = setTimeout(() => { if (generation === browseGeneration) browse(target); }, 1000);
+        return;
+      }
+      browseLoading = false;
       currentPath = data.path || target;
       selectedPath = data.selectable ? currentPath : "";
       currentDirectories = data.directories || [];
@@ -192,7 +212,8 @@ const FileBrowser = (() => {
       }
       renderPreferences(!data.error);
     } catch (error) {
-      if (error.name === "AbortError") return;
+      if (error.name === "AbortError" || generation !== browseGeneration) return;
+      browseLoading = false;
       list.innerHTML = `<div class="fb-empty fb-error-state"><span>${esc(t("fb_error") + error.message)}</span><button type="button" class="btn btn-sm" id="fb-retry">${esc(t("fb_retry"))}</button></div>`;
       document.getElementById("fb-retry")?.addEventListener("click", () => browse(currentPath, true));
     }
@@ -274,9 +295,13 @@ const FileBrowser = (() => {
   }
 
   function close() {
+    browseLoading = false;
+    ++browseGeneration;
+    clearTimeout(browseRetry);
     browseController?.abort();
     document.getElementById("filebrowser-modal").classList.add("hidden");
     document.getElementById("filebrowser-modal").style.zIndex = "";
+    returnFocus?.focus();
   }
 
   function setMobilePanel(panel) {
@@ -291,7 +316,24 @@ const FileBrowser = (() => {
       onSelectCallback = callback;
       localStorage.removeItem("dm_path_history");
       const modal = document.getElementById("filebrowser-modal");
+      returnFocus = document.activeElement;
+      modal.setAttribute('role', 'dialog');
+      modal.setAttribute('aria-modal', 'true');
+      const heading = modal.querySelector('h3');
+      if (heading) { heading.id = 'fb-dialog-title'; modal.setAttribute('aria-labelledby', heading.id); }
+      if (!modal.dataset.keyboardBound) {
+        modal.dataset.keyboardBound = '1';
+        modal.addEventListener('keydown', event => {
+          if (event.key === 'Escape') { event.preventDefault(); close(); return; }
+          if (event.key !== 'Tab') return;
+          const focusable = [...modal.querySelectorAll('button, input, select, [tabindex="0"]')].filter(el => !el.disabled && el.getClientRects().length);
+          const first = focusable[0], last = focusable[focusable.length - 1];
+          if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last?.focus(); }
+          if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus(); }
+        });
+      }
       modal.classList.remove("hidden");
+      document.getElementById('fb-path-input')?.focus();
       setMobilePanel("explorer");
       hideMkdirInput();
       loadPreferences();

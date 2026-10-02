@@ -17,9 +17,11 @@ test("storage units follow the selected interface language", () => {
   );
   assert.equal(context.formatSize(1024 ** 3), "1.0 Go");
   assert.equal(context.formatSize(1024 ** 4), "1.0 To");
+  assert.equal(context.formatSpeed(50 * 1024 ** 2), "50.0 Mio/s");
   language = "en";
   assert.equal(context.formatSize(1024 ** 3), "1.0 GB");
   assert.equal(context.formatSize(1024 ** 4), "1.0 TB");
+  assert.equal(context.formatSpeed(50 * 1024 ** 2), "50.0 MiB/s");
 });
 
 test("global paste accepts links and magnets but leaves ordinary text alone", () => {

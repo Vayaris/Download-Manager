@@ -249,6 +249,7 @@ async function saveDownloadSettings() {
       simultaneous_downloads: simultaneous,
       download_segments: segments,
       speed_limit: speedLimit,
+      priority_interface_enabled: document.getElementById("priority-interface-enabled").checked,
       max_retries: maxRetries,
       retry_delay_seconds: retryDelay,
       stalled_timeout_hours: stalledTimeout,
@@ -497,6 +498,14 @@ async function setWebhookEnabled(enabled) {
 function renderSpeedLimitStatus(status) {
   const element = document.getElementById("speed-limit-status");
   if (!element || !status) return;
+  if (status.available && status.effective_bytes_s != null && status.measured_bytes_s != null) {
+    const unit = t('v3_speed_unit');
+    const configured = status.configured_mb_s > 0 ? status.configured_mb_s + ' ' + unit : t('v3_unlimited');
+    const effective = status.effective_bytes_s > 0 ? (status.effective_bytes_s / 1048576).toFixed(1) + ' ' + unit : t('v3_unlimited');
+    element.dataset.state = status.applied ? 'ok' : 'warning';
+    element.textContent = t('v3_speed_state', {chosen: configured, effective, measured: (status.measured_bytes_s / 1048576).toFixed(1) + ' ' + unit}) + (status.priority_interface_active ? ' · ' + t('v3_priority_active') : '');
+    return;
+  }
   if (status.applied) {
     element.dataset.state = "ok";
     element.textContent = status.configured_mb_s > 0
@@ -1109,6 +1118,7 @@ async function saveSettings() {
     simultaneous_downloads: Math.min(20, Math.max(1, parseInt(document.getElementById("simultaneous-input").value) || 3)),
     download_segments: Math.min(16, Math.max(1, parseInt(document.getElementById("segments-input").value) || 1)),
     speed_limit: parseInt(document.getElementById("speed-limit").value) || 0,
+    priority_interface_enabled: document.getElementById("priority-interface-enabled").checked,
     max_retries: Math.min(20, Math.max(0, Number.isNaN(maxRetriesRaw) ? 3 : maxRetriesRaw)),
     retry_delay_seconds: Math.min(3600, Math.max(0, Number.isNaN(retryDelayRaw) ? 5 : retryDelayRaw)),
     stalled_timeout_hours: Math.min(168, Math.max(0, Number.isNaN(stalledTimeoutRaw) ? 3 : stalledTimeoutRaw)),
@@ -1427,47 +1437,30 @@ async function storageRemove(path) {
 // ---- Boot ----
 
 function initSettingsSections() {
-  document.querySelectorAll(".settings-card[data-settings-section]").forEach((card) => {
-    const title = card.querySelector(".card-title");
-    const section = card.getAttribute("data-settings-section");
-    if (!title || !section || title.dataset.collapseBound === "1") return;
-
-    const storageKey = "dm_settings_section_" + section;
-    const saved = localStorage.getItem(storageKey);
-    const defaultOpen = card.getAttribute("data-default-open") === "true";
-    const startOpen = saved ? saved === "open" : defaultOpen;
-
-    title.dataset.collapseBound = "1";
-    title.setAttribute("role", "button");
-    title.setAttribute("tabindex", "0");
-    title.setAttribute("aria-expanded", startOpen ? "true" : "false");
-
-    const chevron = document.createElement("span");
-    chevron.className = "settings-section-chevron";
-    chevron.setAttribute("aria-hidden", "true");
-    chevron.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>';
-    title.appendChild(chevron);
-
-    function setOpen(open, persist) {
-      card.classList.toggle("collapsed", !open);
-      title.setAttribute("aria-expanded", open ? "true" : "false");
-      if (persist) localStorage.setItem(storageKey, open ? "open" : "closed");
-    }
-
-    function toggle() {
-      setOpen(card.classList.contains("collapsed"), true);
-    }
-
-    title.addEventListener("click", toggle);
-    title.addEventListener("keydown", (event) => {
-      if (event.key === "Enter" || event.key === " ") {
-        event.preventDefault();
-        toggle();
-      }
+  const categories = ['appearance', 'downloads', 'storage', 'alldebrid', 'youtube', 'media', 'notifications', 'account', 'diagnostics'];
+  const nav = document.querySelector('.settings-categories');
+  const select = document.getElementById('settings-category-select');
+  nav.setAttribute('aria-label', t('v3_categories'));
+  nav.innerHTML = categories.map(category => `<a href="#${category}" data-category-link="${category}">${t('v3_' + category)}</a>`).join('');
+  select.innerHTML = categories.map(category => `<option value="${category}">${t('v3_' + category)}</option>`).join('');
+  function showCategory() {
+    const aliases = {plex: 'media', 'media-settings': 'media', smb: 'storage', updates: 'diagnostics'};
+    const requested = location.hash.slice(1);
+    const category = aliases[requested] || (categories.includes(requested) ? requested : 'appearance');
+    document.querySelectorAll('.settings-card[data-category]').forEach(card => { card.hidden = card.dataset.category !== category; });
+    nav.querySelectorAll('a').forEach(link => {
+      const active = link.dataset.categoryLink === category;
+      link.classList.toggle('active', active);
+      if (active) link.setAttribute('aria-current', 'page'); else link.removeAttribute('aria-current');
     });
-
-    setOpen(startOpen, false);
-  });
+    select.value = category;
+    document.querySelector(".settings-footer").hidden = ["appearance", "account"].includes(category);
+  }
+  select.addEventListener('change', () => { location.hash = select.value; });
+  window.addEventListener('hashchange', showCategory);
+  showCategory();
+  syncAppearanceControls();
+  setInterval(() => { if (document.visibilityState === 'visible' && select.value === 'downloads') loadSpeedLimitStatus(); }, 3000);
 }
 
 function initInlineHelpDismiss() {
@@ -1521,6 +1514,7 @@ async function bootSettings() {
     document.getElementById("simultaneous-input").value = cfg.simultaneous_downloads || 3;
     document.getElementById("segments-input").value = cfg.download_segments || 1;
     document.getElementById("speed-limit").value = cfg.speed_limit || 0;
+    document.getElementById("priority-interface-enabled").checked = !!cfg.priority_interface_enabled;
     loadSpeedLimitStatus();
     document.getElementById("max-retries-input").value = cfg.max_retries ?? 3;
     document.getElementById("retry-delay-input").value = cfg.retry_delay_seconds ?? 5;

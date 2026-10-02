@@ -35,14 +35,18 @@ downloads = config.get("downloads", {})
 print(int(aria2.get("rpc_port", 6800)))
 print(str(aria2.get("rpc_secret", "download-manager-secret")))
 print(str(downloads.get("default_destination", "/opt/download-manager/downloads")))
+print(max(0, int(downloads.get("speed_limit", 0) or 0)) * 1024 * 1024)
 PY
 )
 
 ARIA2_PORT="${SETTINGS[0]:-6800}"
 ARIA2_SECRET="${SETTINGS[1]:-download-manager-secret}"
 DL_DIR="${SETTINGS[2]:-/opt/download-manager/downloads}"
+ARIA2_LIMIT="${SETTINGS[3]:-0}"
 
-install -d -m 700 "${STATE_DIR}" "${LOG_DIR}" "${DL_DIR}"
+install -d -m 700 "${STATE_DIR}" "${LOG_DIR}"
+# New media folders inherit 0755; existing destination permissions are preserved.
+mkdir -p "${DL_DIR}"
 if [ ! -e "${SESSION_FILE}" ]; then
   install -m 600 /dev/null "${SESSION_FILE}"
 else
@@ -55,6 +59,7 @@ exec aria2c \
   --rpc-secret="${ARIA2_SECRET}" \
   --rpc-listen-all=false \
   --dir="${DL_DIR}" \
+  --max-overall-download-limit="${ARIA2_LIMIT}" \
   --max-concurrent-downloads=99 \
   --max-connection-per-server=5 \
   --split=5 \

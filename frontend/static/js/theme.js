@@ -6,9 +6,7 @@ function getUIStyle() {
 function updateThemeColor() {
   var meta = document.querySelector('meta[name="theme-color"]');
   if (!meta) return;
-  var modern = getUIStyle() === "modern";
-  var dark = document.documentElement.getAttribute("data-theme") === "dark";
-  meta.setAttribute("content", modern ? (dark ? "#11110f" : "#171715") : (dark ? "#0d1110" : "#f5f3ed"));
+  if (window.DMAppearance) window.DMAppearance.apply();
 }
 
 function applyUIStyle(style) {
@@ -33,35 +31,16 @@ async function setUIStyle(style) {
   }
 }
 
-// Theme — read from DOM, persist to localStorage
-function toggleTheme() {
-  var html = document.documentElement;
-  var current = html.getAttribute('data-theme');
-  var next = (current === 'light') ? 'dark' : 'light';
-
-  html.setAttribute('data-theme', next);
-  localStorage.setItem('dm_theme', next);
-  updateThemeColor();
-
-  // Update icons
-  var btns = document.querySelectorAll('.theme-toggle');
-  for (var i = 0; i < btns.length; i++) {
-    var sun = btns[i].querySelector('.icon-sun');
-    var moon = btns[i].querySelector('.icon-moon');
-    if (sun) sun.style.display = (next === 'light') ? 'block' : 'none';
-    if (moon) moon.style.display = (next === 'dark') ? 'block' : 'none';
-  }
+function syncAppearanceControls() {
+  const root = document.documentElement;
+  document.querySelectorAll('.theme-toggle').forEach(btn => {
+    const sun = btn.querySelector('.icon-sun'), moon = btn.querySelector('.icon-moon');
+    if (sun) sun.style.display = root.dataset.theme === 'light' ? 'block' : 'none';
+    if (moon) moon.style.display = root.dataset.theme === 'dark' ? 'block' : 'none';
+    btn.setAttribute('aria-pressed', String(root.dataset.theme === 'dark'));
+  });
+  [['appearance-mode', root.dataset.themeMode], ['appearance-palette', root.dataset.palette], ['appearance-style', getUIStyle()]].forEach(([id, value]) => { const el = document.getElementById(id); if (el) el.value = value; });
 }
-
-// Init icons on page load
-(function() {
-  var theme = document.documentElement.getAttribute('data-theme') || 'light';
-  var btns = document.querySelectorAll('.theme-toggle');
-  for (var i = 0; i < btns.length; i++) {
-    var sun = btns[i].querySelector('.icon-sun');
-    var moon = btns[i].querySelector('.icon-moon');
-    if (sun) sun.style.display = (theme === 'light') ? 'block' : 'none';
-    if (moon) moon.style.display = (theme === 'dark') ? 'block' : 'none';
-  }
-  updateThemeColor();
-})();
+function toggleTheme() { DMAppearance.setMode(document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark'); }
+window.addEventListener('dm-appearance-change', syncAppearanceControls);
+syncAppearanceControls();

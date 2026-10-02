@@ -1799,3 +1799,18 @@ function startApp() {
 // ---- Boot ----
 
 checkAuth();
+
+let speedLimitRequestPending = false;
+async function updateWorkspaceSpeedLimit() {
+  const element = document.getElementById('workspace-speed-limit');
+  if (!element || !_appStarted || speedLimitRequestPending || document.visibilityState !== 'visible') return;
+  speedLimitRequestPending = true;
+  try {
+    const state = await API.get('/api/settings/speed-limit/status');
+    const unit = t('v3_speed_unit');
+    const chosen = state.configured_mb_s > 0 ? state.configured_mb_s + ' ' + unit : t('v3_unlimited');
+    const effective = state.effective_bytes_s > 0 ? (state.effective_bytes_s / 1048576).toFixed(1) + ' ' + unit : t('v3_unlimited');
+    element.textContent = state.available ? t('v3_speed_state', {chosen, effective, measured: (state.measured_bytes_s / 1048576).toFixed(1) + ' ' + unit}) + (state.priority_interface_active ? ' · ' + t('v3_priority_active') : '') : '';
+  } catch {} finally { speedLimitRequestPending = false; }
+}
+setInterval(updateWorkspaceSpeedLimit, 3000);
