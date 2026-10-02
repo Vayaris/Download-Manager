@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
-umask 077
+# Media must remain readable by the separate Plex/Jellyfin account.
+# Recovery state and logs remain inside explicitly private directories.
+umask 022
 
 INSTALL_DIR="${DM_INSTALL_DIR:-/opt/download-manager}"
 CONFIG_FILE="${DM_CONFIG:-/etc/download-manager/config.yml}"
@@ -64,6 +66,6 @@ exec aria2c \
   --input-file="${SESSION_FILE}" \
   --save-session="${SESSION_FILE}" \
   --save-session-interval=30 \
-  --force-save=true \
+  --force-save=false \
   --log="${LOG_DIR}/aria2.log" \
   --log-level=warn
