@@ -269,13 +269,9 @@ Browser/PWA communicates with FastAPI over HTTP and authenticated WebSocket. Fas
 
 This project is designed for a single self-hosted user. SQLite and the current service model are intentional for that scope.
 
-## Résumé français
+## Interface
 
-Download Manager centralise les liens directs, magnets, fichiers `.torrent` et URL YouTube dans un composeur unique responsive. Une vidéo, un Short, une playlist ou une chaîne YouTube peut être analysé puis filtré avant ajout ; plusieurs vidéos forment un lot unique avec une seule notification finale. Le mode AllDebrid prend en charge les flux et liens différés, tandis qu’un moteur direct yt-dlp facultatif propose une sortie MP4 compatible ou MKV enrichie. Les sources collées ou déposées sont identifiées avant l’envoi et, à partir de deux éléments, un lot unique est créé automatiquement. Un magnet ou fichier `.torrent` unique est également regroupé automatiquement lorsqu’il contient plusieurs fichiers. Quand la file est vide, la page propose les destinations favorites et récentes avec l’espace disque disponible ainsi que les dernières activités ; pendant un téléchargement, elle affiche un résumé global des transferts et de leur vitesse. La vue Historique regroupe les lots, propose des filtres rapides et permet de retirer plusieurs entrées sans supprimer les fichiers téléchargés. Les intégrations Plex/Jellyfin permettent enfin un rafraîchissement manuel ou automatique des bibliothèques lorsque toute la file est terminée.
-
-L’interface v2 devient le style par défaut avec une navigation latérale sur ordinateur, un affichage pleine largeur et une adaptation aux écrans ultralarges. L’ancien look v1 reste temporairement disponible dans les paramètres du compte comme solution de secours.
-
-L’installation rapide, les chemins, commandes et réglages indiqués ci-dessus sont identiques pour l’interface française. La configuration courante se fait principalement depuis **Paramètres**.
+The modern interface uses desktop sidebar navigation, a full-width layout, and support for ultrawide screens. The classic v1 look remains temporarily available in account settings as a fallback. The application continues to support both English and French; this documentation is written in English.
 
 ## License
 
