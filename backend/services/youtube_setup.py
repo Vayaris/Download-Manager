@@ -98,7 +98,10 @@ def _install_sync():
         raise RuntimeError(f"Unsupported architecture for Deno: {machine}")
     asset, expected = DENO_ASSETS[machine]
     url = f"https://github.com/denoland/deno/releases/download/v{DENO_VERSION}/{asset}"
-    with tempfile.TemporaryDirectory(prefix="dm-deno-") as temp:
+    # Stage on the destination mount so os.replace stays atomic with PrivateTmp.
+    DENO_ROOT.mkdir(parents=True, exist_ok=True)
+    os.chmod(DENO_ROOT, 0o700)
+    with tempfile.TemporaryDirectory(prefix="dm-deno-", dir=DENO_ROOT) as temp:
         archive = Path(temp) / asset
         with urllib.request.urlopen(url, timeout=120) as response, open(archive, "wb") as output:  # nosec B310
             shutil.copyfileobj(response, output)
@@ -108,8 +111,6 @@ def _install_sync():
         with zipfile.ZipFile(archive) as bundle:
             if set(bundle.namelist()) != {"deno"}:
                 raise RuntimeError("Unexpected Deno archive content")
-            DENO_ROOT.mkdir(parents=True, exist_ok=True)
-            os.chmod(DENO_ROOT, 0o700)
             extracted = Path(temp) / "deno"
             bundle.extract("deno", temp)
             os.chmod(extracted, 0o700)
