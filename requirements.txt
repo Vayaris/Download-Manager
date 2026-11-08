@@ -6,8 +6,8 @@ annotated-doc==0.0.4
 annotated-types==0.7.0
 anyio==4.14.2
 bcrypt==4.3.0
-brotli==1.2.0
-certifi==2026.6.17
+brotli==1.2.1
+certifi==2026.10.23
 charset-normalizer==3.4.7
 cffi==2.1.0
 click==8.4.2
@@ -22,7 +22,6 @@ idna==3.18
 imageio-ffmpeg==0.6.0
 mutagen==1.48.1
 passlib==1.7.4
-pillow==12.3.0
 pycparser==3.0
 pycryptodomex==3.23.0
 pydantic==2.13.4
@@ -31,6 +30,7 @@ PyJWT==2.15.0
 PyOTP==2.10.0
 python-dotenv==1.2.2
 python-multipart==0.0.32
+pypng==0.20220715.0
 PyYAML==6.0.3
 qrcode==8.2
 requests==2.34.2

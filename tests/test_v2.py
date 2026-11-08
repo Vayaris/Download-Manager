@@ -1,4 +1,5 @@
 import asyncio
+import base64
 import os
 import sys
 import tempfile
@@ -25,6 +26,18 @@ from main import _cross_origin_cookie_request, _normalized_origin
 
 
 class V2FoundationTests(unittest.IsolatedAsyncioTestCase):
+    async def test_setup_otp_returns_a_readable_png(self):
+        import png
+
+        await self._insert_user()
+        setup = await auth_router.setup_otp(user={"username": "vayaris"})
+
+        image = base64.b64decode(setup.qr_code, validate=True)
+        width, height, pixels, _ = png.Reader(bytes=image).read()
+        self.assertEqual(width, height)
+        self.assertGreater(width, 0)
+        self.assertEqual(len(list(pixels)), height)
+
     async def asyncSetUp(self):
         if database.DB_PATH == Path("/opt/download-manager/config/downloads.db"):
             self.fail("Refusing to run persistence tests against the production database")

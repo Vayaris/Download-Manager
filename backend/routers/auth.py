@@ -263,6 +263,7 @@ async def setup_otp(user=Depends(get_current_user)):
     try:
         import pyotp
         import qrcode
+        from qrcode.image.pure import PyPNGImage
     except ImportError:
         raise HTTPException(status_code=500, detail="pyotp/qrcode modules not installed")
 
@@ -280,9 +281,9 @@ async def setup_otp(user=Depends(get_current_user)):
     totp = pyotp.TOTP(secret)
     uri = totp.provisioning_uri(name=user["username"], issuer_name="Download Manager")
 
-    img = qrcode.make(uri)
+    img = qrcode.make(uri, image_factory=PyPNGImage)
     buf = io.BytesIO()
-    img.save(buf, format="PNG")
+    img.save(buf)
     qr_b64 = base64.b64encode(buf.getvalue()).decode()
 
     return SetupOTPResponse(secret=secret, qr_code=qr_b64)
